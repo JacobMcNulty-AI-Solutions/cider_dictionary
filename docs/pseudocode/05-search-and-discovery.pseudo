@@ -1,0 +1,999 @@
+# Search and Discovery Pseudocode
+# Cider Dictionary - Core User Workflows Phase 2
+
+## Overview
+This pseudocode defines the intelligent search and discovery system with sub-200ms response times,
+fuzzy matching, advanced filtering, and duplicate detection capabilities optimized for personal-scale
+cider collections up to 100 entries.
+
+## Search Architecture
+
+### Search Controller
+```
+ALGORITHM: SearchController
+PURPOSE: Orchestrate intelligent search with performance optimization
+
+INTERFACE SearchController:
+    PROPERTIES:
+        searchEngine: FuzzySearchEngine
+        filterEngine: FilterEngine
+        resultProcessor: ResultProcessor
+        cache: SearchCache
+        analytics: SearchAnalytics
+
+    DEPENDENCIES:
+        - CiderStore (local database)
+        - UserPreferencesStore
+        - SearchHistoryStore
+
+FUNCTION performSearch(query, filters, options):
+    INPUT: Search query, filter criteria, search options
+    OUTPUT: Promise<SearchResult>
+
+    COMPLEXITY:
+        Time: O(n log n) where n = collection size
+        Space: O(n) for result storage
+        Target: <200ms for 100 ciders
+
+    PRECONDITIONS:
+        - Local database must be accessible
+        - Search index must be initialized
+
+    BEGIN
+        startTime = getCurrentTimestamp()
+
+        // Step 1: Input validation and preprocessing
+        processedQuery = preprocessSearchQuery(query)
+        IF processedQuery.length == 0 THEN
+            RETURN createEmptyResult()
+        END IF
+
+        // Step 2: Check cache for identical search
+        cacheKey = generateCacheKey(processedQuery, filters)
+        cachedResult = this.cache.get(cacheKey)
+        IF cachedResult AND NOT cachedResult.isStale() THEN
+            this.analytics.recordCacheHit()
+            RETURN cachedResult
+        END IF
+
+        // Step 3: Get candidate ciders from local database
+        candidates = await getCandidateCiders(processedQuery, filters)
+
+        // Step 4: Apply fuzzy search algorithm
+        scoredResults = this.searchEngine.scoreAndRank(candidates, processedQuery)
+
+        // Step 5: Apply additional filters
+        filteredResults = this.filterEngine.applyFilters(scoredResults, filters)
+
+        // Step 6: Process and enhance results
+        enhancedResults = this.resultProcessor.enhanceResults(filteredResults, processedQuery)
+
+        // Step 7: Cache results
+        searchResult = {
+            query: query,
+            processedQuery: processedQuery,
+            results: enhancedResults,
+            totalCount: enhancedResults.length,
+            executionTime: getCurrentTimestamp() - startTime,
+            timestamp: getCurrentTimestamp()
+        }
+
+        this.cache.set(cacheKey, searchResult)
+        this.analytics.recordSearch(searchResult)
+
+        RETURN searchResult
+    END
+
+    POSTCONDITIONS:
+        - Results returned within 200ms (target)
+        - Search logged for analytics
+        - Cache updated with new results
+```
+
+### Query Preprocessing Engine
+```
+ALGORITHM: QueryPreprocessor
+PURPOSE: Normalize and optimize search queries for better matching
+
+FUNCTION preprocessSearchQuery(rawQuery):
+    INPUT: Raw search query string
+    OUTPUT: ProcessedQuery object
+
+    BEGIN
+        processed = {
+            original: rawQuery,
+            normalized: "",
+            tokens: [],
+            phrases: [],
+            metadata: {}
+        }
+
+        // Step 1: Basic cleaning
+        normalized = rawQuery.toLowerCase().trim()
+
+        // Step 2: Handle special characters and normalize
+        normalized = normalizeSpecialCharacters(normalized)
+
+        // Step 3: Extract quoted phrases
+        phrases = extractQuotedPhrases(normalized)
+        processed.phrases = phrases
+
+        // Remove phrases from main query for token processing
+        FOR EACH phrase IN phrases DO
+            normalized = normalized.replace(`"${phrase}"`, "")
+        END FOR
+
+        // Step 4: Tokenization
+        tokens = tokenizeQuery(normalized)
+        processed.tokens = tokens
+
+        // Step 5: Remove stop words (configurable)
+        tokens = removeStopWords(tokens)
+
+        // Step 6: Stem words for better matching
+        stemmedTokens = tokens.map(token => stemWord(token))
+
+        // Step 7: Add metadata
+        processed.metadata = {
+            hasQuotes: phrases.length > 0,
+            tokenCount: tokens.length,
+            avgTokenLength: calculateAverageTokenLength(tokens),
+            containsNumbers: containsNumbers(normalized),
+            containsPercentage: containsPercentage(normalized)
+        }
+
+        processed.normalized = normalized
+        processed.tokens = stemmedTokens
+
+        RETURN processed
+    END
+
+FUNCTION normalizeSpecialCharacters(query):
+    INPUT: Query string with special characters
+    OUTPUT: Normalized query string
+
+    BEGIN
+        // Replace common variations
+        normalized = query.replace(/&/g, "and")
+        normalized = normalized.replace(/\+/g, "plus")
+        normalized = normalized.replace(/%/g, "percent")
+
+        // Normalize apostrophes and quotes
+        normalized = normalized.replace(/['']/g, "'")
+        normalized = normalized.replace(/[""]/g, '"')
+
+        // Remove excessive punctuation
+        normalized = normalized.replace(/[^\w\s\-'"%.]/g, " ")
+
+        // Collapse multiple spaces
+        normalized = normalized.replace(/\s+/g, " ")
+
+        RETURN normalized.trim()
+    END
+
+FUNCTION extractQuotedPhrases(query):
+    INPUT: Query string with potential quoted phrases
+    OUTPUT: Array of quoted phrases
+
+    BEGIN
+        phrases = []
+        regex = /"([^"]+)"/g
+        match = null
+
+        WHILE (match = regex.exec(query)) != null DO
+            phrases.append(match[1].trim())
+        END WHILE
+
+        RETURN phrases
+    END
+
+FUNCTION tokenizeQuery(query):
+    INPUT: Normalized query string
+    OUTPUT: Array of tokens
+
+    BEGIN
+        // Split on whitespace and common delimiters
+        tokens = query.split(/[\s\-,;]+/)
+
+        // Filter out empty tokens and very short tokens
+        tokens = tokens.filter(token => token.length >= 2)
+
+        // Handle ABV patterns specially
+        FOR i = 0 TO tokens.length - 1 DO
+            token = tokens[i]
+            IF token.match(/^\d+(\.\d+)?$/) AND i < tokens.length - 1 THEN
+                nextToken = tokens[i + 1]
+                IF nextToken.match(/^(percent|%|abv)$/) THEN
+                    tokens[i] = token + "%" // Combine number with percent
+                    tokens.splice(i + 1, 1) // Remove next token
+                END IF
+            END IF
+        END FOR
+
+        RETURN tokens
+    END
+
+FUNCTION removeStopWords(tokens):
+    INPUT: Array of tokens
+    OUTPUT: Array of tokens with stop words removed
+
+    BEGIN
+        stopWords = ["the", "a", "an", "and", "or", "but", "in", "on", "at", "to", "for", "of", "with", "by"]
+
+        // Keep stop words if they're part of a brand name or cider name
+        filteredTokens = tokens.filter(token => {
+            return !stopWords.includes(token) OR token.length <= 2
+        })
+
+        // Always keep at least one token
+        IF filteredTokens.length == 0 AND tokens.length > 0 THEN
+            RETURN [tokens[0]]
+        END IF
+
+        RETURN filteredTokens
+    END
+```
+
+### Fuzzy Search Engine
+```
+ALGORITHM: FuzzySearchEngine
+PURPOSE: Fast fuzzy matching with relevance scoring
+
+INTERFACE FuzzySearchEngine:
+    PROPERTIES:
+        levenshteinCache: Map<string, number>
+        scoringWeights: ScoringWeights
+        maxCandidates: number = 100
+
+FUNCTION scoreAndRank(candidates, processedQuery):
+    INPUT: Array of cider candidates, processed query
+    OUTPUT: Array of scored and ranked results
+
+    COMPLEXITY:
+        Time: O(n * m) where n = candidates, m = query complexity
+        Space: O(n) for scored results
+
+    BEGIN
+        scoredResults = []
+
+        FOR EACH cider IN candidates DO
+            score = calculateRelevanceScore(cider, processedQuery)
+
+            IF score > 0.3 THEN  // Minimum relevance threshold
+                scoredResults.append({
+                    cider: cider,
+                    score: score,
+                    matches: findMatches(cider, processedQuery)
+                })
+            END IF
+        END FOR
+
+        // Sort by relevance score (descending)
+        scoredResults.sort((a, b) => b.score - a.score)
+
+        RETURN scoredResults
+    END
+
+FUNCTION calculateRelevanceScore(cider, processedQuery):
+    INPUT: Cider record and processed query
+    OUTPUT: Relevance score (0.0 - 1.0)
+
+    BEGIN
+        totalScore = 0.0
+        weights = this.scoringWeights
+
+        // Score name matches (highest weight)
+        nameScore = calculateFieldScore(cider.name, processedQuery)
+        totalScore += nameScore * weights.name  // 0.4
+
+        // Score brand matches (high weight)
+        brandScore = calculateFieldScore(cider.brand, processedQuery)
+        totalScore += brandScore * weights.brand  // 0.3
+
+        // Score taste tags (medium weight)
+        tagsScore = calculateArrayFieldScore(cider.tasteTags, processedQuery)
+        totalScore += tagsScore * weights.tasteTags  // 0.15
+
+        // Score notes (lower weight)
+        notesScore = calculateFieldScore(cider.notes, processedQuery)
+        totalScore += notesScore * weights.notes  // 0.1
+
+        // Score ABV if query contains percentage
+        IF processedQuery.metadata.containsPercentage THEN
+            abvScore = calculateABVScore(cider.abv, processedQuery)
+            totalScore += abvScore * weights.abv  // 0.05
+        END IF
+
+        // Boost exact matches
+        exactMatchBoost = calculateExactMatchBoost(cider, processedQuery)
+        totalScore += exactMatchBoost
+
+        // Boost by rating (slight preference for higher rated)
+        ratingBoost = (cider.overallRating / 10) * 0.02
+        totalScore += ratingBoost
+
+        RETURN Math.min(1.0, totalScore)
+    END
+
+FUNCTION calculateFieldScore(fieldValue, processedQuery):
+    INPUT: Field value and processed query
+    OUTPUT: Field score (0.0 - 1.0)
+
+    BEGIN
+        IF NOT fieldValue OR fieldValue.length == 0 THEN
+            RETURN 0.0
+        END IF
+
+        normalizedField = normalizeFieldValue(fieldValue)
+        maxScore = 0.0
+
+        // Check phrase matches first (highest priority)
+        FOR EACH phrase IN processedQuery.phrases DO
+            IF normalizedField.includes(phrase) THEN
+                phraseScore = phrase.length / normalizedField.length
+                maxScore = Math.max(maxScore, phraseScore + 0.3) // Phrase bonus
+            END IF
+        END FOR
+
+        // Check token matches
+        FOR EACH token IN processedQuery.tokens DO
+            // Exact token match
+            IF normalizedField.includes(token) THEN
+                tokenScore = token.length / normalizedField.length
+                maxScore = Math.max(maxScore, tokenScore + 0.2) // Exact match bonus
+            ELSE
+                // Fuzzy token match
+                fuzzyScore = calculateFuzzyTokenScore(token, normalizedField)
+                maxScore = Math.max(maxScore, fuzzyScore)
+            END IF
+        END FOR
+
+        RETURN maxScore
+    END
+
+FUNCTION calculateFuzzyTokenScore(token, fieldValue):
+    INPUT: Single token and field value
+    OUTPUT: Fuzzy match score (0.0 - 1.0)
+
+    BEGIN
+        words = fieldValue.split(/\s+/)
+        bestScore = 0.0
+
+        FOR EACH word IN words DO
+            // Skip very short words for fuzzy matching
+            IF word.length < 3 THEN
+                CONTINUE
+            END IF
+
+            similarity = calculateStringSimilarity(token, word)
+
+            // Only consider reasonably similar strings
+            IF similarity > 0.6 THEN
+                bestScore = Math.max(bestScore, similarity * 0.8) // Fuzzy penalty
+            END IF
+        END FOR
+
+        RETURN bestScore
+    END
+
+FUNCTION calculateStringSimilarity(str1, str2):
+    INPUT: Two strings to compare
+    OUTPUT: Similarity score (0.0 - 1.0)
+
+    BEGIN
+        // Use cached result if available
+        cacheKey = str1 + "|" + str2
+        IF this.levenshteinCache.has(cacheKey) THEN
+            RETURN this.levenshteinCache.get(cacheKey)
+        END IF
+
+        // Calculate Levenshtein distance
+        distance = levenshteinDistance(str1, str2)
+        maxLength = Math.max(str1.length, str2.length)
+
+        similarity = maxLength == 0 ? 1.0 : (1.0 - (distance / maxLength))
+
+        // Cache result
+        this.levenshteinCache.set(cacheKey, similarity)
+
+        RETURN similarity
+    END
+
+FUNCTION levenshteinDistance(str1, str2):
+    INPUT: Two strings
+    OUTPUT: Edit distance between strings
+
+    BEGIN
+        matrix = createMatrix(str1.length + 1, str2.length + 1)
+
+        // Initialize first row and column
+        FOR i = 0 TO str1.length DO
+            matrix[i][0] = i
+        END FOR
+
+        FOR j = 0 TO str2.length DO
+            matrix[0][j] = j
+        END FOR
+
+        // Fill matrix
+        FOR i = 1 TO str1.length DO
+            FOR j = 1 TO str2.length DO
+                cost = str1[i-1] == str2[j-1] ? 0 : 1
+
+                matrix[i][j] = Math.min(
+                    matrix[i-1][j] + 1,     // deletion
+                    matrix[i][j-1] + 1,     // insertion
+                    matrix[i-1][j-1] + cost // substitution
+                )
+            END FOR
+        END FOR
+
+        RETURN matrix[str1.length][str2.length]
+    END
+
+FUNCTION calculateArrayFieldScore(arrayField, processedQuery):
+    INPUT: Array field (like taste tags) and processed query
+    OUTPUT: Array field score (0.0 - 1.0)
+
+    BEGIN
+        IF NOT arrayField OR arrayField.length == 0 THEN
+            RETURN 0.0
+        END IF
+
+        totalScore = 0.0
+        matchCount = 0
+
+        FOR EACH item IN arrayField DO
+            itemScore = calculateFieldScore(item, processedQuery)
+            IF itemScore > 0.3 THEN
+                totalScore += itemScore
+                matchCount++
+            END IF
+        END FOR
+
+        // Average score with bonus for multiple matches
+        IF matchCount > 0 THEN
+            averageScore = totalScore / matchCount
+            multiMatchBonus = Math.min(0.2, matchCount * 0.05)
+            RETURN Math.min(1.0, averageScore + multiMatchBonus)
+        END IF
+
+        RETURN 0.0
+    END
+
+FUNCTION calculateExactMatchBoost(cider, processedQuery):
+    INPUT: Cider record and processed query
+    OUTPUT: Exact match boost score
+
+    BEGIN
+        boost = 0.0
+
+        // Check if entire query matches name exactly
+        normalizedName = normalizeFieldValue(cider.name)
+        normalizedQuery = processedQuery.normalized
+
+        IF normalizedName == normalizedQuery THEN
+            boost += 0.3
+        ELSE IF normalizedName.includes(normalizedQuery) THEN
+            boost += 0.15
+        END IF
+
+        // Check if entire query matches brand exactly
+        normalizedBrand = normalizeFieldValue(cider.brand)
+        IF normalizedBrand == normalizedQuery THEN
+            boost += 0.2
+        ELSE IF normalizedBrand.includes(normalizedQuery) THEN
+            boost += 0.1
+        END IF
+
+        RETURN boost
+    END
+```
+
+### Advanced Filter Engine
+```
+ALGORITHM: FilterEngine
+PURPOSE: Apply complex filters with performance optimization
+
+INTERFACE FilterEngine:
+    PROPERTIES:
+        filterCache: Map<string, FilterResult>
+        activeFilters: FilterSet
+
+FUNCTION applyFilters(scoredResults, filters):
+    INPUT: Scored search results and filter criteria
+    OUTPUT: Filtered and refined results
+
+    BEGIN
+        IF NOT filters OR Object.keys(filters).length == 0 THEN
+            RETURN scoredResults
+        END IF
+
+        filteredResults = scoredResults
+
+        // Apply filters in order of selectivity (most selective first)
+        filterOrder = determineFilterOrder(filters)
+
+        FOR EACH filterType IN filterOrder DO
+            IF filters[filterType] IS NOT NULL THEN
+                filteredResults = applySpecificFilter(filteredResults, filterType, filters[filterType])
+            END IF
+        END FOR
+
+        RETURN filteredResults
+    END
+
+FUNCTION applySpecificFilter(results, filterType, filterValue):
+    INPUT: Results array, filter type, and filter value
+    OUTPUT: Filtered results
+
+    BEGIN
+        SWITCH filterType:
+            CASE "rating":
+                RETURN filterByRating(results, filterValue)
+
+            CASE "abv":
+                RETURN filterByABV(results, filterValue)
+
+            CASE "style":
+                RETURN filterByStyle(results, filterValue)
+
+            CASE "tasteTags":
+                RETURN filterByTasteTags(results, filterValue)
+
+            CASE "dateAdded":
+                RETURN filterByDateAdded(results, filterValue)
+
+            CASE "priceRange":
+                RETURN filterByPriceRange(results, filterValue)
+
+            CASE "hasPhoto":
+                RETURN filterByPhotoPresence(results, filterValue)
+
+            DEFAULT:
+                RETURN results
+        END SWITCH
+    END
+
+FUNCTION filterByRating(results, ratingFilter):
+    INPUT: Results and rating filter criteria
+    OUTPUT: Results matching rating criteria
+
+    BEGIN
+        minRating = ratingFilter.min || 0
+        maxRating = ratingFilter.max || 10
+
+        RETURN results.filter(result => {
+            rating = result.cider.overallRating
+            RETURN rating >= minRating AND rating <= maxRating
+        })
+    END
+
+FUNCTION filterByABV(results, abvFilter):
+    INPUT: Results and ABV filter criteria
+    OUTPUT: Results matching ABV criteria
+
+    BEGIN
+        minABV = abvFilter.min || 0
+        maxABV = abvFilter.max || 20
+
+        RETURN results.filter(result => {
+            abv = result.cider.abv
+            RETURN abv >= minABV AND abv <= maxABV
+        })
+    END
+
+FUNCTION filterByTasteTags(results, tagsFilter):
+    INPUT: Results and taste tags filter
+    OUTPUT: Results matching taste tag criteria
+
+    BEGIN
+        requiredTags = tagsFilter.include || []
+        excludedTags = tagsFilter.exclude || []
+        matchMode = tagsFilter.mode || "any" // "any" or "all"
+
+        RETURN results.filter(result => {
+            ciderTags = result.cider.tasteTags || []
+
+            // Check exclusions first
+            FOR EACH excludedTag IN excludedTags DO
+                IF ciderTags.includes(excludedTag) THEN
+                    RETURN false
+                END IF
+            END FOR
+
+            // Check inclusions
+            IF requiredTags.length == 0 THEN
+                RETURN true
+            END IF
+
+            IF matchMode == "all" THEN
+                // All required tags must be present
+                FOR EACH requiredTag IN requiredTags DO
+                    IF NOT ciderTags.includes(requiredTag) THEN
+                        RETURN false
+                    END IF
+                END FOR
+                RETURN true
+            ELSE
+                // Any required tag must be present
+                FOR EACH requiredTag IN requiredTags DO
+                    IF ciderTags.includes(requiredTag) THEN
+                        RETURN true
+                    END IF
+                END FOR
+                RETURN false
+            END IF
+        })
+    END
+
+FUNCTION determineFilterOrder(filters):
+    INPUT: Filter object
+    OUTPUT: Array of filter types ordered by selectivity
+
+    BEGIN
+        // Order filters from most to least selective
+        // This minimizes the dataset size early in the filtering process
+
+        filterSelectivity = {
+            "hasPhoto": 10,      // Very selective
+            "style": 8,          // Quite selective
+            "tasteTags": 6,      // Moderately selective
+            "abv": 4,            // Less selective
+            "rating": 2,         // Least selective
+            "dateAdded": 1,      // Usually least selective
+            "priceRange": 3      // Variable selectivity
+        }
+
+        appliedFilters = Object.keys(filters).filter(key => filters[key] != null)
+
+        appliedFilters.sort((a, b) => {
+            return (filterSelectivity[b] || 0) - (filterSelectivity[a] || 0)
+        })
+
+        RETURN appliedFilters
+    END
+```
+
+### Result Enhancement Engine
+```
+ALGORITHM: ResultProcessor
+PURPOSE: Enhance search results with highlights and metadata
+
+FUNCTION enhanceResults(filteredResults, processedQuery):
+    INPUT: Filtered search results and processed query
+    OUTPUT: Enhanced results with highlights and metadata
+
+    BEGIN
+        enhancedResults = []
+
+        FOR EACH result IN filteredResults DO
+            enhanced = {
+                ...result,
+                highlights: generateHighlights(result.cider, processedQuery),
+                metadata: generateResultMetadata(result.cider, processedQuery),
+                ranking: {
+                    score: result.score,
+                    position: enhancedResults.length + 1,
+                    scoreBreakdown: calculateScoreBreakdown(result.cider, processedQuery)
+                }
+            }
+
+            enhancedResults.append(enhanced)
+        END FOR
+
+        RETURN enhancedResults
+    END
+
+FUNCTION generateHighlights(cider, processedQuery):
+    INPUT: Cider record and processed query
+    OUTPUT: Highlighted text snippets
+
+    BEGIN
+        highlights = {
+            name: highlightText(cider.name, processedQuery),
+            brand: highlightText(cider.brand, processedQuery),
+            tasteTags: highlightArray(cider.tasteTags, processedQuery),
+            notes: highlightText(cider.notes, processedQuery, { snippet: true, maxLength: 100 })
+        }
+
+        RETURN highlights
+    END
+
+FUNCTION highlightText(text, processedQuery, options = {}):
+    INPUT: Text to highlight, processed query, options
+    OUTPUT: Text with highlight markers
+
+    BEGIN
+        IF NOT text OR text.length == 0 THEN
+            RETURN null
+        END IF
+
+        highlightedText = text
+        highlightMarkers = []
+
+        // Highlight phrases first (exact matches)
+        FOR EACH phrase IN processedQuery.phrases DO
+            regex = new RegExp(`(${escapeRegex(phrase)})`, 'gi')
+            highlightedText = highlightedText.replace(regex, '<mark>$1</mark>')
+        END FOR
+
+        // Highlight individual tokens
+        FOR EACH token IN processedQuery.tokens DO
+            regex = new RegExp(`\\b(${escapeRegex(token)})`, 'gi')
+            highlightedText = highlightedText.replace(regex, '<mark>$1</mark>')
+        END FOR
+
+        // Create snippet if requested
+        IF options.snippet AND options.maxLength THEN
+            highlightedText = createSnippet(highlightedText, options.maxLength)
+        END IF
+
+        RETURN highlightedText
+    END
+
+FUNCTION generateResultMetadata(cider, processedQuery):
+    INPUT: Cider record and processed query
+    OUTPUT: Result metadata object
+
+    BEGIN
+        metadata = {
+            matchType: determineMatchType(cider, processedQuery),
+            matchedFields: getMatchedFields(cider, processedQuery),
+            confidence: calculateConfidence(cider, processedQuery),
+            lastUpdated: cider.updatedAt,
+            experienceCount: cider.timesTried || 0
+        }
+
+        RETURN metadata
+    END
+
+FUNCTION determineMatchType(cider, processedQuery):
+    INPUT: Cider and query
+    OUTPUT: Match type classification
+
+    BEGIN
+        normalizedName = normalizeFieldValue(cider.name)
+        normalizedBrand = normalizeFieldValue(cider.brand)
+        queryText = processedQuery.normalized
+
+        IF normalizedName == queryText OR normalizedBrand == queryText THEN
+            RETURN "exact"
+        ELSE IF normalizedName.includes(queryText) OR normalizedBrand.includes(queryText) THEN
+            RETURN "contains"
+        ELSE IF hasStrongSimilarity(cider, processedQuery) THEN
+            RETURN "similar"
+        ELSE
+            RETURN "partial"
+        END IF
+    END
+```
+
+### Search Cache Management
+```
+ALGORITHM: SearchCache
+PURPOSE: Intelligent caching for sub-200ms performance
+
+INTERFACE SearchCache:
+    PROPERTIES:
+        cache: Map<string, CacheEntry>
+        maxSize: number = 100
+        defaultTTL: number = 300000  // 5 minutes
+
+FUNCTION get(cacheKey):
+    INPUT: Cache key string
+    OUTPUT: Cached result or null
+
+    BEGIN
+        entry = this.cache.get(cacheKey)
+
+        IF NOT entry THEN
+            RETURN null
+        END IF
+
+        IF entry.isExpired() THEN
+            this.cache.delete(cacheKey)
+            RETURN null
+        END IF
+
+        // Update access time for LRU
+        entry.lastAccessed = getCurrentTimestamp()
+        RETURN entry.data
+    END
+
+FUNCTION set(cacheKey, data):
+    INPUT: Cache key and data to cache
+    OUTPUT: void
+
+    BEGIN
+        // Implement LRU eviction if cache is full
+        IF this.cache.size >= this.maxSize THEN
+            this.evictLeastRecentlyUsed()
+        END IF
+
+        entry = {
+            data: data,
+            timestamp: getCurrentTimestamp(),
+            lastAccessed: getCurrentTimestamp(),
+            ttl: this.defaultTTL
+        }
+
+        this.cache.set(cacheKey, entry)
+    END
+
+FUNCTION generateCacheKey(processedQuery, filters):
+    INPUT: Processed query and filters
+    OUTPUT: Unique cache key
+
+    BEGIN
+        queryPart = processedQuery.normalized
+        filterPart = JSON.stringify(filters || {})
+
+        // Create hash of combined key to keep key length manageable
+        combinedKey = queryPart + "|" + filterPart
+        RETURN hashString(combinedKey)
+    END
+
+FUNCTION evictLeastRecentlyUsed():
+    INPUT: None
+    OUTPUT: Evicted oldest entry
+
+    BEGIN
+        oldestKey = null
+        oldestTime = getCurrentTimestamp()
+
+        FOR EACH [key, entry] IN this.cache DO
+            IF entry.lastAccessed < oldestTime THEN
+                oldestTime = entry.lastAccessed
+                oldestKey = key
+            END IF
+        END FOR
+
+        IF oldestKey THEN
+            this.cache.delete(oldestKey)
+        END IF
+    END
+```
+
+### Search Analytics and Performance
+```
+ALGORITHM: SearchAnalytics
+PURPOSE: Track search performance and user behavior
+
+INTERFACE SearchAnalytics:
+    PROPERTIES:
+        metrics: PerformanceMetrics
+        userBehavior: UserBehaviorTracker
+
+FUNCTION recordSearch(searchResult):
+    INPUT: Search result with timing data
+    OUTPUT: Recorded analytics
+
+    BEGIN
+        metric = {
+            query: searchResult.query,
+            resultCount: searchResult.totalCount,
+            executionTime: searchResult.executionTime,
+            timestamp: searchResult.timestamp,
+            wasCached: searchResult.wasCached || false,
+            userSelectedResult: null  // To be updated later
+        }
+
+        this.metrics.addSearchMetric(metric)
+
+        // Check performance targets
+        IF searchResult.executionTime > 200 THEN
+            this.recordSlowSearch(metric)
+        END IF
+
+        // Update user behavior patterns
+        this.userBehavior.recordSearchPattern(searchResult.query)
+    END
+
+FUNCTION recordSlowSearch(metric):
+    INPUT: Search metric that exceeded time target
+    OUTPUT: Performance alert
+
+    BEGIN
+        alert = {
+            type: "slow_search",
+            query: metric.query,
+            executionTime: metric.executionTime,
+            resultCount: metric.resultCount,
+            timestamp: metric.timestamp,
+            suggestions: generatePerformanceImprovements(metric)
+        }
+
+        console.warn("Slow search detected:", alert)
+
+        // Could trigger optimization or user notification
+        this.triggerOptimizationCheck()
+    END
+
+FUNCTION generatePerformanceImprovements(metric):
+    INPUT: Performance metric data
+    OUTPUT: Array of improvement suggestions
+
+    BEGIN
+        suggestions = []
+
+        IF metric.resultCount > 50 THEN
+            suggestions.append("Consider implementing result pagination")
+        END IF
+
+        IF metric.query.length > 20 THEN
+            suggestions.append("Long queries may benefit from optimization")
+        END IF
+
+        IF NOT metric.wasCached THEN
+            suggestions.append("Implement intelligent pre-caching")
+        END IF
+
+        RETURN suggestions
+    END
+```
+
+### Integration with Quick Entry System
+```
+ALGORITHM: SearchQuickEntryIntegration
+PURPOSE: Seamless integration between search and quick entry
+
+FUNCTION checkForExistingCider(name, brand):
+    INPUT: Cider name and brand from quick entry
+    OUTPUT: Search results for duplicate detection
+
+    BEGIN
+        // Create minimal query for duplicate checking
+        query = `${name} ${brand}`.trim()
+
+        // Use high similarity threshold for duplicate detection
+        searchOptions = {
+            maxResults: 5,
+            minSimilarity: 0.8,
+            includeExactMatches: true
+        }
+
+        results = await this.performSearch(query, null, searchOptions)
+
+        // Return top matches with confidence scores
+        RETURN results.results.map(result => ({
+            cider: result.cider,
+            similarity: result.score,
+            matchType: result.metadata.matchType
+        }))
+    END
+
+FUNCTION searchForSimilarCiders(ciderData):
+    INPUT: New cider data being entered
+    OUTPUT: Similar ciders that might be duplicates
+
+    BEGIN
+        // Search by name and brand combination
+        primarySearch = await this.checkForExistingCider(ciderData.name, ciderData.brand)
+
+        // Search by name only if no strong matches
+        IF primarySearch.length == 0 OR primarySearch[0].similarity < 0.9 THEN
+            nameOnlyResults = await this.performSearch(ciderData.name, null, { maxResults: 3 })
+            primarySearch = primarySearch.concat(nameOnlyResults.results)
+        END IF
+
+        // Filter and rank by relevance
+        RETURN primarySearch
+            .filter(result => result.similarity > 0.6)
+            .sort((a, b) => b.similarity - a.similarity)
+            .slice(0, 5)
+    END
+```
+
+This comprehensive search and discovery system provides:
+
+1. **Sub-200ms Performance**: Optimized algorithms and caching for fast response times
+2. **Intelligent Fuzzy Matching**: Handles spelling variations and partial matches
+3. **Advanced Filtering**: Multiple filter types with optimized application order
+4. **Result Enhancement**: Highlighted matches and detailed metadata
+5. **Duplicate Detection**: Integration with quick entry for preventing duplicates
+6. **Performance Analytics**: Monitoring and optimization for continuous improvement
+7. **Caching Strategy**: Intelligent cache management for improved performance
+8. **Scalable Architecture**: Designed for personal collections up to 100+ ciders
+
+The search system balances speed, accuracy, and user experience while maintaining the target performance goals.

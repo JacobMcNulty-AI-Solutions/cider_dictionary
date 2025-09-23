@@ -1,0 +1,707 @@
+# Phase 4: Integration and Performance - Offline Sync Orchestration
+# Master coordinator for seamless offline/online transitions with intelligent conflict resolution
+
+## Data Structures
+
+```
+STRUCTURE: SyncQueue
+    pendingOperations: PriorityQueue<SyncOperation>
+    conflictResolutionRules: Map<EntityType, ConflictResolver>
+    syncState: SyncState
+    retryPolicy: RetryPolicy
+    networkMonitor: NetworkMonitor
+
+STRUCTURE: SyncOperation
+    id: UUID
+    type: OperationType  // CREATE, UPDATE, DELETE
+    entityType: EntityType  // CIDER, EXPERIENCE, VENUE, etc.
+    entityId: string
+    operation: object
+    timestamp: timestamp
+    priority: integer  // 1-10, 10 being highest
+    retryCount: integer
+    lastAttempt: timestamp
+    clientVersion: string
+    checksum: string
+
+STRUCTURE: ConflictResolver
+    strategy: ConflictStrategy  // CLIENT_WINS, SERVER_WINS, MERGE, MANUAL
+    mergeRules: Map<FieldName, MergeStrategy>
+    conflictDetector: ConflictDetector
+
+STRUCTURE: SyncState
+    isOnline: boolean
+    lastSyncTimestamp: timestamp
+    pendingOperationsCount: integer
+    conflictsCount: integer
+    syncInProgress: boolean
+    uploadBandwidth: integer  // bytes per second
+    downloadBandwidth: integer
+
+STRUCTURE: ConflictDetection
+    conflictType: ConflictType  // VERSION, FIELD, DEPENDENCY
+    localData: object
+    serverData: object
+    conflictFields: array<string>
+    resolution: ConflictResolution
+    resolutionStrategy: string
+```
+
+## Core Sync Orchestration
+
+```
+ALGORITHM: MasterSyncOrchestrator
+INPUT: none (runs continuously)
+OUTPUT: maintains data consistency
+
+CONSTANTS:
+    MAX_RETRY_ATTEMPTS = 3
+    SYNC_BATCH_SIZE = 50
+    CONFLICT_TIMEOUT = 300000  // 5 minutes
+    HIGH_PRIORITY_THRESHOLD = 7
+
+BEGIN
+    INITIALIZE SyncQueue with priority ordering
+    INITIALIZE NetworkMonitor with connection callbacks
+    INITIALIZE ConflictResolvers for each entity type
+
+    // Main orchestration loop
+    WHILE application is active DO
+        currentState ← GetNetworkState()
+
+        IF currentState.isOnline THEN
+            ExecuteOnlineSync()
+        ELSE
+            ExecuteOfflineOperations()
+        END IF
+
+        ProcessConflictResolution()
+        CleanupCompletedOperations()
+
+        WAIT 1000  // 1 second interval
+    END WHILE
+END
+
+SUBROUTINE: ExecuteOnlineSync
+BEGIN
+    // Process high priority operations first
+    highPriorityOps ← syncQueue.getOperationsByPriority(HIGH_PRIORITY_THRESHOLD)
+
+    IF highPriorityOps.size > 0 THEN
+        ProcessSyncBatch(highPriorityOps)
+    END IF
+
+    // Process regular operations in batches
+    regularOps ← syncQueue.getNextBatch(SYNC_BATCH_SIZE)
+
+    IF regularOps.size > 0 THEN
+        ProcessSyncBatch(regularOps)
+    END IF
+
+    // Pull server changes
+    ExecuteServerPull()
+END
+
+SUBROUTINE: ProcessSyncBatch
+INPUT: operations (array<SyncOperation>)
+BEGIN
+    batchId ← GenerateUUID()
+
+    TRY
+        // Group operations by type for efficiency
+        groupedOps ← GroupOperationsByType(operations)
+
+        FOR EACH entityType, ops IN groupedOps DO
+            result ← ExecuteBatchOperation(entityType, ops)
+
+            IF result.hasConflicts THEN
+                FOR EACH conflict IN result.conflicts DO
+                    QueueConflictResolution(conflict)
+                END FOR
+            END IF
+
+            // Mark successful operations as complete
+            FOR EACH successfulOp IN result.successful DO
+                syncQueue.markComplete(successfulOp.id)
+                LocalStorage.markSynced(successfulOp.entityId)
+            END FOR
+        END FOR
+
+    CATCH NetworkError as e
+        // Reschedule failed operations with exponential backoff
+        FOR EACH op IN operations DO
+            RescheduleOperation(op, CalculateBackoffDelay(op.retryCount))
+        END FOR
+
+    CATCH ConflictError as e
+        // Queue for conflict resolution
+        QueueConflictResolution(e.conflicts)
+    END TRY
+END
+```
+
+## Intelligent Conflict Resolution
+
+```
+ALGORITHM: IntelligentConflictResolver
+INPUT: conflict (ConflictDetection)
+OUTPUT: resolvedData (object)
+
+BEGIN
+    resolver ← conflictResolvers.get(conflict.entityType)
+    strategy ← resolver.strategy
+
+    SWITCH strategy
+        CASE CLIENT_WINS:
+            RETURN ResolveClientWins(conflict)
+
+        CASE SERVER_WINS:
+            RETURN ResolveServerWins(conflict)
+
+        CASE MERGE:
+            RETURN ResolveWithMerge(conflict)
+
+        CASE MANUAL:
+            RETURN QueueManualResolution(conflict)
+
+        DEFAULT:
+            RETURN ResolveWithHeuristics(conflict)
+    END SWITCH
+END
+
+SUBROUTINE: ResolveWithMerge
+INPUT: conflict (ConflictDetection)
+OUTPUT: mergedData (object)
+
+BEGIN
+    localData ← conflict.localData
+    serverData ← conflict.serverData
+    mergedData ← CreateEmpty(conflict.entityType)
+
+    // Apply field-level merge rules
+    FOR EACH field IN GetAllFields(conflict.entityType) DO
+        IF field IN conflict.conflictFields THEN
+            mergeStrategy ← resolver.mergeRules.get(field)
+
+            SWITCH mergeStrategy
+                CASE LATEST_TIMESTAMP:
+                    IF localData[field].timestamp > serverData[field].timestamp THEN
+                        mergedData[field] ← localData[field]
+                    ELSE
+                        mergedData[field] ← serverData[field]
+                    END IF
+
+                CASE HIGHEST_VALUE:
+                    IF localData[field].value > serverData[field].value THEN
+                        mergedData[field] ← localData[field]
+                    ELSE
+                        mergedData[field] ← serverData[field]
+                    END IF
+
+                CASE ARRAY_UNION:
+                    mergedData[field] ← Union(localData[field], serverData[field])
+
+                CASE MANUAL_REVIEW:
+                    QueueManualReview(field, localData[field], serverData[field])
+                    mergedData[field] ← serverData[field]  // Temporary fallback
+
+                DEFAULT:
+                    mergedData[field] ← serverData[field]  // Server wins by default
+            END SWITCH
+        ELSE
+            // No conflict, take local value
+            mergedData[field] ← localData[field]
+        END IF
+    END FOR
+
+    RETURN mergedData
+END
+
+SUBROUTINE: ResolveWithHeuristics
+INPUT: conflict (ConflictDetection)
+OUTPUT: resolvedData (object)
+
+BEGIN
+    localData ← conflict.localData
+    serverData ← conflict.serverData
+
+    // Experience-specific heuristics
+    IF conflict.entityType = EXPERIENCE THEN
+        // For experiences, local data usually more accurate (user was there)
+        IF conflict.conflictFields CONTAINS "rating" OR
+           conflict.conflictFields CONTAINS "notes" OR
+           conflict.conflictFields CONTAINS "location" THEN
+            RETURN ResolveClientWins(conflict)
+        END IF
+    END IF
+
+    // Cider data heuristics
+    IF conflict.entityType = CIDER THEN
+        // Server data more authoritative for brewery info
+        IF conflict.conflictFields CONTAINS "brewery" OR
+           conflict.conflictFields CONTAINS "style" THEN
+            RETURN ResolveServerWins(conflict)
+        END IF
+
+        // Client data preferred for personal notes/tags
+        IF conflict.conflictFields CONTAINS "personalNotes" OR
+           conflict.conflictFields CONTAINS "personalTags" THEN
+            RETURN ResolveClientWins(conflict)
+        END IF
+    END IF
+
+    // Venue data heuristics
+    IF conflict.entityType = VENUE THEN
+        // Location data: server wins (more accurate coordinates)
+        IF conflict.conflictFields CONTAINS "coordinates" THEN
+            RETURN ResolveServerWins(conflict)
+        END IF
+
+        // Visit history: merge arrays
+        IF conflict.conflictFields CONTAINS "visitHistory" THEN
+            RETURN ResolveWithMerge(conflict)
+        END IF
+    END IF
+
+    // Default: server wins for unhandled cases
+    RETURN ResolveServerWins(conflict)
+END
+```
+
+## Offline Operation Management
+
+```
+ALGORITHM: OfflineOperationManager
+INPUT: operation (DatabaseOperation)
+OUTPUT: success (boolean)
+
+BEGIN
+    // Queue operation for later sync
+    syncOp ← CreateSyncOperation(operation)
+
+    // Assign priority based on operation type
+    syncOp.priority ← CalculateOperationPriority(operation)
+
+    // Execute locally first
+    TRY
+        result ← LocalDatabase.execute(operation)
+
+        IF result.success THEN
+            // Mark as pending sync
+            LocalStorage.markPendingSync(operation.entityId)
+
+            // Add to sync queue
+            syncQueue.enqueue(syncOp)
+
+            // Update UI optimistically
+            StateManager.updateLocalState(operation)
+
+            RETURN true
+        ELSE
+            RETURN false
+        END IF
+
+    CATCH DatabaseError as e
+        LogError("Offline operation failed", e)
+        RETURN false
+    END TRY
+END
+
+SUBROUTINE: CalculateOperationPriority
+INPUT: operation (DatabaseOperation)
+OUTPUT: priority (integer)
+
+BEGIN
+    basePriority ← 5  // Default priority
+
+    // High priority for user-initiated actions
+    IF operation.source = USER_ACTION THEN
+        basePriority ← basePriority + 3
+    END IF
+
+    // Higher priority for experiences (time-sensitive)
+    IF operation.entityType = EXPERIENCE THEN
+        basePriority ← basePriority + 2
+    END IF
+
+    // Lower priority for analytics/derived data
+    IF operation.entityType = ANALYTICS THEN
+        basePriority ← basePriority - 2
+    END IF
+
+    // Boost priority for recent operations
+    ageMinutes ← (CurrentTimestamp - operation.timestamp) / 60000
+    IF ageMinutes < 5 THEN
+        basePriority ← basePriority + 2
+    ELSE IF ageMinutes < 30 THEN
+        basePriority ← basePriority + 1
+    END IF
+
+    // Ensure priority stays within valid range
+    RETURN Clamp(basePriority, 1, 10)
+END
+```
+
+## Network Optimization
+
+```
+ALGORITHM: NetworkOptimizedSync
+INPUT: operations (array<SyncOperation>)
+OUTPUT: syncResult (SyncResult)
+
+BEGIN
+    networkState ← NetworkMonitor.getCurrentState()
+
+    // Adapt sync strategy based on network conditions
+    IF networkState.connectionType = WIFI THEN
+        RETURN ExecuteFullSync(operations)
+    ELSE IF networkState.connectionType = CELLULAR THEN
+        IF networkState.signalStrength > 3 THEN
+            RETURN ExecuteOptimizedSync(operations)
+        ELSE
+            RETURN ExecuteMinimalSync(operations)
+        END IF
+    ELSE
+        RETURN QueueForLaterSync(operations)
+    END IF
+END
+
+SUBROUTINE: ExecuteOptimizedSync
+INPUT: operations (array<SyncOperation>)
+OUTPUT: syncResult (SyncResult)
+
+BEGIN
+    // Compress data for cellular networks
+    compressedOps ← CompressOperations(operations)
+
+    // Prioritize critical operations only
+    criticalOps ← FilterCriticalOperations(compressedOps)
+
+    // Use smaller batch sizes
+    batchSize ← Min(SYNC_BATCH_SIZE / 2, 25)
+
+    RETURN ProcessBatchedSync(criticalOps, batchSize)
+END
+
+SUBROUTINE: ExecuteMinimalSync
+INPUT: operations (array<SyncOperation>)
+OUTPUT: syncResult (SyncResult)
+
+BEGIN
+    // Only sync highest priority operations
+    highPriorityOps ← operations.filter(op -> op.priority >= 8)
+
+    // Compress aggressively
+    compressedOps ← CompressOperations(highPriorityOps, HIGH_COMPRESSION)
+
+    // Very small batches
+    batchSize ← 10
+
+    RETURN ProcessBatchedSync(compressedOps, batchSize)
+END
+```
+
+## Battery Optimization
+
+```
+ALGORITHM: BatteryOptimizedSync
+INPUT: syncRequest (SyncRequest)
+OUTPUT: executed (boolean)
+
+BEGIN
+    batteryLevel ← BatteryMonitor.getCurrentLevel()
+    isCharging ← BatteryMonitor.isCharging()
+
+    // Adjust sync frequency based on battery
+    IF batteryLevel < 20 AND NOT isCharging THEN
+        // Emergency mode: only critical syncs
+        IF syncRequest.priority < 9 THEN
+            QueueForLaterSync(syncRequest)
+            RETURN false
+        END IF
+    ELSE IF batteryLevel < 50 AND NOT isCharging THEN
+        // Conservation mode: reduce frequency
+        IF LastSyncTime + BATTERY_SAVE_INTERVAL > CurrentTime THEN
+            QueueForLaterSync(syncRequest)
+            RETURN false
+        END IF
+    END IF
+
+    // Execute sync with battery-optimized settings
+    RETURN ExecuteEfficientSync(syncRequest)
+END
+
+SUBROUTINE: ExecuteEfficientSync
+INPUT: syncRequest (SyncRequest)
+OUTPUT: success (boolean)
+
+BEGIN
+    // Reduce CPU-intensive operations
+    DisableDataCompression()
+
+    // Use smaller connection pools
+    SetMaxConcurrentConnections(2)
+
+    // Shorter timeouts to avoid hanging
+    SetNetworkTimeout(5000)  // 5 seconds
+
+    // Execute sync
+    result ← ProcessSync(syncRequest)
+
+    // Restore normal settings
+    RestoreDefaultSettings()
+
+    RETURN result
+END
+```
+
+## Recovery and Resilience
+
+```
+ALGORITHM: SyncRecoveryManager
+INPUT: none (monitors continuously)
+OUTPUT: maintains system health
+
+BEGIN
+    WHILE application is active DO
+        // Check for stuck operations
+        stuckOps ← syncQueue.getOperationsOlderThan(STUCK_OPERATION_TIMEOUT)
+
+        FOR EACH op IN stuckOps DO
+            IF op.retryCount >= MAX_RETRY_ATTEMPTS THEN
+                // Move to dead letter queue for manual review
+                deadLetterQueue.enqueue(op)
+                syncQueue.remove(op.id)
+                NotifyUser("Sync operation failed permanently", op)
+            ELSE
+                // Reset and retry
+                ResetOperation(op)
+                RescheduleOperation(op, CalculateBackoffDelay(op.retryCount))
+            END IF
+        END FOR
+
+        // Check for data corruption
+        corruption ← DetectDataCorruption()
+
+        IF corruption.detected THEN
+            InitiateDataRepair(corruption)
+        END IF
+
+        // Monitor sync queue health
+        IF syncQueue.size > MAX_QUEUE_SIZE THEN
+            PurgeOldOperations()
+        END IF
+
+        WAIT 30000  // Check every 30 seconds
+    END WHILE
+END
+
+SUBROUTINE: DetectDataCorruption
+OUTPUT: corruption (CorruptionReport)
+
+BEGIN
+    corruption ← CreateEmptyReport()
+
+    // Check data integrity
+    FOR EACH entityType IN [CIDER, EXPERIENCE, VENUE] DO
+        localEntities ← LocalDatabase.getAllEntities(entityType)
+
+        FOR EACH entity IN localEntities DO
+            // Verify checksums
+            IF NOT VerifyChecksum(entity) THEN
+                corruption.addCorruptedEntity(entity.id, "Invalid checksum")
+            END IF
+
+            // Check required fields
+            IF NOT ValidateRequiredFields(entity) THEN
+                corruption.addCorruptedEntity(entity.id, "Missing required fields")
+            END IF
+
+            // Verify relationships
+            IF NOT VerifyRelationships(entity) THEN
+                corruption.addCorruptedEntity(entity.id, "Invalid relationships")
+            END IF
+        END FOR
+    END FOR
+
+    RETURN corruption
+END
+```
+
+## Performance Monitoring
+
+```
+ALGORITHM: SyncPerformanceMonitor
+INPUT: none (collects metrics continuously)
+OUTPUT: performance insights
+
+STRUCTURE: SyncMetrics
+    avgSyncTime: float
+    syncSuccessRate: float
+    conflictRate: float
+    bandwidthUsage: integer
+    batteryImpact: float
+    operationCounts: Map<OperationType, integer>
+
+BEGIN
+    metrics ← InitializeSyncMetrics()
+
+    // Collect real-time metrics
+    WHILE application is active DO
+        currentMetrics ← CollectCurrentMetrics()
+
+        metrics.update(currentMetrics)
+
+        // Detect performance issues
+        IF metrics.avgSyncTime > SYNC_TIME_THRESHOLD THEN
+            TriggerSyncOptimization()
+        END IF
+
+        IF metrics.syncSuccessRate < SUCCESS_RATE_THRESHOLD THEN
+            TriggerReliabilityImprovement()
+        END IF
+
+        IF metrics.conflictRate > CONFLICT_RATE_THRESHOLD THEN
+            TriggerConflictReduction()
+        END IF
+
+        // Report metrics periodically
+        IF ShouldReportMetrics() THEN
+            ReportMetricsToAnalytics(metrics)
+        END IF
+
+        WAIT 60000  // Collect every minute
+    END WHILE
+END
+
+SUBROUTINE: TriggerSyncOptimization
+BEGIN
+    // Adjust batch sizes
+    IF avgSyncTime > SYNC_TIME_THRESHOLD * 2 THEN
+        SYNC_BATCH_SIZE ← SYNC_BATCH_SIZE / 2
+    ELSE
+        SYNC_BATCH_SIZE ← SYNC_BATCH_SIZE * 0.8
+    END IF
+
+    // Increase sync intervals
+    SYNC_INTERVAL ← Min(SYNC_INTERVAL * 1.5, MAX_SYNC_INTERVAL)
+
+    // Enable compression
+    EnableDataCompression()
+
+    LogInfo("Sync optimization triggered", {
+        newBatchSize: SYNC_BATCH_SIZE,
+        newInterval: SYNC_INTERVAL
+    })
+END
+```
+
+## Integration Points
+
+```
+// Integration with State Management
+ALGORITHM: StateSyncIntegration
+INPUT: stateChange (StateChange)
+OUTPUT: syncTriggered (boolean)
+
+BEGIN
+    // Determine if state change requires sync
+    IF RequiresServerSync(stateChange) THEN
+        operation ← CreateSyncOperation(stateChange)
+        syncQueue.enqueue(operation)
+        RETURN true
+    END IF
+
+    RETURN false
+END
+
+// Integration with Quick Entry System
+ALGORITHM: QuickEntrySyncIntegration
+INPUT: quickEntry (QuickEntryData)
+OUTPUT: syncScheduled (boolean)
+
+BEGIN
+    // Quick entries get high priority
+    operation ← CreateSyncOperation(quickEntry)
+    operation.priority ← 8  // High priority
+
+    syncQueue.enqueue(operation)
+
+    // Try immediate sync if online
+    IF NetworkMonitor.isOnline() THEN
+        TriggerImmediateSync(operation)
+    END IF
+
+    RETURN true
+END
+
+// Integration with Search System
+ALGORITHM: SearchIndexSyncIntegration
+INPUT: entityUpdate (EntityUpdate)
+OUTPUT: indexUpdated (boolean)
+
+BEGIN
+    // Update local search index immediately
+    SearchIndex.updateEntity(entityUpdate)
+
+    // Queue search index sync for server
+    IF entityUpdate.isPublic THEN
+        operation ← CreateSearchIndexSync(entityUpdate)
+        syncQueue.enqueue(operation)
+        RETURN true
+    END IF
+
+    RETURN false
+END
+```
+
+## Error Handling and Logging
+
+```
+ALGORITHM: SyncErrorHandler
+INPUT: error (SyncError), operation (SyncOperation)
+OUTPUT: recovery (RecoveryAction)
+
+BEGIN
+    SWITCH error.type
+        CASE NETWORK_ERROR:
+            // Temporary network issues
+            IF error.isRetryable THEN
+                RETURN ScheduleRetry(operation, NETWORK_RETRY_DELAY)
+            ELSE
+                RETURN QueueForLaterSync(operation)
+            END IF
+
+        CASE AUTHENTICATION_ERROR:
+            // User needs to re-authenticate
+            RETURN TriggerReauthentication()
+
+        CASE CONFLICT_ERROR:
+            // Data conflicts need resolution
+            RETURN QueueConflictResolution(error.conflicts)
+
+        CASE QUOTA_EXCEEDED:
+            // Firebase quota limits hit
+            RETURN EnterQuotaConservationMode()
+
+        CASE DATA_CORRUPTION:
+            // Local data is corrupted
+            RETURN InitiateDataRepair(error.corruptedEntities)
+
+        DEFAULT:
+            LogError("Unknown sync error", error)
+            RETURN QueueForManualReview(operation)
+    END SWITCH
+END
+```
+
+This offline sync orchestration system provides:
+
+1. **Intelligent Conflict Resolution**: Automated resolution with fallback to manual review
+2. **Network Optimization**: Adaptive sync based on connection quality
+3. **Battery Efficiency**: Reduced sync frequency on low battery
+4. **Recovery Mechanisms**: Automatic detection and repair of sync issues
+5. **Performance Monitoring**: Real-time metrics and optimization triggers
+6. **Seamless Integration**: Works with all other system components
+
+The system ensures reliable operation in challenging conditions while maintaining optimal performance and user experience.

@@ -1,0 +1,785 @@
+# Phase 4: Integration and Performance - Firebase Optimization
+# Cost optimization, quota management, and efficient Firebase operations
+
+## Data Structures
+
+```
+STRUCTURE: FirebaseQuotaManager
+    dailyReads: integer
+    dailyWrites: integer
+    storageUsed: integer  // bytes
+    bandwidthUsed: integer  // bytes
+    currentDate: date
+    quotaLimits: QuotaLimits
+    conservationMode: boolean
+    batchOperations: BatchQueue
+
+STRUCTURE: QuotaLimits
+    maxDailyReads: integer = 50000      // Firestore free tier
+    maxDailyWrites: integer = 20000     // Firestore free tier
+    maxStorageGB: float = 1.0           // Firestore free tier
+    maxBandwidthGB: float = 10.0        // Firebase hosting free tier
+    warningThreshold: float = 0.8       // Trigger conservation at 80%
+
+STRUCTURE: BatchOperation
+    operations: array<FirestoreOperation>
+    priority: integer
+    estimatedCost: QuotaCost
+    batchType: BatchType  // READ, WRITE, MIXED
+    scheduledTime: timestamp
+    maxBatchSize: integer = 500  // Firestore limit
+
+STRUCTURE: QueryOptimizer
+    indexCache: Map<QueryPattern, IndexInfo>
+    queryCache: LRUCache<QueryKey, QueryResult>
+    costEstimator: CostEstimator
+    queryRewriter: QueryRewriter
+
+STRUCTURE: CostEstimator
+    readCost: integer = 1        // per document read
+    writeCost: integer = 1       // per document write
+    deleteCost: integer = 1      // per document delete
+    indexScanCost: integer = 1   // per index entry scanned
+    queryCost: integer = 1       // minimum per query
+```
+
+## Quota Management System
+
+```
+ALGORITHM: FirebaseQuotaManager
+INPUT: none (monitors continuously)
+OUTPUT: maintains within quota limits
+
+CONSTANTS:
+    QUOTA_CHECK_INTERVAL = 3600000  // 1 hour in milliseconds
+    CONSERVATION_MODE_DURATION = 86400000  // 24 hours
+    BATCH_DELAY_MS = 1000  // Delay between batches
+
+BEGIN
+    INITIALIZE daily counters at midnight
+    INITIALIZE quota limits from Firebase configuration
+
+    WHILE application is active DO
+        // Check if new day started
+        IF IsNewDay() THEN
+            ResetDailyCounters()
+            ExitConservationMode()
+        END IF
+
+        // Monitor current usage
+        currentUsage ← GetCurrentQuotaUsage()
+
+        // Check if approaching limits
+        readUsagePercent ← currentUsage.reads / quotaLimits.maxDailyReads
+        writeUsagePercent ← currentUsage.writes / quotaLimits.maxDailyWrites
+
+        IF readUsagePercent > quotaLimits.warningThreshold OR
+           writeUsagePercent > quotaLimits.warningThreshold THEN
+            EnterConservationMode()
+        END IF
+
+        // Process queued batch operations
+        ProcessBatchQueue()
+
+        WAIT QUOTA_CHECK_INTERVAL
+    END WHILE
+END
+
+SUBROUTINE: EnterConservationMode
+BEGIN
+    conservationMode ← true
+
+    // Reduce background operations
+    DisableAnalyticsSync()
+    DisablePreemptiveDataLoading()
+
+    // Increase cache retention
+    ExtendCacheLifetime(CONSERVATION_MODE_DURATION)
+
+    // Batch more aggressively
+    IncreaseBatchSizes()
+
+    // Notify user about reduced functionality
+    NotifyUserOfConservationMode()
+
+    LogInfo("Entered Firebase conservation mode", {
+        readsUsed: dailyReads,
+        writesUsed: dailyWrites,
+        timestamp: CurrentTimestamp
+    })
+END
+
+SUBROUTINE: ProcessBatchQueue
+BEGIN
+    // Process high priority batches first
+    highPriorityBatches ← batchOperations.getByPriority(8, 10)
+
+    FOR EACH batch IN highPriorityBatches DO
+        IF CanExecuteBatch(batch) THEN
+            ExecuteBatch(batch)
+            WAIT BATCH_DELAY_MS
+        ELSE
+            RescheduleBatch(batch, CalculateDelay())
+        END IF
+    END FOR
+
+    // Process regular batches if quota allows
+    IF NOT conservationMode THEN
+        regularBatches ← batchOperations.getByPriority(1, 7)
+
+        FOR EACH batch IN regularBatches DO
+            IF CanExecuteBatch(batch) THEN
+                ExecuteBatch(batch)
+                WAIT BATCH_DELAY_MS
+            ELSE
+                BREAK  // Stop processing to avoid quota exceed
+            END IF
+        END FOR
+    END IF
+END
+```
+
+## Batch Operation Optimization
+
+```
+ALGORITHM: BatchOperationOptimizer
+INPUT: operations (array<FirestoreOperation>)
+OUTPUT: optimizedBatches (array<BatchOperation>)
+
+BEGIN
+    // Group operations by type and target collection
+    groupedOps ← GroupOperationsByCollection(operations)
+    optimizedBatches ← []
+
+    FOR EACH collection, collectionOps IN groupedOps DO
+        // Separate reads and writes (can't mix in Firestore batches)
+        readOps ← FilterOperationsByType(collectionOps, READ)
+        writeOps ← FilterOperationsByType(collectionOps, WRITE)
+
+        // Optimize read operations
+        IF readOps.size > 0 THEN
+            readBatches ← OptimizeReadOperations(readOps)
+            optimizedBatches.addAll(readBatches)
+        END IF
+
+        // Optimize write operations
+        IF writeOps.size > 0 THEN
+            writeBatches ← OptimizeWriteOperations(writeOps)
+            optimizedBatches.addAll(writeBatches)
+        END IF
+    END FOR
+
+    RETURN optimizedBatches
+END
+
+SUBROUTINE: OptimizeReadOperations
+INPUT: readOps (array<ReadOperation>)
+OUTPUT: batches (array<BatchOperation>)
+
+BEGIN
+    batches ← []
+
+    // Convert individual reads to multi-get where possible
+    documentIds ← ExtractDocumentIds(readOps)
+
+    // Group by collection for efficient multi-get
+    collectionGroups ← GroupByCollection(documentIds)
+
+    FOR EACH collection, ids IN collectionGroups DO
+        // Split into batches of optimal size (Firestore allows 10 in multi-get)
+        idBatches ← SplitIntoChunks(ids, 10)
+
+        FOR EACH idBatch IN idBatches DO
+            batch ← CreateMultiGetBatch(collection, idBatch)
+            batch.estimatedCost ← CalculateReadCost(idBatch.size)
+            batches.add(batch)
+        END FOR
+    END FOR
+
+    RETURN batches
+END
+
+SUBROUTINE: OptimizeWriteOperations
+INPUT: writeOps (array<WriteOperation>)
+OUTPUT: batches (array<BatchOperation>)
+
+BEGIN
+    batches ← []
+
+    // Group by operation type (create, update, delete)
+    creates ← FilterOperationsByType(writeOps, CREATE)
+    updates ← FilterOperationsByType(writeOps, UPDATE)
+    deletes ← FilterOperationsByType(writeOps, DELETE)
+
+    // Create optimized batches (max 500 operations per batch)
+    IF creates.size > 0 THEN
+        createBatches ← CreateWriteBatches(creates, 500)
+        batches.addAll(createBatches)
+    END IF
+
+    IF updates.size > 0 THEN
+        updateBatches ← CreateWriteBatches(updates, 500)
+        batches.addAll(updateBatches)
+    END IF
+
+    IF deletes.size > 0 THEN
+        deleteBatches ← CreateWriteBatches(deletes, 500)
+        batches.addAll(deleteBatches)
+    END IF
+
+    RETURN batches
+END
+```
+
+## Query Optimization
+
+```
+ALGORITHM: FirestoreQueryOptimizer
+INPUT: query (FirestoreQuery)
+OUTPUT: optimizedQuery (OptimizedQuery)
+
+BEGIN
+    // Analyze query structure
+    queryAnalysis ← AnalyzeQuery(query)
+
+    // Check if query uses indexes efficiently
+    indexAnalysis ← AnalyzeIndexUsage(query)
+
+    // Rewrite query for better performance
+    optimizedQuery ← RewriteQuery(query, queryAnalysis, indexAnalysis)
+
+    // Add caching strategy
+    cacheStrategy ← DetermineCacheStrategy(optimizedQuery)
+    optimizedQuery.cacheStrategy ← cacheStrategy
+
+    RETURN optimizedQuery
+END
+
+SUBROUTINE: AnalyzeQuery
+INPUT: query (FirestoreQuery)
+OUTPUT: analysis (QueryAnalysis)
+
+BEGIN
+    analysis ← CreateEmptyAnalysis()
+
+    // Count filters and their types
+    analysis.filterCount ← query.filters.size
+    analysis.hasInequality ← ContainsInequalityFilter(query.filters)
+    analysis.hasArrayContains ← ContainsArrayFilter(query.filters)
+
+    // Analyze ordering
+    analysis.orderByCount ← query.orderBy.size
+    analysis.hasCustomOrder ← query.orderBy.size > 0
+
+    // Check for potential expensive operations
+    analysis.isPotentiallyExpensive ←
+        analysis.filterCount > 3 OR
+        analysis.hasInequality AND analysis.hasCustomOrder OR
+        query.limit > 1000
+
+    // Estimate cost
+    analysis.estimatedCost ← EstimateQueryCost(query)
+
+    RETURN analysis
+END
+
+SUBROUTINE: RewriteQuery
+INPUT: query (FirestoreQuery), analysis (QueryAnalysis), indexAnalysis (IndexAnalysis)
+OUTPUT: optimizedQuery (OptimizedQuery)
+
+BEGIN
+    optimizedQuery ← CopyQuery(query)
+
+    // Optimize filter order (put equality filters first)
+    optimizedQuery.filters ← OptimizeFilterOrder(query.filters)
+
+    // Add composite indexes if needed
+    IF NOT indexAnalysis.hasOptimalIndex THEN
+        suggestedIndex ← SuggestCompositeIndex(query)
+        optimizedQuery.suggestedIndex ← suggestedIndex
+        LogWarning("Composite index needed for optimal performance", suggestedIndex)
+    END IF
+
+    // Optimize limit and pagination
+    IF query.limit > 100 AND NOT query.startAfter THEN
+        // Suggest pagination for large result sets
+        optimizedQuery.suggestPagination ← true
+        optimizedQuery.recommendedPageSize ← 50
+    END IF
+
+    // Add query caching
+    IF IsQueryCacheable(query) THEN
+        optimizedQuery.enableCaching ← true
+        optimizedQuery.cacheKey ← GenerateQueryCacheKey(query)
+    END IF
+
+    RETURN optimizedQuery
+END
+
+SUBROUTINE: EstimateQueryCost
+INPUT: query (FirestoreQuery)
+OUTPUT: cost (integer)
+
+BEGIN
+    baseCost ← 1  // Minimum query cost
+
+    // Add cost for each filter
+    FOR EACH filter IN query.filters DO
+        IF filter.type = EQUALITY THEN
+            baseCost ← baseCost + 1
+        ELSE IF filter.type = INEQUALITY THEN
+            baseCost ← baseCost + 2  // More expensive
+        ELSE IF filter.type = ARRAY_CONTAINS THEN
+            baseCost ← baseCost + 3  // Most expensive
+        END IF
+    END FOR
+
+    // Add cost for ordering
+    IF query.orderBy.size > 0 THEN
+        baseCost ← baseCost + query.orderBy.size
+    END IF
+
+    // Estimate result set impact
+    estimatedResults ← EstimateResultSetSize(query)
+    baseCost ← baseCost + Min(estimatedResults, query.limit)
+
+    RETURN baseCost
+END
+```
+
+## Caching Strategy
+
+```
+ALGORITHM: FirebaseCacheManager
+INPUT: none (manages cache lifecycle)
+OUTPUT: cache efficiency
+
+STRUCTURE: CacheEntry
+    data: object
+    timestamp: timestamp
+    ttl: integer  // time to live in milliseconds
+    accessCount: integer
+    lastAccessed: timestamp
+    size: integer  // bytes
+
+CONSTANTS:
+    DEFAULT_TTL = 300000      // 5 minutes
+    LONG_TTL = 3600000        // 1 hour for stable data
+    SHORT_TTL = 60000         // 1 minute for volatile data
+    MAX_CACHE_SIZE = 50000000 // 50MB total cache size
+
+BEGIN
+    INITIALIZE cache with LRU eviction policy
+    INITIALIZE cache size monitoring
+
+    WHILE application is active DO
+        // Cleanup expired entries
+        CleanupExpiredEntries()
+
+        // Check cache size and evict if needed
+        IF GetCacheSize() > MAX_CACHE_SIZE THEN
+            EvictLeastUsedEntries()
+        END IF
+
+        // Update cache statistics
+        UpdateCacheStatistics()
+
+        WAIT 60000  // Check every minute
+    END WHILE
+END
+
+SUBROUTINE: GetCachedData
+INPUT: cacheKey (string), fallbackQuery (function)
+OUTPUT: data (object)
+
+BEGIN
+    entry ← cache.get(cacheKey)
+
+    IF entry IS NOT NULL AND NOT IsExpired(entry) THEN
+        // Cache hit
+        entry.accessCount ← entry.accessCount + 1
+        entry.lastAccessed ← CurrentTimestamp
+        RecordCacheHit(cacheKey)
+        RETURN entry.data
+    ELSE
+        // Cache miss - fetch from Firebase
+        RecordCacheMiss(cacheKey)
+
+        data ← fallbackQuery()
+
+        // Determine TTL based on data type
+        ttl ← DetermineTTL(data)
+
+        // Cache the result
+        CacheData(cacheKey, data, ttl)
+
+        RETURN data
+    END IF
+END
+
+SUBROUTINE: DetermineTTL
+INPUT: data (object)
+OUTPUT: ttl (integer)
+
+BEGIN
+    // Static data gets longer TTL
+    IF data.type = CIDER_INFO OR data.type = BREWERY_INFO THEN
+        RETURN LONG_TTL
+    END IF
+
+    // User-generated content gets medium TTL
+    IF data.type = EXPERIENCE OR data.type = REVIEW THEN
+        RETURN DEFAULT_TTL
+    END IF
+
+    // Analytics and volatile data gets short TTL
+    IF data.type = ANALYTICS OR data.type = RANKINGS THEN
+        RETURN SHORT_TTL
+    END IF
+
+    // Default TTL
+    RETURN DEFAULT_TTL
+END
+
+SUBROUTINE: InvalidateRelatedCache
+INPUT: entityType (string), entityId (string)
+OUTPUT: invalidatedCount (integer)
+
+BEGIN
+    invalidatedCount ← 0
+
+    // Get all cache keys that might be affected
+    relatedKeys ← GetRelatedCacheKeys(entityType, entityId)
+
+    FOR EACH key IN relatedKeys DO
+        cache.remove(key)
+        invalidatedCount ← invalidatedCount + 1
+    END FOR
+
+    LogInfo("Cache invalidated", {
+        entityType: entityType,
+        entityId: entityId,
+        invalidatedCount: invalidatedCount
+    })
+
+    RETURN invalidatedCount
+END
+```
+
+## Cost-Efficient Data Loading
+
+```
+ALGORITHM: EfficientDataLoader
+INPUT: dataRequest (DataRequest)
+OUTPUT: loadedData (object)
+
+BEGIN
+    // Check cache first
+    cachedData ← GetCachedData(dataRequest.cacheKey, null)
+
+    IF cachedData IS NOT NULL THEN
+        RETURN cachedData
+    END IF
+
+    // Determine loading strategy based on quota usage
+    IF conservationMode THEN
+        RETURN LoadEssentialDataOnly(dataRequest)
+    ELSE
+        RETURN LoadDataWithPreloading(dataRequest)
+    END IF
+END
+
+SUBROUTINE: LoadDataWithPreloading
+INPUT: dataRequest (DataRequest)
+OUTPUT: loadedData (object)
+
+BEGIN
+    // Load requested data
+    primaryData ← LoadPrimaryData(dataRequest)
+
+    // Preload related data if quota allows
+    relatedDataRequests ← GetRelatedDataRequests(dataRequest)
+
+    FOR EACH relatedRequest IN relatedDataRequests DO
+        IF CanExecuteQuery(relatedRequest.estimatedCost) THEN
+            relatedData ← LoadPrimaryData(relatedRequest)
+            CacheData(relatedRequest.cacheKey, relatedData, DEFAULT_TTL)
+        END IF
+    END FOR
+
+    RETURN primaryData
+END
+
+SUBROUTINE: LoadEssentialDataOnly
+INPUT: dataRequest (DataRequest)
+OUTPUT: loadedData (object)
+
+BEGIN
+    // Strip non-essential fields from query
+    essentialRequest ← CreateEssentialDataRequest(dataRequest)
+
+    // Load only critical data
+    essentialData ← LoadPrimaryData(essentialRequest)
+
+    RETURN essentialData
+END
+
+SUBROUTINE: CreateEssentialDataRequest
+INPUT: originalRequest (DataRequest)
+OUTPUT: essentialRequest (DataRequest)
+
+BEGIN
+    essentialRequest ← CopyRequest(originalRequest)
+
+    // Remove non-essential fields based on entity type
+    IF originalRequest.entityType = CIDER THEN
+        essentialRequest.fields ← [
+            "id", "name", "brewery", "style", "abv"
+        ]
+    ELSE IF originalRequest.entityType = EXPERIENCE THEN
+        essentialRequest.fields ← [
+            "id", "ciderId", "rating", "date", "location"
+        ]
+    ELSE IF originalRequest.entityType = VENUE THEN
+        essentialRequest.fields ← [
+            "id", "name", "address", "coordinates"
+        ]
+    END IF
+
+    RETURN essentialRequest
+END
+```
+
+## Firebase Storage Optimization
+
+```
+ALGORITHM: FirebaseStorageOptimizer
+INPUT: none (optimizes storage usage)
+OUTPUT: storage efficiency
+
+BEGIN
+    WHILE application is active DO
+        // Check storage usage
+        currentUsage ← GetStorageUsage()
+
+        IF currentUsage > quotaLimits.maxStorageGB * 0.8 THEN
+            ExecuteStorageCleanup()
+        END IF
+
+        // Optimize image storage
+        OptimizeImageStorage()
+
+        // Compress old data
+        CompressOldDocuments()
+
+        WAIT 86400000  // Daily storage optimization
+    END WHILE
+END
+
+SUBROUTINE: OptimizeImageStorage
+BEGIN
+    // Find large images
+    largeImages ← FindImagesLargerThan(1000000)  // 1MB
+
+    FOR EACH image IN largeImages DO
+        // Compress image if not already compressed
+        IF NOT image.isCompressed THEN
+            compressedImage ← CompressImage(image, 0.8)  // 80% quality
+
+            IF compressedImage.size < image.size * 0.7 THEN
+                ReplaceImage(image, compressedImage)
+                RecordCompressionSavings(image.size - compressedImage.size)
+            END IF
+        END IF
+    END FOR
+END
+
+SUBROUTINE: CompressOldDocuments
+BEGIN
+    // Find documents older than 6 months
+    oldDocuments ← FindDocumentsOlderThan(15768000000)  // 6 months in ms
+
+    FOR EACH doc IN oldDocuments DO
+        // Remove unnecessary fields from old documents
+        compressedDoc ← RemoveNonEssentialFields(doc)
+
+        IF compressedDoc.size < doc.size * 0.8 THEN
+            UpdateDocument(doc.id, compressedDoc)
+        END IF
+    END FOR
+END
+```
+
+## Real-time Listener Optimization
+
+```
+ALGORITHM: RealtimeListenerManager
+INPUT: none (manages listeners lifecycle)
+OUTPUT: minimized real-time costs
+
+STRUCTURE: ListenerRegistry
+    activeListeners: Map<ListenerId, ListenerInfo>
+    listenerGroups: Map<GroupId, array<ListenerId>>
+    costTracker: RealtimeCostTracker
+
+BEGIN
+    INITIALIZE listener registry
+    INITIALIZE cost tracking
+
+    WHILE application is active DO
+        // Monitor listener costs
+        currentCost ← CalculateRealtimeCosts()
+
+        IF currentCost > REALTIME_COST_THRESHOLD THEN
+            OptimizeListeners()
+        END IF
+
+        // Cleanup inactive listeners
+        CleanupInactiveListeners()
+
+        WAIT 300000  // Check every 5 minutes
+    END WHILE
+END
+
+SUBROUTINE: OptimizeListeners
+BEGIN
+    // Group similar listeners
+    similarGroups ← FindSimilarListeners()
+
+    FOR EACH group IN similarGroups DO
+        // Merge listeners with similar queries
+        mergedListener ← MergeListeners(group)
+        ReplaceListeners(group, mergedListener)
+    END FOR
+
+    // Pause non-critical listeners in conservation mode
+    IF conservationMode THEN
+        nonCriticalListeners ← GetNonCriticalListeners()
+
+        FOR EACH listener IN nonCriticalListeners DO
+            PauseListener(listener)
+        END FOR
+    END IF
+END
+
+SUBROUTINE: CreateOptimizedListener
+INPUT: query (FirestoreQuery), callback (function)
+OUTPUT: listenerId (string)
+
+BEGIN
+    // Check if similar listener already exists
+    existingListener ← FindSimilarListener(query)
+
+    IF existingListener IS NOT NULL THEN
+        // Share existing listener
+        RETURN ShareListener(existingListener, callback)
+    END IF
+
+    // Create new listener with optimizations
+    optimizedQuery ← OptimizeQuery(query)
+
+    listener ← CreateRealtimeListener(optimizedQuery, callback)
+    listenerId ← RegisterListener(listener)
+
+    RETURN listenerId
+END
+```
+
+## Analytics and Monitoring
+
+```
+ALGORITHM: FirebaseCostAnalyzer
+INPUT: none (analyzes costs continuously)
+OUTPUT: cost insights and optimizations
+
+STRUCTURE: CostAnalysis
+    dailyCosts: Map<date, DailyCost>
+    operationCosts: Map<OperationType, integer>
+    collectionCosts: Map<CollectionName, integer>
+    trends: CostTrends
+    projections: CostProjections
+
+BEGIN
+    WHILE application is active DO
+        // Analyze current costs
+        currentCosts ← AnalyzeCurrentCosts()
+
+        // Identify cost hotspots
+        hotspots ← IdentifyCostHotspots(currentCosts)
+
+        // Generate optimization recommendations
+        recommendations ← GenerateOptimizationRecommendations(hotspots)
+
+        // Apply automatic optimizations
+        ApplyAutomaticOptimizations(recommendations)
+
+        // Report cost analysis
+        ReportCostAnalysis(currentCosts, recommendations)
+
+        WAIT 3600000  // Hourly analysis
+    END WHILE
+END
+
+SUBROUTINE: IdentifyCostHotspots
+INPUT: costs (CostAnalysis)
+OUTPUT: hotspots (array<CostHotspot>)
+
+BEGIN
+    hotspots ← []
+
+    // Check for collections with high read/write costs
+    FOR EACH collection, cost IN costs.collectionCosts DO
+        IF cost > COLLECTION_COST_THRESHOLD THEN
+            hotspot ← CreateHotspot(COLLECTION, collection, cost)
+            hotspots.add(hotspot)
+        END IF
+    END FOR
+
+    // Check for expensive operation types
+    FOR EACH operation, cost IN costs.operationCosts DO
+        IF cost > OPERATION_COST_THRESHOLD THEN
+            hotspot ← CreateHotspot(OPERATION, operation, cost)
+            hotspots.add(hotspot)
+        END IF
+    END FOR
+
+    RETURN hotspots
+END
+
+SUBROUTINE: GenerateOptimizationRecommendations
+INPUT: hotspots (array<CostHotspot>)
+OUTPUT: recommendations (array<Recommendation>)
+
+BEGIN
+    recommendations ← []
+
+    FOR EACH hotspot IN hotspots DO
+        SWITCH hotspot.type
+            CASE COLLECTION:
+                IF hotspot.collection = "experiences" THEN
+                    recommendations.add("Consider paginating experience queries")
+                    recommendations.add("Cache recent experiences more aggressively")
+                END IF
+
+            CASE OPERATION:
+                IF hotspot.operation = "list_queries" THEN
+                    recommendations.add("Reduce list query frequency")
+                    recommendations.add("Implement more selective filtering")
+                END IF
+        END SWITCH
+    END FOR
+
+    RETURN recommendations
+END
+```
+
+This Firebase optimization system provides:
+
+1. **Quota Management**: Stays within free tier limits (50k reads, 20k writes daily)
+2. **Batch Optimization**: Efficient batching to minimize operation costs
+3. **Query Optimization**: Intelligent query rewriting and caching
+4. **Storage Efficiency**: Automated compression and cleanup
+5. **Real-time Cost Control**: Optimized listener management
+6. **Cost Analytics**: Continuous monitoring and optimization recommendations
+
+The system ensures the app operates efficiently within Firebase's free tier while maintaining full functionality.

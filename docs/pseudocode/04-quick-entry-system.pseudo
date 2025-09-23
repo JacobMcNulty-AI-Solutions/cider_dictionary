@@ -1,0 +1,962 @@
+# Quick Entry System Pseudocode
+# Cider Dictionary - Core User Workflows Phase 2
+
+## Overview
+This pseudocode defines the 30-second quick entry workflow for cider logging,
+implementing progressive disclosure patterns and offline-first functionality
+with intelligent duplicate detection and form optimization.
+
+## Quick Entry Workflow Architecture
+
+### Primary Entry Point
+```
+ALGORITHM: QuickEntryController
+PURPOSE: Orchestrate 30-second cider entry workflow with progressive disclosure
+
+INTERFACE QuickEntryController:
+    PROPERTIES:
+        formState: QuickEntryFormState
+        validationEngine: FormValidationEngine
+        duplicateDetector: DuplicateDetectionEngine
+        draftManager: DraftManager
+        analytics: PerformanceAnalytics
+
+    DEPENDENCIES:
+        - CiderStore (Zustand)
+        - DatabaseService
+        - UserPreferencesStore
+
+FUNCTION initializeQuickEntry(context):
+    INPUT: EntryContext (new_cider | re_entry | from_search)
+    OUTPUT: Initialized form state
+
+    PRECONDITIONS:
+        - User must be authenticated
+        - Local database must be accessible
+
+    BEGIN
+        // Step 1: Initialize form with smart defaults
+        formState = createInitialFormState(context)
+
+        // Step 2: Load user preferences for defaults
+        userPrefs = getUserPreferences()
+        applyPreferencesToForm(formState, userPrefs)
+
+        // Step 3: Restore draft if available
+        IF context.allowDraftRestore THEN
+            draftData = draftManager.loadRecentDraft()
+            IF draftData IS NOT NULL THEN
+                formState = mergeDraftWithFormState(formState, draftData)
+                showDraftRestoredNotification()
+            END IF
+        END IF
+
+        // Step 4: Start performance timer
+        analytics.startTimer("quick_entry_session")
+
+        // Step 5: Initialize auto-save
+        startAutoSave(formState)
+
+        RETURN formState
+    END
+
+    POSTCONDITIONS:
+        - Form is ready for user input
+        - Auto-save is active
+        - Performance tracking started
+```
+
+### Form State Management
+```
+ALGORITHM: QuickEntryFormState
+PURPOSE: Manage form state with validation and auto-save
+
+INTERFACE QuickEntryFormState:
+    CORE_FIELDS:
+        name: string (required)
+        brand: string (required)
+        abv: number (required, 0-20)
+        overallRating: number (required, 1-10)
+
+    OPTIONAL_FIELDS:
+        photo: ImageData (optional)
+        notes: string (optional, max 500 chars)
+        containerType: ContainerType (optional)
+
+    META_FIELDS:
+        isValid: boolean (computed)
+        errors: ValidationError[] (computed)
+        warnings: ValidationWarning[] (computed)
+        isDirty: boolean
+        lastSaved: timestamp
+        duplicateWarning: DuplicateWarning | null
+
+FUNCTION createInitialFormState(context):
+    INPUT: Entry context information
+    OUTPUT: Initial form state
+
+    BEGIN
+        state = {
+            // Core required fields
+            name: "",
+            brand: "",
+            abv: null,
+            overallRating: null,
+
+            // Optional fields
+            photo: null,
+            notes: "",
+            containerType: getUserPreferences().defaultContainerSize,
+
+            // Meta fields
+            isValid: false,
+            errors: [],
+            warnings: [],
+            isDirty: false,
+            lastSaved: null,
+            duplicateWarning: null,
+
+            // UI state
+            showOptionalFields: false,
+            isSubmitting: false,
+            focusedField: "name"
+        }
+
+        // Apply context-specific defaults
+        SWITCH context.type:
+            CASE "re_entry":
+                // Pre-fill venue from last experience
+                state.containerType = context.lastContainerType
+
+            CASE "from_search":
+                // Pre-fill from search selection
+                state.name = context.searchResult.name
+                state.brand = context.searchResult.brand
+
+            DEFAULT:
+                // New entry - use system defaults
+        END SWITCH
+
+        RETURN state
+    END
+```
+
+### Real-time Validation Engine
+```
+ALGORITHM: FormValidationEngine
+PURPOSE: Provide instant feedback with performance optimization
+
+FUNCTION validateFormField(field, value, formState):
+    INPUT: Field name, new value, current form state
+    OUTPUT: ValidationResult
+
+    COMPLEXITY:
+        Time: O(1) for most fields, O(n) for duplicate checking
+        Space: O(1)
+
+    BEGIN
+        result = {
+            isValid: true,
+            errors: [],
+            warnings: [],
+            suggestions: []
+        }
+
+        SWITCH field:
+            CASE "name":
+                result = validateCiderName(value, formState)
+
+            CASE "brand":
+                result = validateBrand(value, formState)
+
+            CASE "abv":
+                result = validateABV(value)
+
+            CASE "overallRating":
+                result = validateRating(value)
+
+            CASE "notes":
+                result = validateNotes(value)
+        END SWITCH
+
+        // Trigger duplicate detection for name+brand combination
+        IF field IN ["name", "brand"] AND value.length >= 2 THEN
+            duplicateCheck = checkForDuplicatesAsync(formState.name, formState.brand)
+            // Non-blocking - results update form state when complete
+        END IF
+
+        RETURN result
+    END
+
+FUNCTION validateCiderName(name, formState):
+    INPUT: Cider name and form state
+    OUTPUT: ValidationResult for name field
+
+    BEGIN
+        result = createValidationResult()
+
+        // Required field validation
+        IF name.trim().length == 0 THEN
+            result.addError("Cider name is required")
+            RETURN result
+        END IF
+
+        IF name.trim().length < 2 THEN
+            result.addError("Name must be at least 2 characters")
+            RETURN result
+        END IF
+
+        IF name.length > 100 THEN
+            result.addError("Name is too long (max 100 characters)")
+            RETURN result
+        END IF
+
+        // Warning for unusual patterns
+        IF containsOnlyNumbers(name) THEN
+            result.addWarning("Name should include text, not just numbers")
+        END IF
+
+        IF hasExcessiveCapitalization(name) THEN
+            result.addSuggestion("Consider using normal capitalization")
+        END IF
+
+        // Autocomplete suggestions
+        IF name.length >= 2 THEN
+            suggestions = getSimilarCiderNames(name)
+            result.suggestions = suggestions.slice(0, 3)
+        END IF
+
+        result.isValid = result.errors.length == 0
+        RETURN result
+    END
+
+FUNCTION validateABV(abv):
+    INPUT: ABV value (number or string)
+    OUTPUT: ValidationResult for ABV field
+
+    BEGIN
+        result = createValidationResult()
+
+        // Convert to number if string
+        numericABV = parseFloat(abv)
+
+        IF isNaN(numericABV) THEN
+            result.addError("ABV must be a number")
+            RETURN result
+        END IF
+
+        IF numericABV < 0 THEN
+            result.addError("ABV cannot be negative")
+            RETURN result
+        END IF
+
+        IF numericABV > 20 THEN
+            result.addError("ABV cannot exceed 20%")
+            RETURN result
+        END IF
+
+        // Warnings for unusual values
+        IF numericABV < 3 THEN
+            result.addWarning("ABV is unusually low for cider (typically 3-12%)")
+        ELSE IF numericABV > 12 THEN
+            result.addWarning("ABV is unusually high for cider (typically 3-12%)")
+        END IF
+
+        // Validation passed
+        result.isValid = true
+        RETURN result
+    END
+
+FUNCTION validateRating(rating):
+    INPUT: Overall rating value
+    OUTPUT: ValidationResult for rating field
+
+    BEGIN
+        result = createValidationResult()
+
+        IF rating == null OR rating == undefined THEN
+            result.addError("Rating is required")
+            RETURN result
+        END IF
+
+        numericRating = parseFloat(rating)
+
+        IF isNaN(numericRating) THEN
+            result.addError("Rating must be a number")
+            RETURN result
+        END IF
+
+        IF numericRating < 1 OR numericRating > 10 THEN
+            result.addError("Rating must be between 1 and 10")
+            RETURN result
+        END IF
+
+        result.isValid = true
+        RETURN result
+    END
+```
+
+### Duplicate Detection Engine
+```
+ALGORITHM: DuplicateDetectionEngine
+PURPOSE: Prevent duplicate entries with intelligent matching
+
+INTERFACE DuplicateDetectionEngine:
+    PROPERTIES:
+        fuzzyMatcher: FuzzyStringMatcher
+        cache: DuplicateCheckCache
+        debounceTimer: Timer
+
+FUNCTION checkForDuplicatesAsync(name, brand):
+    INPUT: Cider name and brand strings
+    OUTPUT: Promise<DuplicateCheckResult>
+
+    COMPLEXITY:
+        Time: O(n * m) where n = user's ciders, m = string comparison cost
+        Space: O(n) for candidate storage
+
+    BEGIN
+        // Debounce rapid successive calls
+        clearTimeout(this.debounceTimer)
+
+        this.debounceTimer = setTimeout(async () => {
+            result = await this.performDuplicateCheck(name, brand)
+            updateFormState(result)
+        }, 300)  // 300ms debounce
+    END
+
+FUNCTION performDuplicateCheck(name, brand):
+    INPUT: Cider name and brand
+    OUTPUT: DuplicateCheckResult
+
+    BEGIN
+        // Step 1: Normalize inputs
+        normalizedName = normalizeCiderName(name)
+        normalizedBrand = normalizeBrand(brand)
+        combinedKey = normalizedName + "|" + normalizedBrand
+
+        // Step 2: Check cache first
+        IF this.cache.has(combinedKey) THEN
+            RETURN this.cache.get(combinedKey)
+        END IF
+
+        // Step 3: Get user's cider collection
+        userCiders = await getUserCiders()
+
+        // Step 4: Exact match check
+        exactMatch = userCiders.find(cider =>
+            normalizeCiderName(cider.name) === normalizedName AND
+            normalizeBrand(cider.brand) === normalizedBrand
+        )
+
+        IF exactMatch THEN
+            result = {
+                isDuplicate: true,
+                confidence: 1.0,
+                matchType: "exact",
+                existingCider: exactMatch,
+                suggestion: "This cider already exists in your collection"
+            }
+            this.cache.set(combinedKey, result)
+            RETURN result
+        END IF
+
+        // Step 5: Fuzzy matching for similar entries
+        similarMatches = []
+
+        FOR EACH cider IN userCiders DO
+            nameScore = this.fuzzyMatcher.calculate(normalizedName, normalizeCiderName(cider.name))
+            brandScore = this.fuzzyMatcher.calculate(normalizedBrand, normalizeBrand(cider.brand))
+
+            // Combined score with name weighted higher
+            combinedScore = (nameScore * 0.7) + (brandScore * 0.3)
+
+            IF combinedScore > 0.8 THEN
+                similarMatches.append({
+                    cider: cider,
+                    score: combinedScore,
+                    nameScore: nameScore,
+                    brandScore: brandScore
+                })
+            END IF
+        END FOR
+
+        // Step 6: Process results
+        IF similarMatches.length > 0 THEN
+            bestMatch = similarMatches.sort((a, b) => b.score - a.score)[0]
+
+            result = {
+                isDuplicate: false,
+                hasSimilar: true,
+                confidence: bestMatch.score,
+                matchType: "fuzzy",
+                existingCider: bestMatch.cider,
+                suggestion: `Similar to "${bestMatch.cider.name}" by ${bestMatch.cider.brand}`
+            }
+        ELSE
+            result = {
+                isDuplicate: false,
+                hasSimilar: false,
+                confidence: 0.0,
+                matchType: "none",
+                suggestion: null
+            }
+        END IF
+
+        // Step 7: Cache result
+        this.cache.set(combinedKey, result)
+        RETURN result
+    END
+
+FUNCTION normalizeCiderName(name):
+    INPUT: Raw cider name
+    OUTPUT: Normalized name for comparison
+
+    BEGIN
+        normalized = name.toLowerCase().trim()
+
+        // Remove common articles and prepositions
+        normalized = normalized.replace(/\b(the|a|an|and|&|of)\b/g, "")
+
+        // Normalize common abbreviations
+        normalized = normalized.replace(/\bco\b/g, "company")
+        normalized = normalized.replace(/\bltd\b/g, "limited")
+        normalized = normalized.replace(/\binc\b/g, "incorporated")
+
+        // Remove special characters except spaces and hyphens
+        normalized = normalized.replace(/[^\w\s\-]/g, "")
+
+        // Collapse multiple spaces
+        normalized = normalized.replace(/\s+/g, " ").trim()
+
+        RETURN normalized
+    END
+
+FUNCTION normalizeBrand(brand):
+    INPUT: Raw brand name
+    OUTPUT: Normalized brand for comparison
+
+    BEGIN
+        // Apply similar normalization as cider name
+        normalized = normalizeCiderName(brand)
+
+        // Additional brand-specific normalizations
+        normalized = normalized.replace(/\bcider\s*(company|co|works|house)\b/g, "")
+        normalized = normalized.replace(/\b(brewery|brewing)\b/g, "")
+
+        RETURN normalized
+    END
+```
+
+### Auto-Save and Draft Management
+```
+ALGORITHM: DraftManager
+PURPOSE: Auto-save form data and manage draft recovery
+
+INTERFACE DraftManager:
+    PROPERTIES:
+        autoSaveInterval: number = 10000  // 10 seconds
+        maxDraftAge: number = 86400000    // 24 hours
+        currentTimer: Timer
+
+FUNCTION startAutoSave(formState):
+    INPUT: Current form state
+    OUTPUT: Started auto-save timer
+
+    BEGIN
+        // Clear any existing timer
+        IF this.currentTimer THEN
+            clearInterval(this.currentTimer)
+        END IF
+
+        // Start new auto-save interval
+        this.currentTimer = setInterval(() => {
+            IF formState.isDirty THEN
+                this.saveDraft(formState)
+            END IF
+        }, this.autoSaveInterval)
+    END
+
+FUNCTION saveDraft(formState):
+    INPUT: Current form state
+    OUTPUT: Draft saved to local storage
+
+    BEGIN
+        // Only save if form has meaningful data
+        IF NOT this.shouldSaveDraft(formState) THEN
+            RETURN
+        END IF
+
+        draftData = {
+            name: formState.name,
+            brand: formState.brand,
+            abv: formState.abv,
+            overallRating: formState.overallRating,
+            notes: formState.notes,
+            containerType: formState.containerType,
+            photo: formState.photo,
+            timestamp: getCurrentTimestamp(),
+            version: "1.0"
+        }
+
+        TRY
+            await saveToMMKV("quick_entry_draft", draftData)
+            formState.lastSaved = getCurrentTimestamp()
+
+        CATCH error AS saveError
+            console.warn("Failed to save draft:", saveError)
+            // Continue - auto-save failure shouldn't block user
+        END TRY
+    END
+
+FUNCTION shouldSaveDraft(formState):
+    INPUT: Form state to check
+    OUTPUT: Boolean whether draft should be saved
+
+    BEGIN
+        // Don't save if no meaningful data entered
+        IF formState.name.length == 0 AND formState.brand.length == 0 THEN
+            RETURN false
+        END IF
+
+        // Don't save if form is invalid due to basic errors
+        IF formState.errors.some(e => e.severity === "critical") THEN
+            RETURN false
+        END IF
+
+        // Save if any field has data
+        RETURN true
+    END
+
+FUNCTION loadRecentDraft():
+    INPUT: None
+    OUTPUT: Draft data or null
+
+    BEGIN
+        TRY
+            draftData = await loadFromMMKV("quick_entry_draft")
+
+            IF draftData == null THEN
+                RETURN null
+            END IF
+
+            // Check if draft is too old
+            draftAge = getCurrentTimestamp() - draftData.timestamp
+            IF draftAge > this.maxDraftAge THEN
+                await removeFromMMKV("quick_entry_draft")
+                RETURN null
+            END IF
+
+            RETURN draftData
+
+        CATCH error AS loadError
+            console.warn("Failed to load draft:", loadError)
+            RETURN null
+        END TRY
+    END
+
+FUNCTION clearDraft():
+    INPUT: None
+    OUTPUT: Draft removed from storage
+
+    BEGIN
+        TRY
+            await removeFromMMKV("quick_entry_draft")
+        CATCH error AS clearError
+            console.warn("Failed to clear draft:", clearError)
+        END TRY
+    END
+```
+
+### Progressive Disclosure Engine
+```
+ALGORITHM: ProgressiveDisclosureEngine
+PURPOSE: Manage expanding form complexity based on user expertise
+
+INTERFACE ProgressiveDisclosureEngine:
+    PROPERTIES:
+        disclosureLevel: "minimal" | "basic" | "detailed" | "expert"
+        userExpertiseScore: number (0-100)
+        sessionContext: SessionContext
+
+FUNCTION determineDisclosureLevel(user, context):
+    INPUT: User data and session context
+    OUTPUT: Appropriate disclosure level
+
+    BEGIN
+        // Calculate user expertise score
+        expertiseScore = calculateExpertiseScore(user)
+
+        // Consider session context
+        sessionFactors = analyzeSessionContext(context)
+
+        // Determine level based on multiple factors
+        IF expertiseScore < 20 AND context.isFirstUse THEN
+            RETURN "minimal"
+        ELSE IF expertiseScore < 50 OR context.quickEntryRequested THEN
+            RETURN "basic"
+        ELSE IF expertiseScore < 80 OR context.timeConstrained THEN
+            RETURN "detailed"
+        ELSE
+            RETURN "expert"
+        END IF
+    END
+
+FUNCTION calculateExpertiseScore(user):
+    INPUT: User data and history
+    OUTPUT: Expertise score (0-100)
+
+    BEGIN
+        score = 0
+
+        // Collection size factor (0-30 points)
+        ciderCount = user.totalCiders
+        score += Math.min(30, ciderCount * 0.5)
+
+        // Detail completion rate (0-25 points)
+        detailRate = calculateDetailCompletionRate(user)
+        score += detailRate * 25
+
+        // Experience logging frequency (0-20 points)
+        experienceRate = calculateExperienceLoggingRate(user)
+        score += experienceRate * 20
+
+        // Advanced feature usage (0-15 points)
+        advancedUsage = calculateAdvancedFeatureUsage(user)
+        score += advancedUsage * 15
+
+        // Time since first use (0-10 points)
+        tenureBonus = calculateTenureBonus(user.createdAt)
+        score += tenureBonus
+
+        RETURN Math.min(100, Math.max(0, score))
+    END
+
+FUNCTION getFieldsForDisclosureLevel(level):
+    INPUT: Disclosure level
+    OUTPUT: Array of field configurations
+
+    BEGIN
+        baseFields = [
+            { name: "name", required: true, order: 1 },
+            { name: "brand", required: true, order: 2 },
+            { name: "abv", required: true, order: 3 },
+            { name: "overallRating", required: true, order: 4 }
+        ]
+
+        SWITCH level:
+            CASE "minimal":
+                RETURN baseFields
+
+            CASE "basic":
+                RETURN baseFields.concat([
+                    { name: "photo", required: false, order: 5 },
+                    { name: "notes", required: false, order: 6 }
+                ])
+
+            CASE "detailed":
+                RETURN baseFields.concat([
+                    { name: "photo", required: false, order: 5 },
+                    { name: "notes", required: false, order: 6 },
+                    { name: "tasteTags", required: false, order: 7 },
+                    { name: "containerType", required: false, order: 8 },
+                    { name: "traditionalStyle", required: false, order: 9 }
+                ])
+
+            CASE "expert":
+                RETURN getAllAvailableFields()
+        END SWITCH
+    END
+```
+
+### Form Submission Controller
+```
+ALGORITHM: FormSubmissionController
+PURPOSE: Handle form submission with validation and error recovery
+
+FUNCTION submitQuickEntry(formState):
+    INPUT: Validated form state
+    OUTPUT: Promise<SubmissionResult>
+
+    PRECONDITIONS:
+        - Form must pass validation
+        - User must be authenticated
+        - No duplicate confirmation required
+
+    BEGIN
+        // Step 1: Final validation
+        finalValidation = validateCompleteForm(formState)
+        IF NOT finalValidation.isValid THEN
+            THROW ValidationError(finalValidation.errors)
+        END IF
+
+        // Step 2: Show submission state
+        updateFormState({ isSubmitting: true })
+        analytics.startTimer("cider_creation")
+
+        // Step 3: Prepare cider data
+        ciderData = mapFormStateToCiderRecord(formState)
+
+        TRY
+            // Step 4: Create cider via store (with optimistic updates)
+            newCider = await ciderStore.addCider(ciderData)
+
+            // Step 5: Handle photo upload if present
+            IF formState.photo THEN
+                photoUrl = await uploadPhoto(formState.photo, newCider.id)
+                await ciderStore.updateCider(newCider.id, { imageUrl: photoUrl })
+            END IF
+
+            // Step 6: Clear draft and reset form
+            await draftManager.clearDraft()
+            analytics.recordSuccess("cider_creation")
+
+            // Step 7: Show success feedback
+            showSuccessNotification("Cider added to your collection!")
+
+            result = {
+                success: true,
+                ciderId: newCider.id,
+                cider: newCider
+            }
+
+            RETURN result
+
+        CATCH error AS submitError
+            // Step 8: Handle submission errors
+            updateFormState({ isSubmitting: false })
+            analytics.recordError("cider_creation", submitError)
+
+            errorMessage = getUserFriendlyErrorMessage(submitError)
+            showErrorNotification(errorMessage)
+
+            THROW SubmissionError(errorMessage, submitError)
+        END TRY
+    END
+
+FUNCTION mapFormStateToCiderRecord(formState):
+    INPUT: Form state data
+    OUTPUT: CiderMasterRecord data
+
+    BEGIN
+        ciderData = {
+            name: formState.name.trim(),
+            brand: formState.brand.trim(),
+            abv: parseFloat(formState.abv),
+            overallRating: parseInt(formState.overallRating),
+            notes: formState.notes.trim() || null,
+            containerTypes: formState.containerType ? [formState.containerType] : [],
+
+            // Progressive disclosure fields (only if provided)
+            tasteTags: formState.tasteTags || [],
+            traditionalStyle: formState.traditionalStyle || null,
+
+            // Auto-populated fields
+            createdAt: getCurrentTimestamp(),
+            userId: getCurrentUserId()
+        }
+
+        // Remove empty or null values
+        RETURN removeEmptyValues(ciderData)
+    END
+
+FUNCTION handleDuplicateConfirmation(duplicateResult, formState):
+    INPUT: Duplicate detection result and form state
+    OUTPUT: User confirmation and action
+
+    BEGIN
+        IF duplicateResult.isDuplicate THEN
+            // Exact duplicate found
+            confirmationMessage = `"${duplicateResult.existingCider.name}" by ${duplicateResult.existingCider.brand} already exists in your collection. Would you like to log a new experience instead?`
+
+            userChoice = await showConfirmationDialog({
+                title: "Duplicate Cider Found",
+                message: confirmationMessage,
+                options: [
+                    { text: "Log Experience", action: "log_experience" },
+                    { text: "Add Anyway", action: "force_create" },
+                    { text: "Cancel", action: "cancel" }
+                ]
+            })
+
+            SWITCH userChoice:
+                CASE "log_experience":
+                    navigateToExperienceEntry(duplicateResult.existingCider.id)
+                    RETURN { action: "redirect_to_experience" }
+
+                CASE "force_create":
+                    RETURN { action: "proceed_with_creation" }
+
+                CASE "cancel":
+                    RETURN { action: "cancel_submission" }
+            END SWITCH
+
+        ELSE IF duplicateResult.hasSimilar THEN
+            // Similar cider found - just warn
+            warningMessage = `This might be similar to "${duplicateResult.existingCider.name}" by ${duplicateResult.existingCider.brand}. Continue?`
+
+            userChoice = await showConfirmationDialog({
+                title: "Similar Cider Found",
+                message: warningMessage,
+                options: [
+                    { text: "Continue", action: "proceed" },
+                    { text: "Review Similar", action: "review" },
+                    { text: "Cancel", action: "cancel" }
+                ]
+            })
+
+            IF userChoice === "proceed" THEN
+                RETURN { action: "proceed_with_creation" }
+            ELSE IF userChoice === "review" THEN
+                showSimilarCiderDetails(duplicateResult.existingCider)
+                RETURN { action: "show_comparison" }
+            ELSE
+                RETURN { action: "cancel_submission" }
+            END IF
+        END IF
+
+        RETURN { action: "proceed_with_creation" }
+    END
+```
+
+### Performance Analytics
+```
+ALGORITHM: QuickEntryAnalytics
+PURPOSE: Track performance metrics for 30-second entry goal
+
+INTERFACE QuickEntryAnalytics:
+    PROPERTIES:
+        sessionStartTime: number
+        timers: Map<string, number>
+        metrics: PerformanceMetrics
+
+FUNCTION trackEntrySession():
+    INPUT: Entry session data
+    OUTPUT: Performance metrics
+
+    BEGIN
+        sessionMetrics = {
+            totalTime: getCurrentTimestamp() - this.sessionStartTime,
+            validationTime: this.getTimerDuration("validation"),
+            duplicateCheckTime: this.getTimerDuration("duplicate_check"),
+            submissionTime: this.getTimerDuration("submission"),
+            fieldCompletionTimes: this.getFieldTimings(),
+            errorCount: this.getErrorCount(),
+            warningCount: this.getWarningCount(),
+            successfulSubmission: this.wasSuccessful()
+        }
+
+        // Check if 30-second goal was met
+        sessionMetrics.metThirtySecondGoal = sessionMetrics.totalTime <= 30000
+
+        // Record metrics for analysis
+        this.recordMetrics(sessionMetrics)
+
+        RETURN sessionMetrics
+    END
+
+FUNCTION identifyBottlenecks():
+    INPUT: Session metrics
+    OUTPUT: Performance improvement suggestions
+
+    BEGIN
+        bottlenecks = []
+
+        IF sessionMetrics.duplicateCheckTime > 2000 THEN
+            bottlenecks.append({
+                area: "duplicate_detection",
+                severity: "high",
+                suggestion: "Optimize fuzzy matching algorithm"
+            })
+        END IF
+
+        IF sessionMetrics.validationTime > 1000 THEN
+            bottlenecks.append({
+                area: "validation",
+                severity: "medium",
+                suggestion: "Reduce validation complexity"
+            })
+        END IF
+
+        IF sessionMetrics.errorCount > 2 THEN
+            bottlenecks.append({
+                area: "user_experience",
+                severity: "high",
+                suggestion: "Improve form guidance and validation messages"
+            })
+        END IF
+
+        RETURN bottlenecks
+    END
+```
+
+## Integration Patterns
+
+### Store Integration
+```
+ALGORITHM: QuickEntryStoreIntegration
+PURPOSE: Integrate with Zustand stores and React Query
+
+FUNCTION connectToStores():
+    INPUT: None
+    OUTPUT: Connected store subscriptions
+
+    BEGIN
+        // Subscribe to cider store for collection updates
+        ciderStore.subscribe(
+            (state) => state.ciders,
+            (ciders) => this.updateDuplicateCache(ciders)
+        )
+
+        // Subscribe to user preferences for form defaults
+        userStore.subscribe(
+            (state) => state.preferences,
+            (preferences) => this.updateFormDefaults(preferences)
+        )
+
+        // Subscribe to network state for offline handling
+        networkStore.subscribe(
+            (state) => state.isOnline,
+            (isOnline) => this.handleNetworkChange(isOnline)
+        )
+    END
+
+FUNCTION handleNetworkChange(isOnline):
+    INPUT: Network connectivity status
+    OUTPUT: Updated UI state and behavior
+
+    BEGIN
+        IF isOnline THEN
+            // Enable photo upload
+            enablePhotoUpload()
+
+            // Sync any pending drafts
+            syncPendingData()
+
+            // Show online indicator
+            showNetworkStatus("online")
+        ELSE
+            // Disable photo upload
+            disablePhotoUpload()
+
+            // Show offline indicator
+            showNetworkStatus("offline")
+
+            // Ensure local save is working
+            verifyLocalStorageAccess()
+        END IF
+    END
+```
+
+This comprehensive quick entry system provides:
+
+1. **30-Second Target**: Optimized workflow for rapid cider entry
+2. **Progressive Disclosure**: Smart expansion based on user expertise
+3. **Intelligent Validation**: Real-time feedback with helpful suggestions
+4. **Duplicate Prevention**: Fuzzy matching to prevent duplicate entries
+5. **Offline-First**: Full functionality without internet connection
+6. **Auto-Save**: Draft management prevents data loss
+7. **Performance Tracking**: Analytics to ensure speed goals are met
+8. **Error Recovery**: Graceful handling of all error conditions
+
+The workflow supports both quick pub entries and detailed expert documentation while maintaining the core 30-second quick entry goal for primary use cases.

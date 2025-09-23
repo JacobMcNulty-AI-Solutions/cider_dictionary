@@ -1,0 +1,583 @@
+# Data Structures Pseudocode
+# Cider Dictionary - Foundation Architecture Phase 1
+
+## Overview
+This pseudocode defines the core data models for the Cider Dictionary application,
+focusing on Firebase-first architecture with progressive disclosure design patterns.
+
+## Core Data Models
+
+### User Data Model
+```
+INTERFACE User:
+    INPUT: Firebase Authentication data
+    OUTPUT: User object with preferences
+
+    STRUCTURE:
+        id: string (Firebase UID)
+        email: string (required)
+        displayName: string (optional)
+        preferences: UserPreferences
+        createdAt: FirebaseTimestamp
+        lastActiveAt: FirebaseTimestamp
+
+    CONSTRAINTS:
+        - id must be unique Firebase UID
+        - email must be valid email format
+        - preferences cannot be null
+
+INTERFACE UserPreferences:
+    STRUCTURE:
+        defaultContainerSize: number (default: 568) // Pint glass in ml
+        ratingScale: "1-5" | "1-10" (default: "1-10")
+        autoLocationCapture: boolean (default: true)
+        units: "metric" | "imperial" (default: "metric")
+        quickEntryDefaults: QuickEntryDefaults
+
+    CONSTRAINTS:
+        - defaultContainerSize must be > 0
+        - ratingScale must be valid enum value
+
+INTERFACE QuickEntryDefaults:
+    STRUCTURE:
+        rememberLastVenue: boolean (default: true)
+        autoFillLocation: boolean (default: true)
+        showDetailedFields: boolean (default: false)
+        enableDuplicateWarnings: boolean (default: true)
+```
+
+### Cider Master Record Data Model
+```
+ALGORITHM: CiderMasterRecord Definition
+PURPOSE: Progressive disclosure cider data structure supporting quick entry and detailed characteristics
+
+INTERFACE CiderMasterRecord:
+    INPUT: User cider entry data
+    OUTPUT: Structured cider record with validation
+
+    // REQUIRED FIELDS (Quick Entry - 30 second target)
+    CORE_DATA:
+        id: string (UUID v4)
+        userId: string (Firebase UID reference)
+        name: string (required, min_length: 2)
+        brand: string (required, min_length: 1)
+        abv: number (required, range: 0-20, precision: 1)
+        overallRating: number (required, range: 1-10)
+
+    // OPTIONAL BASIC FIELDS
+    BASIC_DATA:
+        containerTypes: ContainerType[] (optional)
+        imageUrl: string (optional, Firebase Storage URL)
+        notes: string (optional, max_length: 2000)
+
+    // PROGRESSIVE DISCLOSURE FIELDS (All Optional)
+    DETAILED_CHARACTERISTICS:
+        tasteTags: TasteTag[] (multi-select, unlimited)
+        traditionalStyle: TraditionalStyle (single select)
+        appleCategories: AppleCategory[] (multi-select, Long Ashton)
+        appleVarieties: string[] (free text + predefined options)
+        sweetnessLevel: SweetnessLevel (single select)
+        carbonation: CarbonationLevel (single select)
+        clarity: ClarityLevel (single select)
+        color: ColorLevel (single select)
+        fermentationType: FermentationType (single select)
+        specialProcesses: SpecialProcess[] (multi-select)
+        fruitAdditions: FruitAddition[] (multi-select)
+        hops: HopAddition[] (multi-select)
+        spicesBotanicals: SpiceBotanical[] (multi-select)
+        woodAging: WoodAging[] (multi-select)
+        producerSize: ProducerSize (single select)
+        qualityCertifications: QualityCertification[] (multi-select)
+
+    // DETAILED RATING SYSTEM (Optional)
+    DETAILED_RATINGS:
+        appearance: number (optional, range: 1-10)
+        aroma: number (optional, range: 1-10)
+        taste: number (optional, range: 1-10)
+        mouthfeel: number (optional, range: 1-10)
+
+    // AUTO-CALCULATED FIELDS
+    CALCULATED_FIELDS:
+        valueRating: number (calculated: overallRating / averagePricePerMl)
+        averagePrice: number (mean of all experience prices)
+        pricePerMl: number (averagePrice / averageContainerSize)
+        timesTried: number (count of experience logs)
+        firstTriedDate: FirebaseTimestamp (earliest experience)
+        lastTriedDate: FirebaseTimestamp (most recent experience)
+
+    // METADATA
+    SYSTEM_FIELDS:
+        createdAt: FirebaseTimestamp
+        updatedAt: FirebaseTimestamp
+        syncStatus: "synced" | "pending" | "conflict"
+        version: number (for conflict resolution)
+
+CONSTRAINTS CiderMasterRecord:
+    - name AND brand combination must be unique per user
+    - abv must be numeric between 0 and 20
+    - overallRating required for save operation
+    - all optional fields can be null/undefined
+    - calculated fields are read-only
+    - syncStatus defaults to "pending" for new records
+```
+
+### Experience Log Data Model
+```
+ALGORITHM: ExperienceLog Definition
+PURPOSE: Capture each drinking experience with venue and price context
+
+INTERFACE ExperienceLog:
+    INPUT: User experience entry data
+    OUTPUT: Structured experience record with location and price analysis
+
+    // CORE EXPERIENCE DATA
+    REQUIRED_FIELDS:
+        id: string (UUID v4)
+        userId: string (Firebase UID reference)
+        ciderId: string (CiderMasterRecord reference)
+        date: FirebaseTimestamp (auto-populated, manually adjustable)
+        venue: VenueData (required)
+        price: number (required, currency amount)
+        containerSize: number (required, ml)
+
+    // OPTIONAL FIELDS
+    OPTIONAL_FIELDS:
+        notes: string (optional, max_length: 1000)
+        experienceRating: number (optional, range: 1-10)
+
+    // AUTO-CALCULATED FIELDS
+    CALCULATED_FIELDS:
+        pricePerMl: number (price / containerSize)
+
+    // METADATA
+    SYSTEM_FIELDS:
+        createdAt: FirebaseTimestamp
+        syncStatus: "synced" | "pending" | "conflict"
+
+INTERFACE VenueData:
+    STRUCTURE:
+        name: string (required, normalized for consolidation)
+        type: VenueType (required, predefined enum)
+        location: FirebaseGeoPoint (auto-captured GPS)
+        address: string (optional, reverse geocoded)
+
+CONSTRAINTS ExperienceLog:
+    - ciderId must reference existing CiderMasterRecord
+    - price must be positive number
+    - containerSize must be positive number > 0
+    - venue.name normalized to prevent duplicates
+    - date cannot be future date
+```
+
+### Venue Record Data Model
+```
+ALGORITHM: VenueRecord Definition
+PURPOSE: Aggregated venue analytics and consolidation
+
+INTERFACE VenueRecord:
+    INPUT: Aggregated experience data by venue
+    OUTPUT: Venue analytics and statistics
+
+    // VENUE IDENTIFICATION
+    CORE_DATA:
+        id: string (generated from normalized name + location)
+        userId: string (Firebase UID reference)
+        name: string (normalized venue name)
+        type: VenueType (consolidated from experiences)
+        location: FirebaseGeoPoint (averaged from experiences)
+        address: string (optional, most common address)
+
+    // AGGREGATED ANALYTICS
+    ANALYTICS_DATA:
+        visitCount: number (count of experiences)
+        uniqueCidersCount: number (distinct ciders tried)
+        averagePrice: number (mean price across all experiences)
+        averagePricePerMl: number (mean price per ml)
+        priceRange: PriceRange
+        totalSpent: number (sum of all prices)
+        favoriteVenueType: VenueType (most common type)
+
+    // TEMPORAL DATA
+    TEMPORAL_DATA:
+        firstVisit: FirebaseTimestamp
+        lastVisit: FirebaseTimestamp
+        visitFrequency: number (visits per month)
+        seasonalPattern: SeasonalData
+
+    // METADATA
+    SYSTEM_FIELDS:
+        createdAt: FirebaseTimestamp
+        updatedAt: FirebaseTimestamp
+
+INTERFACE PriceRange:
+    STRUCTURE:
+        min: number
+        max: number
+        median: number
+
+INTERFACE SeasonalData:
+    STRUCTURE:
+        spring: number (visit count)
+        summer: number (visit count)
+        autumn: number (visit count)
+        winter: number (visit count)
+
+CONSTRAINTS VenueRecord:
+    - name normalization prevents duplicate venues
+    - analytics fields are read-only (calculated)
+    - location must be valid GPS coordinates
+    - visitCount must equal sum of experiences
+```
+
+## Enumeration Types
+
+### Container and Venue Types
+```
+ENUM ContainerType:
+    VALUES:
+        "pint_glass_568ml"
+        "half_pint_glass_284ml"
+        "bottle_500ml"
+        "can_440ml"
+        "bottle_330ml"
+        "bottle_275ml"
+        "bottle_750ml"
+        "keg_draught"
+        "bottle_2l"
+        "bag_in_box"
+        "custom_size"
+
+ENUM VenueType:
+    VALUES:
+        "pub"
+        "bar"
+        "restaurant"
+        "tesco"
+        "sainsburys"
+        "asda"
+        "morrisons"
+        "aldi"
+        "lidl"
+        "waitrose"
+        "iceland"
+        "coop"
+        "marks_spencer"
+        "off_license"
+        "bottle_shop"
+        "online_purchase"
+        "cidery_taproom"
+        "farmers_market"
+        "farm_shop"
+        "festival"
+        "concert"
+        "specialist_retailer"
+        "other"
+```
+
+### Cider Characteristic Enums
+```
+ENUM TasteTag:
+    PRIMARY_CHARACTERISTICS:
+        "dry", "sweet", "tart", "sharp", "crisp", "smooth", "refreshing"
+    APPLE_CHARACTER:
+        "fresh_apple", "cooked_apple", "green_apple", "red_apple", "apple_pie", "orchard_fresh"
+    FLAVOR_NOTES:
+        "fruity", "citrus", "tropical", "berry", "stone_fruit", "floral", "honey", "vanilla", "oak", "spicy", "herbal", "earthy", "funky", "yeasty"
+    MOUTHFEEL:
+        "light_bodied", "medium_bodied", "full_bodied", "fizzy", "still", "creamy", "astringent", "tannic", "balanced", "complex"
+
+ENUM TraditionalStyle:
+    VALUES:
+        "west_country_traditional"
+        "eastern_england_traditional"
+        "french_normandy_brittany"
+        "spanish_sidra"
+        "german_apfelwein"
+        "modern_new_world"
+        "american_traditional"
+        "other_regional"
+
+ENUM AppleCategory:
+    VALUES:
+        "bittersweet"  // high tannin, low acid
+        "bittersharp"  // high tannin, high acid
+        "sweet"        // low tannin, low acid
+        "sharp"        // low tannin, high acid
+        "culinary_dessert"
+        "unknown_blend"
+
+ENUM SweetnessLevel:
+    VALUES:
+        "bone_dry"
+        "dry"
+        "off_dry"
+        "medium"
+        "sweet"
+
+ENUM CarbonationLevel:
+    VALUES:
+        "still"
+        "lightly_sparkling"
+        "sparkling"
+        "highly_carbonated"
+
+ENUM ClarityLevel:
+    VALUES:
+        "crystal_clear"
+        "clear"
+        "hazy"
+        "cloudy"
+        "opaque"
+
+ENUM ColorLevel:
+    VALUES:
+        "pale_straw"
+        "golden"
+        "amber"
+        "copper"
+        "ruby"
+        "pink_rose"
+        "dark_amber"
+```
+
+## Firebase Schema Mapping
+
+### Firestore Collection Structure
+```
+ALGORITHM: Firebase Collection Design
+PURPOSE: Optimize for personal-scale usage within free tier limits
+
+COLLECTION_STRUCTURE:
+    /users/{userId}
+        - Document: User profile and preferences
+        - Access: User can only read/write their own document
+
+    /ciders/{ciderId}
+        - Document: CiderMasterRecord
+        - Index: userId (for user's cider queries)
+        - Access: Users can only access their own ciders
+
+    /experiences/{experienceId}
+        - Document: ExperienceLog
+        - Index: userId, ciderId, date
+        - Access: Users can only access their own experiences
+
+    /venues/{venueId}
+        - Document: VenueRecord (aggregated)
+        - Index: userId
+        - Access: Users can only access their own venues
+
+QUERY_OPTIMIZATION:
+    // Efficient queries for 100 ciders, staying within free tier
+    GET_USER_CIDERS:
+        Collection: "ciders"
+        Where: userId == currentUser.uid
+        OrderBy: name ASC
+        Limit: 100 (explicit limit)
+
+    GET_CIDER_EXPERIENCES:
+        Collection: "experiences"
+        Where: ciderId == selectedCider.id AND userId == currentUser.uid
+        OrderBy: date DESC
+
+    GET_RECENT_EXPERIENCES:
+        Collection: "experiences"
+        Where: userId == currentUser.uid
+        OrderBy: date DESC
+        Limit: 50
+
+SECURITY_RULES:
+    // Firestore Security Rules
+    RULE user_data_isolation:
+        - Users can only read/write documents where userId == auth.uid
+        - No cross-user data access permitted
+        - All collections require authentication
+
+    RULE data_validation:
+        - CiderMasterRecord: validate required fields and data types
+        - ExperienceLog: validate ciderId references and positive prices
+        - No deletion of other users' data
+```
+
+## Data Relationships and Integrity
+
+### Primary Relationships
+```
+ALGORITHM: Data Relationship Management
+PURPOSE: Maintain referential integrity across collections
+
+RELATIONSHIPS:
+    User (1) ←→ CiderMasterRecord (Many)
+    User (1) ←→ ExperienceLog (Many)
+    User (1) ←→ VenueRecord (Many)
+    CiderMasterRecord (1) ←→ ExperienceLog (Many)
+    VenueRecord (1) ←→ ExperienceLog (Many)
+
+INTEGRITY_CONSTRAINTS:
+    - ExperienceLog.ciderId must reference existing CiderMasterRecord
+    - All records must have valid userId
+    - Venue consolidation maintains experience references
+    - Calculated fields auto-update when source data changes
+
+CASCADE_OPERATIONS:
+    DELETE_CIDER:
+        - Mark as deleted (soft delete)
+        - Preserve experiences for data integrity
+        - Update venue analytics to exclude deleted cider
+
+    DELETE_EXPERIENCE:
+        - Remove experience record
+        - Recalculate cider analytics (averagePrice, timesTried)
+        - Update venue analytics
+```
+
+## Performance Considerations
+
+### Data Access Patterns
+```
+ALGORITHM: Data Access Optimization
+PURPOSE: Minimize Firebase reads while maintaining responsive UX
+
+ACCESS_PATTERNS:
+    SEARCH_PATTERN:
+        - Local SQLite for instant search results
+        - Firebase for authoritative data
+        - Offline-first with background sync
+
+    ANALYTICS_PATTERN:
+        - Pre-calculated venue aggregations
+        - Lazy loading for detailed analytics
+        - Cached calculations with TTL
+
+    SYNC_PATTERN:
+        - Batch operations to minimize writes
+        - Delta sync for modified records only
+        - Conflict resolution with timestamp comparison
+
+OPTIMIZATION_STRATEGIES:
+    - Single document reads for cider details
+    - Batch queries for experience lists
+    - Composite indexes for common query patterns
+    - Client-side sorting and filtering when possible
+```
+
+## Validation Algorithms
+
+### Input Validation
+```
+ALGORITHM: Data Validation Engine
+PURPOSE: Ensure data integrity and user experience quality
+
+FUNCTION validateCiderData(ciderData):
+    INPUT: CiderMasterRecord partial data
+    OUTPUT: ValidationResult
+
+    BEGIN
+        errors = []
+        warnings = []
+
+        // Required field validation
+        IF ciderData.name IS empty THEN
+            errors.append("Cider name is required")
+        END IF
+
+        IF ciderData.brand IS empty THEN
+            errors.append("Brand is required")
+        END IF
+
+        // ABV validation
+        IF ciderData.abv < 0 OR ciderData.abv > 20 THEN
+            errors.append("ABV must be between 0% and 20%")
+        ELSE IF ciderData.abv < 3 OR ciderData.abv > 12 THEN
+            warnings.append("ABV outside typical cider range (3-12%)")
+        END IF
+
+        // Rating validation
+        IF ciderData.overallRating < 1 OR ciderData.overallRating > 10 THEN
+            errors.append("Rating must be between 1 and 10")
+        END IF
+
+        RETURN {
+            isValid: errors.length == 0,
+            errors: errors,
+            warnings: warnings
+        }
+    END
+
+FUNCTION validateExperienceData(experienceData):
+    INPUT: ExperienceLog partial data
+    OUTPUT: ValidationResult
+
+    BEGIN
+        errors = []
+        warnings = []
+
+        // Price validation
+        IF experienceData.price <= 0 THEN
+            errors.append("Price must be positive")
+        ELSE IF experienceData.price > 100 THEN
+            warnings.append("Price seems unusually high")
+        END IF
+
+        // Container size validation
+        IF experienceData.containerSize <= 0 THEN
+            errors.append("Container size must be positive")
+        END IF
+
+        // Date validation
+        IF experienceData.date > getCurrentTimestamp() THEN
+            errors.append("Experience date cannot be in the future")
+        END IF
+
+        // Venue validation
+        IF experienceData.venue.name IS empty THEN
+            errors.append("Venue name is required")
+        END IF
+
+        RETURN {
+            isValid: errors.length == 0,
+            errors: errors,
+            warnings: warnings
+        }
+    END
+```
+
+## Complex Data Types
+
+### Analytics Data Structures
+```
+INTERFACE CollectionAnalytics:
+    STRUCTURE:
+        totalCiders: number
+        totalExperiences: number
+        totalSpent: number
+        averagePricePerMl: number
+        uniqueCharacteristics: number
+        completenessPercentage: number
+        characteristicBreakdown: CharacteristicBreakdown
+
+INTERFACE CharacteristicBreakdown:
+    STRUCTURE:
+        styles: StyleCoverage[]
+        appleCategories: AppleCategoryCoverage[]
+        processes: ProcessCoverage[]
+        additives: AdditiveCoverage[]
+        regions: RegionalCoverage[]
+
+INTERFACE StyleCoverage:
+    STRUCTURE:
+        style: TraditionalStyle
+        count: number
+        percentage: number
+        examples: string[] (cider names)
+```
+
+This comprehensive data structure foundation provides:
+1. **Progressive Disclosure**: Supporting both quick 30-second entry and detailed expert-level characteristics
+2. **Firebase Optimization**: Designed for personal-scale usage within free tier limits
+3. **Offline-First**: Full data model supporting local storage and sync
+4. **Analytics Ready**: Pre-structured for collection completeness and venue analysis
+5. **Validation Built-In**: Comprehensive validation rules for data integrity
+6. **Performance Optimized**: Query patterns designed for sub-200ms response times
+
+The data structures support all critical user workflows while maintaining the flexibility for future feature expansion.

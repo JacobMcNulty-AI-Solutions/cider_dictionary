@@ -13,7 +13,7 @@ This document defines the complete data structure for the Cider Dictionary app, 
 - **Brand/Producer**: Text (required)
 - **ABV Percentage**: Number (required)
 - **Container Types**: Multi-select from predefined list
-- **Photo**: Image file (required)
+- **Photo**: Image file (optional - can be added retrospectively)
 - **Unstructured Notes**: Free text area
 
 #### Container Type Options
@@ -330,8 +330,12 @@ Other: [Free text]
 - **Aroma**: Smell intensity and character
 - **Taste**: Flavor complexity and balance
 - **Mouthfeel**: Texture, carbonation, body
-- **Value**: Price-to-quality ratio (calculated after first purchase)
+- **Value**: Average price per ml across all experience logs (calculated)
 - **Overall**: Would you drink again rating
+
+**Rating Update Logic:**
+- **Multiple Tastings**: Ratings are averaged across all experiences, not overwritten
+- **Value Calculation**: Automatically calculated as average price per ml from all logged experiences
 
 ### Experience Log Record
 **Created each time you drink a cider**
@@ -385,11 +389,20 @@ Other: [Free text]
 - **Last Tried Date**: Most recent experience log date
 
 #### Collection Progress Tracking
+- **Characteristic Completeness**: Percentage of unique characteristics in your collection
+  - Calculated as: (Unique characteristics logged / Total characteristics in your collection) × 100
+  - Example: 120 unique characteristics out of 150 found across your ciders = 80% complete
 - **Style Coverage**: Which traditional styles have been tried
 - **Apple Category Coverage**: Which Long Ashton categories experienced
 - **Production Method Coverage**: Which special processes sampled
 - **Additive Coverage**: Which additive categories tried
 - **Regional Coverage**: Which UK regions/international styles sampled
+
+#### Data Validation & Integrity
+- **Duplicate Prevention**: Block ciders with identical names, warn for similar names
+- **Input Validation**: Prevent invalid ABV percentages and negative prices
+- **Venue Consolidation**: All variations of same brand (e.g., "Tesco Extra", "Tesco Superstore") grouped under single entry
+- **Spell Check**: Enabled for venue name inputs to reduce typos
 
 #### Analytics & Rankings
 - **Overall Rating Rank**: Position in personal rankings by overall score

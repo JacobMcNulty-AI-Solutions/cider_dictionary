@@ -91,6 +91,12 @@ Our target user:
 ### Collection Completion Goal
 "I would feel like I have tried all ciders once I have logged a cider with every characteristic at least once and I have stopped seeing new ciders that I haven't logged before"
 
+**Collection Completeness Algorithm:**
+- **Definition**: Percentage of characteristics present in YOUR personal collection
+- **Calculation**: (Unique characteristics logged / Total characteristics found across your ciders) × 100
+- **Example**: If your 50 ciders contain 120 unique characteristics out of 150 total found = 80% complete
+- **Dynamic Growth**: Percentage increases as you add more diverse ciders to your collection
+
 ### Long-term Vision: The Ultimate Cider Collector
 Transform the user into someone who:
 - Has systematically tried and documented every possible cider variety

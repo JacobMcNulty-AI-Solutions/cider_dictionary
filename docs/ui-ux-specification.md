@@ -149,12 +149,14 @@ From Quick Log/Add New:
 
 #### Form Sections
 **Venue Selection**:
-- **Dropdown**: Custom styled with search functionality
+- **Dropdown**: Custom styled with search functionality and spell check
 - **Recent venues**: Quick selection chips (last 5 venues)
+- **Venue consolidation**: Auto-group similar names (e.g., "Tesco Extra" → "Tesco")
+- **Manual GPS**: Pin drop option if GPS fails
 - **Animation**: Smooth expand/collapse with content sliding
 
 **Price Input**:
-- **Currency input** with automatic formatting
+- **Currency input** with automatic formatting and validation (no negative prices)
 - **Container size**: Linked input with ml units
 - **Price per ml**: Auto-calculated display with subtle color coding
 
@@ -177,9 +179,10 @@ From Quick Log/Add New:
 - **Bottom navigation** for step control
 
 #### Step 1: Basic Info & Photo
-- **Camera interface**: Native camera with custom overlay
-- **Photo preview**: Rounded corners with retake option
-- **Name/Brand inputs**: Clean text fields with floating labels
+- **Camera interface**: Native camera with custom overlay (optional)
+- **Photo preview**: Rounded corners with retake option, or "Add Photo Later" option
+- **Name/Brand inputs**: Clean text fields with floating labels and duplicate detection warnings
+- **ABV input**: Number validation to prevent invalid percentages
 
 #### Step 2: Classification
 - **Expandable sections** for each category
@@ -285,9 +288,14 @@ From Quick Log/Add New:
 ### 6. Collection Progress
 
 #### Layout Structure
-- **Progress overview**: Completion percentage with circular progress
+- **Progress overview**: Dynamic completion percentage with circular progress
 - **Achievement grid**: Badge-style achievements
 - **Gap analysis**: Missing categories highlighted
+
+#### Progress Calculation
+- **Completeness Formula**: (Unique characteristics logged / Total characteristics found across your ciders) × 100
+- **Dynamic Growth**: Percentage increases as you add more diverse cider characteristics
+- **Personal Journey**: Based only on YOUR collection, no pre-populated data
 
 #### Style Matrix
 - **Grid visualization**: Each style as a card

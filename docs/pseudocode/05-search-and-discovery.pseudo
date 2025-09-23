@@ -41,12 +41,19 @@ FUNCTION performSearch(query, filters, options):
 
     BEGIN
         startTime = getCurrentTimestamp()
+        TIMEOUT_LIMIT = 200 // SPECIFICATION COMPLIANCE: Explicit 200ms timeout
+
+        // PERFORMANCE CONSTRAINT: Set up timeout monitoring
+        timeoutChecker = createTimeoutMonitor(TIMEOUT_LIMIT, startTime)
 
         // Step 1: Input validation and preprocessing
         processedQuery = preprocessSearchQuery(query)
         IF processedQuery.length == 0 THEN
             RETURN createEmptyResult()
         END IF
+
+        // PERFORMANCE CHECK: Ensure we haven't exceeded 20ms for preprocessing
+        timeoutChecker.checkTimeLimit("preprocessing", 20)
 
         // Step 2: Check cache for identical search
         cacheKey = generateCacheKey(processedQuery, filters)
@@ -56,17 +63,39 @@ FUNCTION performSearch(query, filters, options):
             RETURN cachedResult
         END IF
 
+        // PERFORMANCE CHECK: Cache lookup should be under 10ms
+        timeoutChecker.checkTimeLimit("cache_lookup", 30)
+
         // Step 3: Get candidate ciders from local database
         candidates = await getCandidateCiders(processedQuery, filters)
+
+        // PERFORMANCE CHECK: Database query should be under 50ms
+        timeoutChecker.checkTimeLimit("database_query", 80)
 
         // Step 4: Apply fuzzy search algorithm
         scoredResults = this.searchEngine.scoreAndRank(candidates, processedQuery)
 
+        // PERFORMANCE CHECK: Fuzzy search should be under 80ms
+        timeoutChecker.checkTimeLimit("fuzzy_search", 160)
+
         // Step 5: Apply additional filters
         filteredResults = this.filterEngine.applyFilters(scoredResults, filters)
 
+        // PERFORMANCE CHECK: Filtering should be under 20ms
+        timeoutChecker.checkTimeLimit("filtering", 180)
+
         // Step 6: Process and enhance results
         enhancedResults = this.resultProcessor.enhanceResults(filteredResults, processedQuery)
+
+        // FINAL PERFORMANCE CHECK: Total execution must be under 200ms
+        totalTime = getCurrentTimestamp() - startTime
+        IF totalTime > TIMEOUT_LIMIT THEN
+            // Log performance violation
+            this.analytics.recordPerformanceViolation(totalTime, TIMEOUT_LIMIT)
+
+            // Return partial results with warning
+            RETURN createTimeoutResult(enhancedResults, totalTime, TIMEOUT_LIMIT)
+        END IF
 
         // Step 7: Cache results
         searchResult = {
@@ -74,8 +103,9 @@ FUNCTION performSearch(query, filters, options):
             processedQuery: processedQuery,
             results: enhancedResults,
             totalCount: enhancedResults.length,
-            executionTime: getCurrentTimestamp() - startTime,
-            timestamp: getCurrentTimestamp()
+            executionTime: totalTime,
+            timestamp: getCurrentTimestamp(),
+            performanceCompliant: totalTime <= TIMEOUT_LIMIT
         }
 
         this.cache.set(cacheKey, searchResult)
@@ -997,3 +1027,137 @@ This comprehensive search and discovery system provides:
 8. **Scalable Architecture**: Designed for personal collections up to 100+ ciders
 
 The search system balances speed, accuracy, and user experience while maintaining the target performance goals.
+
+## Performance Monitoring Support Functions
+
+### Timeout Monitoring
+```
+ALGORITHM: TimeoutMonitor
+PURPOSE: Enforce 200ms performance constraint with detailed monitoring
+
+FUNCTION createTimeoutMonitor(timeoutLimit, startTime):
+    INPUT: Timeout limit in ms, operation start time
+    OUTPUT: TimeoutMonitor object
+
+    BEGIN
+        monitor = {
+            timeoutLimit: timeoutLimit,
+            startTime: startTime,
+            checkpoints: [],
+            violations: []
+        }
+
+        RETURN monitor
+    END
+
+FUNCTION checkTimeLimit(monitor, operation, cumulativeLimit):
+    INPUT: TimeoutMonitor, operation name, cumulative time limit in ms
+    OUTPUT: void (throws if timeout exceeded)
+
+    BEGIN
+        currentTime = getCurrentTimestamp()
+        elapsed = currentTime - monitor.startTime
+
+        // Record checkpoint
+        checkpoint = {
+            operation: operation,
+            elapsed: elapsed,
+            limit: cumulativeLimit,
+            timestamp: currentTime
+        }
+        monitor.checkpoints.append(checkpoint)
+
+        // Check if we've exceeded the cumulative limit for this operation
+        IF elapsed > cumulativeLimit THEN
+            violation = {
+                operation: operation,
+                elapsed: elapsed,
+                limit: cumulativeLimit,
+                severity: elapsed > monitor.timeoutLimit ? "CRITICAL" : "WARNING"
+            }
+            monitor.violations.append(violation)
+
+            // If we've exceeded the total timeout, throw error
+            IF elapsed > monitor.timeoutLimit THEN
+                THROW TimeoutException(
+                    "Search operation exceeded 200ms limit",
+                    elapsed,
+                    monitor.timeoutLimit,
+                    monitor.checkpoints
+                )
+            END IF
+        END IF
+    END
+
+FUNCTION createTimeoutResult(partialResults, actualTime, timeoutLimit):
+    INPUT: Partial search results, actual execution time, timeout limit
+    OUTPUT: TimeoutResult with warning
+
+    BEGIN
+        RETURN {
+            query: "",
+            results: partialResults,
+            totalCount: partialResults.length,
+            executionTime: actualTime,
+            timeout: true,
+            performanceViolation: true,
+            warning: "Search exceeded " + timeoutLimit + "ms limit (" + actualTime + "ms)",
+            timestamp: getCurrentTimestamp()
+        }
+    END
+```
+
+### Performance Monitoring and Alerts
+```
+ALGORITHM: PerformanceMonitor
+PURPOSE: Track and alert on performance violations
+
+FUNCTION recordPerformanceViolation(actualTime, targetTime):
+    INPUT: Actual execution time, target time limit
+    OUTPUT: void
+
+    BEGIN
+        violation = {
+            actualTime: actualTime,
+            targetTime: targetTime,
+            violation: actualTime - targetTime,
+            percentage: (actualTime / targetTime) * 100,
+            timestamp: getCurrentTimestamp(),
+            stackTrace: getCurrentStackTrace()
+        }
+
+        // Log to analytics
+        Analytics.recordEvent("search_performance_violation", violation)
+
+        // If violation is severe (>300ms), trigger alert
+        IF actualTime > 300 THEN
+            AlertSystem.sendAlert("CRITICAL_SEARCH_PERFORMANCE", violation)
+        END IF
+
+        // Update performance metrics
+        updatePerformanceMetrics(violation)
+    END
+
+FUNCTION updatePerformanceMetrics(violation):
+    INPUT: Performance violation data
+    OUTPUT: void
+
+    BEGIN
+        metrics = getGlobalPerformanceMetrics()
+
+        metrics.totalViolations += 1
+        metrics.totalViolationTime += violation.violation
+        metrics.averageViolation = metrics.totalViolationTime / metrics.totalViolations
+
+        // Update rolling averages
+        metrics.recentViolations.append(violation)
+        IF metrics.recentViolations.length > 100 THEN
+            metrics.recentViolations.removeFirst()
+        END IF
+
+        // Calculate trends
+        metrics.violationTrend = calculateViolationTrend(metrics.recentViolations)
+
+        savePerformanceMetrics(metrics)
+    END
+```

@@ -575,30 +575,28 @@ PURPOSE: Manage expanding form complexity based on user expertise
 
 INTERFACE ProgressiveDisclosureEngine:
     PROPERTIES:
-        disclosureLevel: "minimal" | "basic" | "detailed" | "expert"
+        disclosureLevel: "casual" | "enthusiast" | "expert" // SPECIFICATION COMPLIANCE: 3-level system
         userExpertiseScore: number (0-100)
         sessionContext: SessionContext
 
 FUNCTION determineDisclosureLevel(user, context):
     INPUT: User data and session context
-    OUTPUT: Appropriate disclosure level
+    OUTPUT: Appropriate disclosure level (casual | enthusiast | expert)
 
     BEGIN
-        // Calculate user expertise score
+        // SPECIFICATION COMPLIANCE: Calculate user expertise score for 3-level system
         expertiseScore = calculateExpertiseScore(user)
 
         // Consider session context
         sessionFactors = analyzeSessionContext(context)
 
-        // Determine level based on multiple factors
-        IF expertiseScore < 20 AND context.isFirstUse THEN
-            RETURN "minimal"
-        ELSE IF expertiseScore < 50 OR context.quickEntryRequested THEN
-            RETURN "basic"
-        ELSE IF expertiseScore < 80 OR context.timeConstrained THEN
-            RETURN "detailed"
+        // SPECIFICATION COMPLIANCE: 3-level progressive disclosure (casual → enthusiast → expert)
+        IF expertiseScore < 30 OR context.isFirstUse OR context.quickEntryRequested THEN
+            RETURN "casual"     // Quick entry: name, brand, ABV, rating only
+        ELSE IF expertiseScore < 75 OR context.timeConstrained THEN
+            RETURN "enthusiast" // Basic classification: taste tags, style, basic characteristics
         ELSE
-            RETURN "expert"
+            RETURN "expert"     // Full detail: Long Ashton classification, production methods, detailed ratings
         END IF
     END
 
@@ -644,27 +642,27 @@ FUNCTION getFieldsForDisclosureLevel(level):
             { name: "overallRating", required: true, order: 4 }
         ]
 
+        // SPECIFICATION COMPLIANCE: 3-level progressive disclosure system
         SWITCH level:
-            CASE "minimal":
+            CASE "casual":
+                // Quick 30-second entry - just the 4 required fields
                 RETURN baseFields
 
-            CASE "basic":
-                RETURN baseFields.concat([
-                    { name: "photo", required: false, order: 5 },
-                    { name: "notes", required: false, order: 6 }
-                ])
-
-            CASE "detailed":
+            CASE "enthusiast":
+                // Basic classification for cider enthusiasts
                 RETURN baseFields.concat([
                     { name: "photo", required: false, order: 5 },
                     { name: "notes", required: false, order: 6 },
                     { name: "tasteTags", required: false, order: 7 },
                     { name: "containerType", required: false, order: 8 },
-                    { name: "traditionalStyle", required: false, order: 9 }
+                    { name: "traditionalStyle", required: false, order: 9 },
+                    { name: "sweetnessLevel", required: false, order: 10 },
+                    { name: "carbonation", required: false, order: 11 }
                 ])
 
             CASE "expert":
-                RETURN getAllAvailableFields()
+                // Full Long Ashton classification + production methods
+                RETURN getAllAvailableFields() // Includes all 15+ characteristic categories
         END SWITCH
     END
 ```

@@ -497,6 +497,15 @@ FUNCTION validateCiderData(ciderData):
             errors.append("Rating must be between 1 and 10")
         END IF
 
+        // SPECIFICATION COMPLIANCE: Container type validation
+        IF ciderData.containerTypes IS NOT NULL THEN
+            FOR EACH containerType IN ciderData.containerTypes DO
+                IF NOT isValidContainerType(containerType) THEN
+                    errors.append("Invalid container type: " + containerType)
+                END IF
+            END FOR
+        END IF
+
         RETURN {
             isValid: errors.length == 0,
             errors: errors,
@@ -529,9 +538,23 @@ FUNCTION validateExperienceData(experienceData):
             errors.append("Experience date cannot be in the future")
         END IF
 
-        // Venue validation
+        // SPECIFICATION COMPLIANCE: Enhanced venue validation with consolidation
         IF experienceData.venue.name IS empty THEN
             errors.append("Venue name is required")
+        ELSE
+            // Normalize venue name for consolidation
+            normalizedVenueName = normalizeVenueName(experienceData.venue.name)
+            IF normalizedVenueName !== experienceData.venue.name THEN
+                warnings.append("Venue name normalized to: " + normalizedVenueName)
+                experienceData.venue.name = normalizedVenueName
+            END IF
+
+            // Validate venue type
+            IF experienceData.venue.type IS NOT NULL THEN
+                IF NOT isValidVenueType(experienceData.venue.type) THEN
+                    errors.append("Invalid venue type: " + experienceData.venue.type)
+                END IF
+            END IF
         END IF
 
         RETURN {
@@ -539,6 +562,137 @@ FUNCTION validateExperienceData(experienceData):
             errors: errors,
             warnings: warnings
         }
+    END
+
+### Validation Helper Functions
+```
+FUNCTION isValidContainerType(containerType):
+    INPUT: Container type string
+    OUTPUT: Boolean - true if valid
+
+    BEGIN
+        validTypes = [
+            "pint_glass_568ml",
+            "half_pint_glass_284ml",
+            "bottle_500ml",
+            "can_440ml",
+            "bottle_330ml",
+            "bottle_275ml",
+            "bottle_750ml",
+            "keg_draught",
+            "bottle_2l",
+            "bag_in_box",
+            "custom_size"
+        ]
+
+        RETURN validTypes.includes(containerType)
+    END
+
+FUNCTION isValidVenueType(venueType):
+    INPUT: Venue type string
+    OUTPUT: Boolean - true if valid
+
+    BEGIN
+        validTypes = [
+            "pub", "bar", "restaurant",
+            "tesco", "sainsburys", "asda", "morrisons", "aldi",
+            "lidl", "waitrose", "iceland", "coop", "marks_spencer",
+            "off_license", "bottle_shop", "online_purchase",
+            "cidery_taproom", "farmers_market", "farm_shop",
+            "festival", "concert", "specialist_retailer", "other"
+        ]
+
+        RETURN validTypes.includes(venueType)
+    END
+
+FUNCTION normalizeVenueName(venueName):
+    INPUT: Raw venue name string
+    OUTPUT: Normalized venue name
+
+    BEGIN
+        // SPECIFICATION COMPLIANCE: Venue consolidation rules
+        normalized = venueName.toLowerCase().trim()
+
+        // Remove common suffixes and prefixes
+        normalized = removeCommonWords(normalized)
+
+        // Supermarket consolidation
+        IF normalized.includes("tesco") THEN
+            RETURN "Tesco"
+        ELSE IF normalized.includes("sainsbury") THEN
+            RETURN "Sainsbury's"
+        ELSE IF normalized.includes("asda") THEN
+            RETURN "ASDA"
+        ELSE IF normalized.includes("morrisons") THEN
+            RETURN "Morrisons"
+        ELSE IF normalized.includes("aldi") THEN
+            RETURN "ALDI"
+        ELSE IF normalized.includes("lidl") THEN
+            RETURN "Lidl"
+        ELSE IF normalized.includes("waitrose") THEN
+            RETURN "Waitrose"
+        ELSE IF normalized.includes("iceland") THEN
+            RETURN "Iceland"
+        ELSE IF normalized.includes("coop") OR normalized.includes("co-op") THEN
+            RETURN "Co-op"
+        ELSE IF normalized.includes("marks") AND normalized.includes("spencer") THEN
+            RETURN "Marks & Spencer"
+
+        // Pub chain consolidation
+        ELSE IF normalized.includes("wetherspoon") OR normalized.includes("jd wetherspoon") THEN
+            RETURN "Wetherspoons"
+        ELSE IF normalized.includes("toby carvery") THEN
+            RETURN "Toby Carvery"
+        ELSE IF normalized.includes("harvester") THEN
+            RETURN "Harvester"
+        ELSE IF normalized.includes("beefeater") THEN
+            RETURN "Beefeater"
+
+        // Default: return original with proper capitalization
+        ELSE
+            RETURN properCapitalize(venueName.trim())
+        END IF
+    END
+
+FUNCTION removeCommonWords(text):
+    INPUT: Venue name text
+    OUTPUT: Text with common words removed
+
+    BEGIN
+        commonWords = [
+            "extra", "superstore", "express", "metro", "local",
+            "supermarket", "store", "shop", "the", "pub", "hotel",
+            "inn", "tavern", "restaurant", "bar", "ltd", "limited"
+        ]
+
+        words = text.split(" ")
+        filteredWords = []
+
+        FOR EACH word IN words DO
+            IF NOT commonWords.includes(word.toLowerCase()) THEN
+                filteredWords.append(word)
+            END IF
+        END FOR
+
+        RETURN filteredWords.join(" ")
+    END
+
+FUNCTION properCapitalize(text):
+    INPUT: Text string
+    OUTPUT: Properly capitalized text
+
+    BEGIN
+        words = text.split(" ")
+        capitalizedWords = []
+
+        FOR EACH word IN words DO
+            IF word.length > 0 THEN
+                capitalized = word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
+                capitalizedWords.append(capitalized)
+            END IF
+        END FOR
+
+        RETURN capitalizedWords.join(" ")
     END
 ```
 

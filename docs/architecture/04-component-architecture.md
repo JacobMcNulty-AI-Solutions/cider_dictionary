@@ -7,10 +7,11 @@ The Component Architecture defines a comprehensive React Native component hierar
 ## Component Architecture Principles
 
 ### 1. Progressive Disclosure Pattern
-- **Layered Complexity**: Components support multiple levels of detail (quick → detailed → expert)
+- **Layered Complexity**: Components support three levels of detail (casual → enthusiast → expert)
 - **Contextual Expansion**: Forms and displays adapt based on user expertise and preferences
 - **Performance Optimization**: Only render complexity when needed
 - **Graceful Degradation**: Simpler versions available for performance-constrained scenarios
+- **Specification Compliance**: Implements casual/enthusiast/expert taxonomy from requirements
 
 ### 2. Performance-First Design
 - **Memoization Strategy**: React.memo, useMemo, and useCallback used strategically
@@ -207,13 +208,143 @@ const CollectionHeader: React.FC<CollectionHeaderProps> = React.memo(({
 });
 ```
 
+### Progressive Disclosure Type Definitions
+```typescript
+// SPECIFICATION COMPLIANCE: 3-level progressive disclosure system
+type EntryStep = 'casual' | 'enthusiast' | 'expert';
+
+interface DisclosureConfig {
+  level: EntryStep;
+  requiredFields: string[];
+  optionalFields: string[];
+  maxFields: number;
+  targetTime: number; // seconds
+}
+
+// Progressive disclosure configurations
+const DISCLOSURE_CONFIGS: Record<EntryStep, DisclosureConfig> = {
+  casual: {
+    level: 'casual',
+    requiredFields: ['name', 'brand', 'abv', 'overallRating'],
+    optionalFields: ['photo'],
+    maxFields: 5,
+    targetTime: 30 // 30-second quick entry target
+  },
+  enthusiast: {
+    level: 'enthusiast',
+    requiredFields: ['name', 'brand', 'abv', 'overallRating'],
+    optionalFields: [
+      'photo', 'notes', 'tasteTags', 'containerType',
+      'traditionalStyle', 'sweetnessLevel', 'carbonation'
+    ],
+    maxFields: 11,
+    targetTime: 120 // 2-minute target for enthusiast entry
+  },
+  expert: {
+    level: 'expert',
+    requiredFields: ['name', 'brand', 'abv', 'overallRating'],
+    optionalFields: [
+      // All available fields for comprehensive classification
+      'photo', 'notes', 'tasteTags', 'containerType', 'traditionalStyle',
+      'appleCategories', 'appleVarieties', 'sweetnessLevel', 'carbonation',
+      'clarity', 'color', 'fermentationType', 'specialProcesses',
+      'fruitAdditions', 'hops', 'spicesBotanicals', 'woodAging',
+      'producerSize', 'qualityCertifications', 'appearance', 'aroma', 'taste', 'mouthfeel'
+    ],
+    maxFields: 50,
+    targetTime: 300 // 5-minute target for expert entry
+  }
+};
+
+interface EntryStepManager {
+  currentStep: EntryStep;
+  userExpertiseScore: number;
+  determineOptimalStep(context: EntryContext): EntryStep;
+  getFieldsForStep(step: EntryStep): DisclosureConfig;
+  canAdvanceToStep(step: EntryStep): boolean;
+}
+
+// Progressive disclosure implementation
+class ProgressiveDisclosureManager implements EntryStepManager {
+  currentStep: EntryStep = 'casual';
+  userExpertiseScore: number = 0;
+
+  constructor(private user: User) {
+    this.userExpertiseScore = this.calculateExpertiseScore(user);
+    this.currentStep = this.determineOptimalStep({ isFirstUse: user.totalCiders === 0 });
+  }
+
+  determineOptimalStep(context: EntryContext): EntryStep {
+    // SPECIFICATION COMPLIANCE: 3-level expertise scoring
+    if (this.userExpertiseScore < 30 || context.isFirstUse || context.quickEntryRequested) {
+      return 'casual';     // Quick entry: 4 required fields only
+    } else if (this.userExpertiseScore < 75 || context.timeConstrained) {
+      return 'enthusiast'; // Basic classification
+    } else {
+      return 'expert';     // Full Long Ashton classification
+    }
+  }
+
+  getFieldsForStep(step: EntryStep): DisclosureConfig {
+    return DISCLOSURE_CONFIGS[step];
+  }
+
+  canAdvanceToStep(step: EntryStep): boolean {
+    const requiredScores: Record<EntryStep, number> = {
+      'casual': 0,
+      'enthusiast': 30,
+      'expert': 75
+    };
+
+    return this.userExpertiseScore >= requiredScores[step];
+  }
+
+  private calculateExpertiseScore(user: User): number {
+    // SPECIFICATION COMPLIANCE: Expertise scoring algorithm
+    let score = 0;
+
+    // Collection size factor (0-30 points)
+    const ciderCount = user.totalCiders || 0;
+    score += Math.min(30, ciderCount * 0.5);
+
+    // Detail completion rate (0-25 points)
+    const detailRate = user.averageDetailCompletion || 0;
+    score += detailRate * 25;
+
+    // Experience logging frequency (0-20 points)
+    const experienceRate = user.experienceLogFrequency || 0;
+    score += experienceRate * 20;
+
+    // Advanced feature usage (0-15 points)
+    const advancedUsage = user.advancedFeatureUsage || 0;
+    score += advancedUsage * 15;
+
+    // Account tenure bonus (0-10 points)
+    const tenureMonths = user.accountAgeMonths || 0;
+    const tenureBonus = Math.min(10, tenureMonths * 0.5);
+    score += tenureBonus;
+
+    return Math.min(100, Math.max(0, score));
+  }
+}
+
+interface EntryContext {
+  isFirstUse?: boolean;
+  quickEntryRequested?: boolean;
+  timeConstrained?: boolean;
+  targetTime?: number;
+  currentLocation?: string;
+  venueType?: string;
+}
+```
+
 ### 2. Quick Entry Screen Architecture
 ```typescript
 // Progressive disclosure form with 30-second optimization
 const QuickEntryScreen: React.FC = () => {
   const { addCider } = useAddCider();
   const [formState, setFormState] = useQuickEntryForm();
-  const [currentStep, setCurrentStep] = useState<EntryStep>('basic');
+  const [currentStep, setCurrentStep] = useState<EntryStep>('casual');
 
   // Performance timer for 30-second target
   const { startTimer, recordCompletion } = usePerformanceTimer('quick_entry');

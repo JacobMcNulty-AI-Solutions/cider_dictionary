@@ -861,4 +861,197 @@ export const useRobustDataLoader = <T>(
 };
 ```
 
-This data flow architecture provides a robust foundation for the Cider Dictionary application, ensuring optimal performance, data consistency, and user experience across all application features while maintaining the offline-first principles that are critical to the application's success.
+## Data Model Integration Patterns
+
+### Container Type Validation
+```typescript
+// SPECIFICATION COMPLIANCE: Container type validation patterns
+type ContainerType =
+  | 'pint_glass_568ml'
+  | 'half_pint_glass_284ml'
+  | 'bottle_500ml'
+  | 'can_440ml'
+  | 'bottle_330ml'
+  | 'bottle_275ml'
+  | 'bottle_750ml'
+  | 'keg_draught'
+  | 'bottle_2l'
+  | 'bag_in_box'
+  | 'custom_size';
+
+interface ContainerValidation {
+  validateContainerType(type: string): type is ContainerType;
+  validateContainerSize(size: number): boolean;
+  calculatePricePerMl(price: number, containerType: ContainerType): number;
+}
+
+// Implementation integrates with form validation and experience logging
+const containerValidation: ContainerValidation = {
+  validateContainerType: (type: string): type is ContainerType => {
+    const validTypes: ContainerType[] = [
+      'pint_glass_568ml', 'half_pint_glass_284ml', 'bottle_500ml',
+      'can_440ml', 'bottle_330ml', 'bottle_275ml', 'bottle_750ml',
+      'keg_draught', 'bottle_2l', 'bag_in_box', 'custom_size'
+    ];
+    return validTypes.includes(type as ContainerType);
+  },
+
+  validateContainerSize: (size: number): boolean =>
+    size > 0 && size <= 5000, // 5L maximum container size
+
+  calculatePricePerMl: (price: number, containerType: ContainerType): number => {
+    const containerSizes: Record<ContainerType, number> = {
+      'pint_glass_568ml': 568,
+      'half_pint_glass_284ml': 284,
+      'bottle_500ml': 500,
+      'can_440ml': 440,
+      'bottle_330ml': 330,
+      'bottle_275ml': 275,
+      'bottle_750ml': 750,
+      'keg_draught': 568, // Assume pint serving
+      'bottle_2l': 2000,
+      'bag_in_box': 3000, // Assume 3L average
+      'custom_size': 500 // Default fallback
+    };
+
+    const sizeInMl = containerSizes[containerType];
+    return price / sizeInMl;
+  }
+};
+```
+
+### Venue Consolidation Patterns
+```typescript
+// SPECIFICATION COMPLIANCE: Venue consolidation rules
+interface VenueNormalization {
+  normalizeVenueName(rawName: string): string;
+  consolidateVenueType(rawType: string): VenueType;
+  validateVenueData(venue: Partial<VenueRecord>): ValidationResult;
+}
+
+type VenueType =
+  | 'pub' | 'bar' | 'restaurant'
+  | 'tesco' | 'sainsburys' | 'asda' | 'morrisons'
+  | 'aldi' | 'lidl' | 'waitrose' | 'iceland'
+  | 'coop' | 'marks_spencer'
+  | 'off_license' | 'bottle_shop' | 'online_purchase'
+  | 'cidery_taproom' | 'farmers_market' | 'farm_shop'
+  | 'festival' | 'concert' | 'specialist_retailer' | 'other';
+
+const venueNormalization: VenueNormalization = {
+  normalizeVenueName: (rawName: string): string => {
+    const normalized = rawName.toLowerCase().trim();
+
+    // Supermarket consolidation rules
+    if (normalized.includes('tesco')) return 'Tesco';
+    if (normalized.includes('sainsbury')) return "Sainsbury's";
+    if (normalized.includes('asda')) return 'ASDA';
+    if (normalized.includes('morrisons')) return 'Morrisons';
+    if (normalized.includes('aldi')) return 'ALDI';
+    if (normalized.includes('lidl')) return 'Lidl';
+    if (normalized.includes('waitrose')) return 'Waitrose';
+    if (normalized.includes('iceland')) return 'Iceland';
+    if (normalized.includes('coop') || normalized.includes('co-op')) return 'Co-op';
+    if (normalized.includes('marks') && normalized.includes('spencer')) return 'Marks & Spencer';
+
+    // Pub chain consolidation
+    if (normalized.includes('wetherspoon')) return 'Wetherspoons';
+    if (normalized.includes('toby carvery')) return 'Toby Carvery';
+    if (normalized.includes('harvester')) return 'Harvester';
+    if (normalized.includes('beefeater')) return 'Beefeater';
+
+    // Default: proper case the original name
+    return rawName.split(' ')
+      .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+      .join(' ');
+  },
+
+  consolidateVenueType: (rawType: string): VenueType => {
+    const normalized = rawType.toLowerCase().trim();
+
+    // Direct mapping for major chains
+    const typeMapping: Record<string, VenueType> = {
+      'tesco': 'tesco', 'sainsburys': 'sainsburys', 'asda': 'asda',
+      'morrisons': 'morrisons', 'aldi': 'aldi', 'lidl': 'lidl',
+      'waitrose': 'waitrose', 'iceland': 'iceland', 'coop': 'coop',
+      'marks spencer': 'marks_spencer', 'pub': 'pub', 'bar': 'bar',
+      'restaurant': 'restaurant', 'off license': 'off_license',
+      'bottle shop': 'bottle_shop', 'online': 'online_purchase'
+    };
+
+    return typeMapping[normalized] || 'other';
+  },
+
+  validateVenueData: (venue: Partial<VenueRecord>): ValidationResult => {
+    const errors: string[] = [];
+    const warnings: string[] = [];
+
+    if (!venue.name || venue.name.trim().length === 0) {
+      errors.push('Venue name is required');
+    }
+
+    if (venue.type && !Object.values(['pub', 'bar', 'restaurant', 'tesco', 'sainsburys', 'asda', 'morrisons', 'aldi', 'lidl', 'waitrose', 'iceland', 'coop', 'marks_spencer', 'off_license', 'bottle_shop', 'online_purchase', 'cidery_taproom', 'farmers_market', 'farm_shop', 'festival', 'concert', 'specialist_retailer', 'other']).includes(venue.type)) {
+      errors.push(`Invalid venue type: ${venue.type}`);
+    }
+
+    return {
+      isValid: errors.length === 0,
+      errors,
+      warnings
+    };
+  }
+};
+```
+
+### Data Flow Integration
+```typescript
+// Integration patterns that tie validation into the data flow
+interface DataFlowValidation {
+  validateOnInput: (data: any, type: 'cider' | 'experience' | 'venue') => ValidationResult;
+  normalizeOnSave: (data: any, type: 'cider' | 'experience' | 'venue') => any;
+  validateBeforeSync: (operation: SyncOperation) => boolean;
+}
+
+// Implementation ensures validation occurs at every data touch point
+const dataFlowValidation: DataFlowValidation = {
+  validateOnInput: (data, type) => {
+    switch (type) {
+      case 'cider':
+        return validateCiderData(data);
+      case 'experience':
+        return validateExperienceData(data);
+      case 'venue':
+        return venueNormalization.validateVenueData(data);
+      default:
+        return { isValid: true, errors: [], warnings: [] };
+    }
+  },
+
+  normalizeOnSave: (data, type) => {
+    if (type === 'experience' && data.venue) {
+      data.venue.name = venueNormalization.normalizeVenueName(data.venue.name);
+      data.venue.type = venueNormalization.consolidateVenueType(data.venue.type);
+    }
+
+    if (type === 'experience' && data.containerType) {
+      // Validate and normalize container type
+      if (!containerValidation.validateContainerType(data.containerType)) {
+        throw new Error(`Invalid container type: ${data.containerType}`);
+      }
+    }
+
+    return data;
+  },
+
+  validateBeforeSync: (operation) => {
+    const validation = dataFlowValidation.validateOnInput(operation.data,
+      operation.type.includes('CIDER') ? 'cider' :
+      operation.type.includes('EXPERIENCE') ? 'experience' : 'venue'
+    );
+
+    return validation.isValid;
+  }
+};
+```
+
+This data flow architecture provides a robust foundation for the Cider Dictionary application, ensuring optimal performance, data consistency, and user experience across all application features while maintaining the offline-first principles that are critical to the application's success. The integrated validation and normalization patterns ensure data quality and consistency throughout the entire data lifecycle.

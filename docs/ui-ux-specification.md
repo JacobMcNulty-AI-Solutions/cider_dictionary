@@ -171,33 +171,40 @@ From Quick Log/Add New:
 - **Animation**: Pulse effect on successful save
 - **Loading state**: Spinner with button text change
 
-### 3. Log New Cider
+### 3. Log New Cider (Progressive Disclosure Design)
 
 #### Layout Structure
-- **Multi-step form** with progress indicator
-- **Smooth page transitions** between steps
-- **Bottom navigation** for step control
+- **Single-page form** with quick core section + expandable details
+- **Progressive disclosure** - essential fields first, optional details collapsible
+- **Save button** always visible for quick entry
 
-#### Step 1: Basic Info & Photo
-- **Camera interface**: Native camera with custom overlay (optional)
-- **Photo preview**: Rounded corners with retake option, or "Add Photo Later" option
-- **Name/Brand inputs**: Clean text fields with floating labels and duplicate detection warnings
-- **ABV input**: Number validation to prevent invalid percentages
+#### Core Section (Always Visible - Quick Entry)
+- **Cider Name**: Text input with duplicate detection warnings
+- **Brand**: Text input with autocomplete from previous entries
+- **ABV**: Number input with validation (0-20%)
+- **Overall Rating**: Large, easy-to-use 1-10 star rating
+- **Photo**: Optional camera button with "Add Photo Later" option
 
-#### Step 2: Classification
-- **Expandable sections** for each category
-- **Chip selections**: Multi-select with smooth add/remove animations
-- **Visual feedback**: Selected chips have accent color background
+#### Optional Details Section (Collapsible)
+**"Want to add more details?" - Expandable panel with:**
 
-#### Step 3: Scoring
-- **Rating sliders**: Custom 1-10 sliders with haptic feedback
-- **Category labels**: Clear descriptions for each rating category
-- **Real-time preview**: Overall score calculated and displayed
+**Basic Classification (First Level)**
+- **Taste Tags**: Quick chip selector with popular options
+- **Style**: Simple dropdown with main categories
+- **Characteristics**: Basic toggles (Sweet/Dry, Still/Sparkling, Clear/Cloudy)
 
-#### Step 4: Taste Tags
-- **Tag cloud**: Flowing layout of selectable tags
-- **Search**: Real-time filtering of available tags
-- **Custom tags**: Ability to create new tags inline
+**Advanced Classification (Second Level - Expert Options)**
+- **Apple Categories**: Long Ashton classification for enthusiasts
+- **Production Methods**: Fermentation and special processes
+- **Additives**: Fruits, hops, spices, wood aging
+- **Technical Details**: Detailed characteristics for experts
+- **Additional Ratings**: Appearance, Aroma, Taste, Mouthfeel (optional)
+
+#### Progressive Disclosure Strategy
+- **Default State**: Only core fields visible (clean, non-intimidating)
+- **Basic Details**: First expansion shows simple classification options
+- **Expert Mode**: Second expansion reveals comprehensive tracking options
+- **Smart Save**: Can save at any level - from just core info to full classification
 
 ### 4. Cider Detail Page
 

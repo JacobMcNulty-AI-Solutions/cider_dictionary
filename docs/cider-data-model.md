@@ -6,15 +6,18 @@ This document defines the complete data structure for the Cider Dictionary app, 
 ## Data Structure
 
 ### Cider Master Record
-**Created once per unique cider, contains all identifying characteristics**
+**Created once per unique cider - only basic info required, all detailed characteristics optional**
 
-#### Basic Information
+#### Core Information (Required for Quick Entry)
 - **Cider Name**: Text (required)
 - **Brand/Producer**: Text (required)
-- **ABV Percentage**: Number (required)
-- **Container Types**: Multi-select from predefined list
-- **Photo**: Image file (optional - can be added retrospectively)
-- **Unstructured Notes**: Free text area
+- **ABV Percentage**: Number (required, validated 0-20%)
+- **Overall Rating**: Number 1-10 (required, can be updated later)
+
+#### Basic Details (Optional)
+- **Photo**: Image file (optional - can be added anytime)
+- **Container Types**: Multi-select from predefined list (optional)
+- **Unstructured Notes**: Free text area (optional)
 
 #### Container Type Options
 ```
@@ -31,7 +34,10 @@ This document defines the complete data structure for the Cider Dictionary app, 
 - Custom Size (specify ml)
 ```
 
-#### Taste Tags (Predetermined)
+#### Advanced Characteristics (All Optional - Progressive Disclosure)
+**These detailed fields can be filled out anytime - perfect for cider enthusiasts who want comprehensive tracking**
+
+#### Taste Tags (Optional)
 **Multi-select, unlimited selections allowed**
 ```
 Primary Characteristics:
@@ -80,9 +86,9 @@ Mouthfeel:
 - Complex
 ```
 
-#### Style Classifications
+#### Style Classifications (Optional)
 
-**Traditional Style** (Single select)
+**Traditional Style** (Single select - optional)
 ```
 - West Country Traditional
 - Eastern England Traditional
@@ -94,7 +100,7 @@ Mouthfeel:
 - Other Regional
 ```
 
-**Apple Categories** (Multi-select - Long Ashton classification)
+**Apple Categories** (Multi-select - Long Ashton classification, optional)
 ```
 - Bittersweet (high tannin, low acid)
 - Bittersharp (high tannin, high acid)
@@ -104,7 +110,7 @@ Mouthfeel:
 - Unknown/Blend
 ```
 
-**Specific Apple Varieties** (Multi-select, free text + common options)
+**Specific Apple Varieties** (Multi-select, free text + common options, optional)
 ```
 Heritage Varieties:
 - Kingston Black
@@ -127,9 +133,9 @@ Modern Varieties:
 Other: [Free text input]
 ```
 
-#### Technical Characteristics
+#### Technical Characteristics (All Optional)
 
-**Sweetness Level** (Single select)
+**Sweetness Level** (Single select, optional)
 ```
 - Bone Dry
 - Dry
@@ -138,7 +144,7 @@ Other: [Free text input]
 - Sweet
 ```
 
-**Carbonation** (Single select)
+**Carbonation** (Single select, optional)
 ```
 - Still
 - Lightly Sparkling (Pétillant)
@@ -146,7 +152,7 @@ Other: [Free text input]
 - Highly Carbonated
 ```
 
-**Clarity** (Single select)
+**Clarity** (Single select, optional)
 ```
 - Crystal Clear
 - Clear
@@ -155,7 +161,7 @@ Other: [Free text input]
 - Opaque
 ```
 
-**Color** (Single select)
+**Color** (Single select, optional)
 ```
 - Pale Straw
 - Golden
@@ -166,9 +172,9 @@ Other: [Free text input]
 - Dark Amber
 ```
 
-#### Production Methods
+#### Production Methods (All Optional)
 
-**Fermentation Type** (Single select)
+**Fermentation Type** (Single select, optional)
 ```
 - Wild/Spontaneous
 - Cultured Yeast
@@ -176,7 +182,7 @@ Other: [Free text input]
 - Unknown
 ```
 
-**Special Processes** (Multi-select)
+**Special Processes** (Multi-select, optional)
 ```
 - Keeved
 - Pét-nat (Méthode Ancestrale)
@@ -190,9 +196,9 @@ Other: [Free text input]
 - Solera Aged
 ```
 
-#### Additives & Ingredients
+#### Additives & Ingredients (All Optional)
 
-**Fruit Additions** (Multi-select)
+**Fruit Additions** (Multi-select, optional)
 ```
 None (Apple only):
 - Pure Apple Cider
@@ -224,7 +230,7 @@ Tropical:
 Other: [Free text]
 ```
 
-**Hops** (Multi-select)
+**Hops** (Multi-select, optional)
 ```
 None:
 - No Hops
@@ -247,7 +253,7 @@ Hop Character:
 - Earthy/Spicy
 ```
 
-**Spices & Botanicals** (Multi-select)
+**Spices & Botanicals** (Multi-select, optional)
 ```
 None:
 - No Spices/Botanicals
@@ -276,7 +282,7 @@ Seasonal:
 Other: [Free text]
 ```
 
-**Wood Aging** (Multi-select)
+**Wood Aging** (Multi-select, optional)
 ```
 None:
 - No Wood Aging
@@ -303,9 +309,9 @@ Alternative Woods:
 Other: [Free text]
 ```
 
-#### Quality & Regional Indicators
+#### Quality & Regional Indicators (All Optional)
 
-**Producer Size** (Single select)
+**Producer Size** (Single select, optional)
 ```
 - Farmhouse (< 70 hectoliters)
 - Craft/Small (70-5000 hectoliters)
@@ -314,7 +320,7 @@ Other: [Free text]
 - Industrial/Mass Market
 ```
 
-**Quality Certification** (Multi-select)
+**Quality Certification** (Multi-select, optional)
 ```
 - CAMRA Real Cider (90%+ fresh juice)
 - Organic Certified
@@ -325,16 +331,23 @@ Other: [Free text]
 - Single Variety
 ```
 
-#### 6-Category Scoring (1-10 scale, required)
-- **Appearance**: Visual appeal, color, clarity
-- **Aroma**: Smell intensity and character
-- **Taste**: Flavor complexity and balance
-- **Mouthfeel**: Texture, carbonation, body
-- **Value**: Average price per ml across all experience logs (calculated)
-- **Overall**: Would you drink again rating
+#### Rating System (Simplified for Quick Entry)
+
+**Core Rating (Required)**
+- **Overall**: Would you drink again rating (1-10 scale, required)
+
+**Detailed Ratings (Optional - can be added later)**
+- **Appearance**: Visual appeal, color, clarity (1-10 scale, optional)
+- **Aroma**: Smell intensity and character (1-10 scale, optional)
+- **Taste**: Flavor complexity and balance (1-10 scale, optional)
+- **Mouthfeel**: Texture, carbonation, body (1-10 scale, optional)
+
+**Auto-Calculated Rating**
+- **Value**: Average price per ml across all experience logs (calculated automatically)
 
 **Rating Update Logic:**
-- **Multiple Tastings**: Ratings are averaged across all experiences, not overwritten
+- **Multiple Tastings**: All ratings are averaged across experiences, not overwritten
+- **Quick Entry**: Can start with just overall rating and add detailed ratings later
 - **Value Calculation**: Automatically calculated as average price per ml from all logged experiences
 
 ### Experience Log Record

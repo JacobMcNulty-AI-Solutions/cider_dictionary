@@ -12,11 +12,11 @@ Personal cider journaling mobile application built with React Native and TypeScr
 - **React Native Reanimated** 3.x for smooth animations
 - **React Native Gesture Handler** for swipe interactions
 
-### Backend & Database
-- **Firebase Firestore** for cloud database (real-time sync)
+### Backend & Database (Firebase-First Architecture)
+- **Firebase Firestore** as primary database with built-in offline persistence
 - **Firebase Authentication** for user management and multi-device sync
-- **Firebase Storage** for image storage with custom upload queue
-- **SQLite** (react-native-sqlite-storage) for offline-first local database
+- **Firebase Storage** for image storage with automatic retry
+- **MMKV** for local preferences and app state only (no data mirroring)
 
 ### Maps & Location
 - **Google Maps SDK** for React Native (@react-native-google-maps/maps)
@@ -38,7 +38,7 @@ Personal cider journaling mobile application built with React Native and TypeScr
 
 ## Architecture Overview
 
-### System Architecture
+### Firebase-First Architecture
 ```
 ┌─────────────────────────────────────────────┐
 │                Frontend                     │
@@ -50,28 +50,29 @@ Personal cider journaling mobile application built with React Native and TypeScr
                        │
                        ▼
 ┌─────────────────────────────────────────────┐
-│              Local Storage                  │
+│            Firebase Services                │
 │  ┌─────────────┬─────────────┬─────────────┐│
-│  │   SQLite    │    MMKV     │   Images    ││
-│  │  Database   │ Preferences │   Local     ││
+│  │  Firestore  │   Storage   │   Offline   ││
+│  │ (Primary DB)│  (Images)   │ Persistence ││
 │  └─────────────┴─────────────┴─────────────┘│
 └─────────────────────────────────────────────┘
                        │
                        ▼
 ┌─────────────────────────────────────────────┐
-│               Cloud Services                │
-│  ┌─────────────┬─────────────┬─────────────┐│
-│  │  Firebase   │  Firebase   │   Google    ││
-│  │  Firestore  │   Storage   │    Maps     ││
-│  └─────────────┴─────────────┴─────────────┘│
+│              Local Storage                  │
+│  ┌─────────────┬─────────────┐              │
+│  │    MMKV     │   Image     │              │
+│  │Preferences  │   Cache     │              │
+│  └─────────────┴─────────────┘              │
 └─────────────────────────────────────────────┘
 ```
 
-### Offline-First Architecture
-- **Primary**: Local SQLite database for all operations
-- **Sync**: Firebase Firestore for cloud backup and multi-device sync
-- **Queue**: Custom upload manager for handling offline image uploads
-- **Conflict Resolution**: Timestamp-based with user preference options
+### Simplified Offline Strategy
+- **Primary**: Firebase Firestore as single source of truth
+- **Offline**: Built-in Firebase offline persistence (automatic)
+- **Images**: Firebase Storage with automatic retry (no custom queue needed)
+- **Local**: MMKV for app preferences only
+- **Optimized**: Simple queries for ~100 ciders, staying within free tier
 
 ## Database Schema
 
@@ -92,66 +93,50 @@ interface User {
   lastActiveAt: FirebaseTimestamp;
 }
 
-// Collection: ciders
+// Collection: ciders (Optimized for 100 ciders, Firebase-first)
 interface CiderMasterRecord {
   id: string;
   userId: string;
 
-  // Basic Information
+  // Core Information (Required for quick entry)
   name: string;
   brand: string;
   abv: number;
-  containerTypes: ContainerType[];
-  imageUrl?: string;  // Optional - can be added retrospectively
-  imageUploadStatus: 'pending' | 'uploading' | 'completed' | 'failed';
-  notes: string;
+  overallRating: number; // 1-10, required
 
-  // Taste Tags
-  tasteTags: string[];
+  // Basic Information (Optional)
+  containerTypes?: ContainerType[];
+  imageUrl?: string;
+  notes?: string;
 
-  // Style Classifications
-  traditionalStyle: TraditionalStyle;
-  appleCategories: AppleCategory[];
-  appleVarieties: string[];
+  // Advanced Characteristics (All Optional - Progressive Disclosure)
+  tasteTags?: string[];
+  traditionalStyle?: TraditionalStyle;
+  appleCategories?: AppleCategory[];
+  appleVarieties?: string[];
+  sweetnessLevel?: SweetnessLevel;
+  carbonation?: CarbonationLevel;
+  clarity?: ClarityLevel;
+  color?: ColorLevel;
+  fermentationType?: FermentationType;
+  specialProcesses?: SpecialProcess[];
+  fruitAdditions?: FruitAddition[];
+  hops?: HopAddition[];
+  spicesBotanicals?: SpiceBotanical[];
+  woodAging?: WoodAging[];
+  producerSize?: ProducerSize;
+  qualityCertifications?: QualityCertification[];
 
-  // Technical Characteristics
-  sweetnessLevel: SweetnessLevel;
-  carbonation: CarbonationLevel;
-  clarity: ClarityLevel;
-  color: ColorLevel;
-
-  // Production Methods
-  fermentationType: FermentationType;
-  specialProcesses: SpecialProcess[];
-
-  // Additives & Ingredients
-  fruitAdditions: FruitAddition[];
-  hops: HopAddition[];
-  spicesBotanicals: SpiceBotanical[];
-  woodAging: WoodAging[];
-
-  // Quality Indicators
-  producerSize: ProducerSize;
-  qualityCertifications: QualityCertification[];
-
-  // 6-Category Scoring (1-10)
-  ratings: {
-    appearance: number;
-    aroma: number;
-    taste: number;
-    mouthfeel: number;
-    value: number;  // Calculated as average price per ml across all experiences
-    overall: number;
+  // Simplified Rating System
+  detailedRatings?: {
+    appearance?: number; // Optional detailed ratings
+    aroma?: number;
+    taste?: number;
+    mouthfeel?: number;
   };
 
-  // Rating Update Logic
-  ratingHistory: {
-    appearance: number[];  // Array of all ratings to calculate average
-    aroma: number[];
-    taste: number[];
-    mouthfeel: number[];
-    overall: number[];
-  };
+  // Auto-calculated fields
+  valueRating?: number; // Calculated from experience prices
 
   // Calculated Fields
   averagePrice?: number;
@@ -709,16 +694,22 @@ export const CONFIG = {
 
 ## Cost Analysis
 
-### Firebase Pricing (Estimated Monthly)
-- **Firestore**: ~£5-10 for personal use (25k reads, 5k writes)
-- **Storage**: ~£1-3 for image storage (1-5GB)
-- **Authentication**: Free (up to 10k users)
-- **Hosting**: Free tier sufficient for personal use
+### Firebase Pricing (Optimized for 100 Ciders - Expected FREE)
+- **Firestore**: FREE for 100 ciders (well under 50k reads, 20k writes monthly limit)
+- **Storage**: FREE for 100 cider photos (under 5GB limit)
+- **Authentication**: FREE (single user)
+- **Hosting**: FREE tier sufficient
 
-### Google Maps API
-- **Maps SDK**: £2 per 1000 map loads (free tier: 28k loads/month)
-- **Places API**: £3 per 1000 requests (free tier: small allocation)
+### Google Maps API (Conservative Personal Usage)
+- **Maps SDK**: FREE (under 28k loads/month for personal use)
+- **Places API**: FREE (minimal venue lookups)
 
-### Total Estimated Cost: £0-15/month depending on usage
+### Firebase Optimization Strategies for Free Tier
+- **Simple Queries**: Basic filtering to minimize read operations
+- **Image Compression**: Automatic optimization to stay under storage limits
+- **Cost Monitoring**: Alerts if approaching free tier limits
+- **Efficient Schema**: Optimized data structures for 100-cider scale
+
+### Total Estimated Cost: £0/month (within all free tiers)
 
 This architecture provides a robust, scalable foundation for your cider dictionary app while maintaining cost efficiency and offline-first functionality.

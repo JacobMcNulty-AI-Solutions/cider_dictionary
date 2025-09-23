@@ -1,5 +1,5 @@
 ---
-name: Coder-Agent
+name: coder-agent
 description: Code implementation module for writing clean, efficient code
 model: inherit
 ---

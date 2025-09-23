@@ -1,3 +1,9 @@
+---
+name: sparc-pesudocode-module
+description: SPARC Pseudocode phase module for system design
+model: inherit
+---
+
 # SPARC Pseudocode Module
 
 This module focuses on the Pseudocode phase of the SPARC methodology. Its role is to translate specifications into clear, efficient algorithmic logic.

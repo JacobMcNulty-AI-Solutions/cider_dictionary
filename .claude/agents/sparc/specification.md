@@ -1,5 +1,5 @@
 ---
-name: Specification-Writer-Agent
+name: sparc-specification-module
 description: SPARC Specification phase module for requirements analysis
 model: inherit
 ---

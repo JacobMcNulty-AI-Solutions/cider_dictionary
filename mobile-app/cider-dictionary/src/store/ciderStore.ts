@@ -135,11 +135,27 @@ export const useCiderStore = create<CiderStore>()(
         // await sqliteService.createCider(newCider);
 
         // Update store
-        set(state => ({
-          ciders: [newCider, ...state.ciders],
-          isDirty: true,
-          isLoading: false,
-        }));
+        set(state => {
+          const newCiders = [newCider, ...state.ciders];
+          // Apply current filters to include new cider if it matches
+          const filteredCiders = state.searchQuery
+            ? newCiders.filter(cider =>
+                cider.name.toLowerCase().includes(state.searchQuery.toLowerCase()) ||
+                cider.brand.toLowerCase().includes(state.searchQuery.toLowerCase()) ||
+                (cider.notes && cider.notes.toLowerCase().includes(state.searchQuery.toLowerCase())) ||
+                (cider.tasteTags && cider.tasteTags.some(tag =>
+                  tag.toLowerCase().includes(state.searchQuery.toLowerCase())
+                ))
+              )
+            : newCiders;
+
+          return {
+            ciders: newCiders,
+            filteredCiders,
+            isDirty: true,
+            isLoading: false,
+          };
+        });
 
         // Trigger analytics refresh
         get().refreshAnalytics();
@@ -173,11 +189,27 @@ export const useCiderStore = create<CiderStore>()(
         // await sqliteService.updateCider(id, updatedCider);
 
         // Update store
-        set(state => ({
-          ciders: state.ciders.map(c => c.id === id ? updatedCider : c),
-          isDirty: true,
-          isLoading: false,
-        }));
+        set(state => {
+          const newCiders = state.ciders.map(c => c.id === id ? updatedCider : c);
+          // Apply current filters
+          const filteredCiders = state.searchQuery
+            ? newCiders.filter(cider =>
+                cider.name.toLowerCase().includes(state.searchQuery.toLowerCase()) ||
+                cider.brand.toLowerCase().includes(state.searchQuery.toLowerCase()) ||
+                (cider.notes && cider.notes.toLowerCase().includes(state.searchQuery.toLowerCase())) ||
+                (cider.tasteTags && cider.tasteTags.some(tag =>
+                  tag.toLowerCase().includes(state.searchQuery.toLowerCase())
+                ))
+              )
+            : newCiders;
+
+          return {
+            ciders: newCiders,
+            filteredCiders,
+            isDirty: true,
+            isLoading: false,
+          };
+        });
 
         // Trigger analytics refresh
         get().refreshAnalytics();
@@ -196,11 +228,27 @@ export const useCiderStore = create<CiderStore>()(
         // await sqliteService.deleteCider(id);
 
         // Update store
-        set(state => ({
-          ciders: state.ciders.filter(c => c.id !== id),
-          isDirty: true,
-          isLoading: false,
-        }));
+        set(state => {
+          const newCiders = state.ciders.filter(c => c.id !== id);
+          // Apply current filters
+          const filteredCiders = state.searchQuery
+            ? newCiders.filter(cider =>
+                cider.name.toLowerCase().includes(state.searchQuery.toLowerCase()) ||
+                cider.brand.toLowerCase().includes(state.searchQuery.toLowerCase()) ||
+                (cider.notes && cider.notes.toLowerCase().includes(state.searchQuery.toLowerCase())) ||
+                (cider.tasteTags && cider.tasteTags.some(tag =>
+                  tag.toLowerCase().includes(state.searchQuery.toLowerCase())
+                ))
+              )
+            : newCiders;
+
+          return {
+            ciders: newCiders,
+            filteredCiders,
+            isDirty: true,
+            isLoading: false,
+          };
+        });
 
         // Trigger analytics refresh
         get().refreshAnalytics();
@@ -282,12 +330,23 @@ export const useCiderStore = create<CiderStore>()(
         // TODO: Load from database
         // const ciders = await sqliteService.getAllCiders();
 
-        // Placeholder: empty array for now
-        const ciders: CiderMasterRecord[] = [];
+        // For now, keep existing ciders in memory since no database is implemented
+        const { ciders: existingCiders, searchQuery } = get();
+
+        // Apply current filters to existing ciders
+        const filteredCiders = searchQuery
+          ? existingCiders.filter(cider =>
+              cider.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+              cider.brand.toLowerCase().includes(searchQuery.toLowerCase()) ||
+              (cider.notes && cider.notes.toLowerCase().includes(searchQuery.toLowerCase())) ||
+              (cider.tasteTags && cider.tasteTags.some(tag =>
+                tag.toLowerCase().includes(searchQuery.toLowerCase())
+              ))
+            )
+          : existingCiders;
 
         set({
-          ciders,
-          filteredCiders: ciders,
+          filteredCiders,
           isLoading: false,
           lastSyncTimestamp: Date.now(),
         });

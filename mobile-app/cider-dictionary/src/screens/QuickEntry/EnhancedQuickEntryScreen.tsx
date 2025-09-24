@@ -74,28 +74,19 @@ export default function EnhancedQuickEntryScreen({ navigation }: Props) {
     300
   ));
 
-  // Timer for tracking entry time with error handling
+  // Timer for tracking entry time
   useEffect(() => {
-    try {
-      if (!formState?.startTime) {
-        console.log('formState or startTime not ready, skipping timer setup');
-        return;
-      }
-
-      timerRef.current = setInterval(() => {
-        try {
-          setElapsedTime((Date.now() - formState.startTime) / 1000);
-        } catch (error) {
-          console.warn('Timer calculation error:', error);
-        }
-      }, 1000);
-
-      return () => {
-        if (timerRef.current) clearInterval(timerRef.current);
-      };
-    } catch (error) {
-      console.warn('Timer setup error:', error);
+    if (!formState?.startTime) {
+      return;
     }
+
+    timerRef.current = setInterval(() => {
+      setElapsedTime((Date.now() - formState.startTime) / 1000);
+    }, 1000);
+
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+    };
   }, [formState?.startTime]);
 
   // Handle Android back button
@@ -440,17 +431,11 @@ export default function EnhancedQuickEntryScreen({ navigation }: Props) {
   }, [formState.disclosureLevel]);
 
   const renderFormSection = useCallback((section: ReturnType<typeof getFormSections>[0]) => {
-    console.log('Rendering section:', section.id, 'with', section.fields.length, 'fields');
-
     const sectionFields = section.fields.filter(field =>
       FormDisclosureManager.isFieldVisible(field.key, formState.disclosureLevel)
     );
 
-    console.log('Section fields after filtering:', sectionFields.length, 'fields');
-    console.log('Section fields:', sectionFields.map(f => f.key));
-
     if (sectionFields.length === 0) {
-      console.log('No section fields, returning null');
       return null;
     }
 
@@ -502,7 +487,7 @@ export default function EnhancedQuickEntryScreen({ navigation }: Props) {
 
   return (
     <SafeAreaContainer>
-      <View testID="enhanced-quick-entry-screen">
+      <View testID="enhanced-quick-entry-screen" style={{ flex: 1 }}>
       <ProgressHeader
         level={formState.disclosureLevel}
         elapsedTime={elapsedTime}
@@ -516,8 +501,8 @@ export default function EnhancedQuickEntryScreen({ navigation }: Props) {
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
         <ScrollView
-          style={[styles.scrollView, { minHeight: 400 }]}
-          contentContainerStyle={styles.scrollViewContent}
+          style={styles.scrollView}
+          contentContainerStyle={[styles.scrollViewContent, { flexGrow: 1 }]}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >

@@ -60,13 +60,6 @@ export const mockQuickEntryForm: QuickEntryForm = {
   overallRating: 8,
 };
 
-export const mockAnalyticsData = {
-  totalCiders: 5,
-  averageRating: 7.0,
-  averageAbv: 4.7,
-  highestRated: mockCiderRecords[4], // Rekorderlig Strawberry & Lime
-  lowestRated: mockCiderRecords[3], // Magners Original
-};
 
 // Factory function to create cider records with overrides
 export const createMockCider = (overrides: Partial<BasicCiderRecord> = {}): BasicCiderRecord => ({

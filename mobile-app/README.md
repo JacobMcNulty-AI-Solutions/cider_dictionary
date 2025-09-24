@@ -90,6 +90,16 @@ cd mobile-app/cider-dictionary
 npm install
 ```
 
+### Environment Setup
+
+```bash
+# Copy the environment template
+cp .env.example .env.local
+
+# Edit .env.local with your Firebase credentials (optional for Phase 1)
+# The app will work with placeholder values for Phase 1 testing
+```
+
 ### Running the App
 
 ```bash

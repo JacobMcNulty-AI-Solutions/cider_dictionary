@@ -10,15 +10,15 @@ export interface FirebaseConfig {
   appId: string;
 }
 
-// Phase 1 placeholder configuration
-// In actual deployment, these would be real Firebase project credentials
+// Phase 1 configuration using environment variables
+// Load configuration from environment variables (with fallback values for development)
 export const firebaseConfig: FirebaseConfig = {
-  apiKey: "your-api-key-here",
-  authDomain: "cider-dictionary-phase1.firebaseapp.com",
-  projectId: "cider-dictionary-phase1",
-  storageBucket: "cider-dictionary-phase1.appspot.com",
-  messagingSenderId: "123456789012",
-  appId: "1:123456789012:web:abcdef1234567890"
+  apiKey: process.env.EXPO_PUBLIC_FIREBASE_API_KEY || "your-api-key-here",
+  authDomain: process.env.EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN || "cider-dictionary-phase1.firebaseapp.com",
+  projectId: process.env.EXPO_PUBLIC_FIREBASE_PROJECT_ID || "cider-dictionary-phase1",
+  storageBucket: process.env.EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET || "cider-dictionary-phase1.appspot.com",
+  messagingSenderId: process.env.EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID || "123456789012",
+  appId: process.env.EXPO_PUBLIC_FIREBASE_APP_ID || "1:123456789012:web:abcdef1234567890"
 };
 
 // Basic Firebase service class for Phase 1

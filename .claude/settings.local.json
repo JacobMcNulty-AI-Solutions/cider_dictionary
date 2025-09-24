@@ -9,7 +9,9 @@
       "Bash(npx tsc:*)",
       "Bash(netstat:*)",
       "Bash(findstr:*)",
-      "Bash(taskkill:*)"
+      "Bash(taskkill:*)",
+      "Bash(xargs ls:*)",
+      "Bash(xargs cat:*)"
     ],
     "deny": [],
     "ask": []

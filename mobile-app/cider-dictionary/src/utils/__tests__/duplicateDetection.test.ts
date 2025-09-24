@@ -144,8 +144,18 @@ describe('String Similarity Algorithms', () => {
     });
 
     it('should detect low similarity for different ciders', () => {
-      const cider1 = createMockCiderMasterRecord({ name: 'Traditional Scrumpy', brand: 'Somerset Farm' });
-      const cider2 = createMockCiderMasterRecord({ name: 'Berry Fusion', brand: 'Urban Cidery' });
+      const cider1 = createMockCiderMasterRecord({
+        name: 'Traditional Scrumpy',
+        brand: 'Somerset Farm',
+        abv: 6.5,
+        containerType: 'bottle'
+      });
+      const cider2 = createMockCiderMasterRecord({
+        name: 'Berry Fusion',
+        brand: 'Urban Cidery',
+        abv: 4.2,
+        containerType: 'can'
+      });
 
       const matchResult = CiderMatcher.calculateMatchScore(cider1, cider2);
 
@@ -153,8 +163,18 @@ describe('String Similarity Algorithms', () => {
     });
 
     it('should handle empty or missing fields gracefully', () => {
-      const cider1 = createMockCiderMasterRecord({ name: '', brand: 'Test Brand' });
-      const cider2 = createMockCiderMasterRecord({ name: 'Test Name', brand: '' });
+      const cider1 = createMockCiderMasterRecord({
+        name: '',
+        brand: 'Test Brand',
+        abv: 4.0,
+        containerType: 'can'
+      });
+      const cider2 = createMockCiderMasterRecord({
+        name: 'Test Name',
+        brand: '',
+        abv: 6.0,
+        containerType: 'bottle'
+      });
 
       const matchResult = CiderMatcher.calculateMatchScore(cider1, cider2);
 

@@ -389,7 +389,9 @@ export async function decryptCiderRecord(cider: any): Promise<any> {
   return decryptedCider;
 }
 
-// Initialize encryption service on module load
-EncryptionService.initialize().catch(error => {
-  console.error('Failed to initialize encryption service on startup:', error);
-});
+// Initialize encryption service on module load (skip in test environment)
+if (process.env.NODE_ENV !== 'test' && typeof jest === 'undefined') {
+  EncryptionService.initialize().catch(error => {
+    console.error('Failed to initialize encryption service on startup:', error);
+  });
+}

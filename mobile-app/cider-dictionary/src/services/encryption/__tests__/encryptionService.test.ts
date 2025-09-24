@@ -34,6 +34,19 @@ jest.mock('@react-native-async-storage/async-storage', () => mockAsyncStorage);
 global.btoa = jest.fn().mockImplementation((str: string) => Buffer.from(str, 'binary').toString('base64'));
 global.atob = jest.fn().mockImplementation((str: string) => Buffer.from(str, 'base64').toString('binary'));
 
+// Mock TextEncoder and TextDecoder for Node.js environment
+global.TextEncoder = class TextEncoder {
+  encode(str: string): Uint8Array {
+    return new Uint8Array(Buffer.from(str, 'utf8'));
+  }
+};
+
+global.TextDecoder = class TextDecoder {
+  decode(bytes: Uint8Array): string {
+    return Buffer.from(bytes).toString('utf8');
+  }
+};
+
 // Test fixtures
 const createMockEncryptedData = (overrides: Partial<EncryptedData> = {}): EncryptedData => ({
   encryptedValue: 'dGVzdGVuY3J5cHRlZGRhdGE=', // base64 encoded test data

@@ -331,8 +331,8 @@ export class DuplicateDetectionEngine {
     const ciders = existingCiders || [];
 
     const newCider: Partial<CiderMasterRecord> = {
-      name: name.trim(),
-      brand: brand.trim(),
+      name: name?.trim() || '',
+      brand: brand?.trim() || '',
       abv,
       containerType: containerType as any
     };

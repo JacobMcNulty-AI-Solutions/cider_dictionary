@@ -11,7 +11,8 @@
       "Bash(findstr:*)",
       "Bash(taskkill:*)",
       "Bash(xargs ls:*)",
-      "Bash(xargs cat:*)"
+      "Bash(xargs cat:*)",
+      "mcp__ide__getDiagnostics"
     ],
     "deny": [],
     "ask": []

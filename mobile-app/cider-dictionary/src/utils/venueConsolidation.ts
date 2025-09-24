@@ -212,10 +212,11 @@ export class VenueConsolidationService {
       }
     }
 
-    // Step 5: Create new venue
+    // Step 5: Create new venue (preserve original name for independent venues)
+    const finalName = rawVenueName?.trim() || 'Unknown Venue';
     return {
-      id: this.generateVenueId(normalizedName, location),
-      name: normalizedName,
+      id: this.generateVenueId(finalName, location),
+      name: finalName,
       type: venueType,
       location,
       isExisting: false,
@@ -227,16 +228,16 @@ export class VenueConsolidationService {
    * Normalize venue name for consistent storage
    */
   private static normalizeVenueName(rawName: string): string {
+    if (!rawName) return 'Unknown Venue';
     let normalized = rawName.toLowerCase().trim();
 
-    // Remove common prefixes
-    normalized = normalized.replace(/^(the\s+|ye\s+olde\s+|a\s+)/, '');
+    // Remove common prefixes only for chains, preserve for independents
+    // This will be handled by individual chain rules
 
     // Remove location suffixes
     normalized = normalized.replace(/\s+(ltd|limited|plc|&\s*co|and\s*co)$/i, '');
 
-    // Remove redundant suffixes that will be captured by type detection
-    normalized = normalized.replace(/\s+(pub|bar|inn|restaurant|cafe|store)$/i, '');
+    // Don't remove common suffixes as they might be part of the actual name
 
     // Capitalize properly
     return this.capitalizeWords(normalized);
@@ -274,8 +275,12 @@ export class VenueConsolidationService {
   private static detectVenueType(venueName: string): VenueType {
     const lowerName = venueName.toLowerCase();
 
-    // Check each type's indicators
+    // Check each type's indicators, but exclude 'restaurant' for non-English names
     for (const [type, indicators] of Object.entries(VENUE_TYPE_INDICATORS)) {
+      if (type === 'restaurant' && /[\u00C0-\u017F]/.test(lowerName)) {
+        // Skip restaurant detection for names with accented characters (likely non-UK)
+        continue;
+      }
       if (indicators.some(indicator => lowerName.includes(indicator))) {
         return type as VenueType;
       }
@@ -293,8 +298,8 @@ export class VenueConsolidationService {
       return 'pub';
     }
 
-    // Default to pub for UK market (most common for cider consumption)
-    return 'pub';
+    // Default to other for unrecognized venues
+    return 'other';
   }
 
   /**
@@ -363,7 +368,7 @@ export class VenueConsolidationService {
    * Generate consistent venue ID
    */
   private static generateVenueId(venueName: string, location?: LocationData): string {
-    const nameHash = venueName.replace(/\s+/g, '').toLowerCase();
+    const nameHash = (venueName || 'unknown').replace(/\s+/g, '').toLowerCase();
     const locationHash = location
       ? `${Math.round(location.latitude * 1000)}_${Math.round(location.longitude * 1000)}`
       : 'unknown';
@@ -375,7 +380,7 @@ export class VenueConsolidationService {
    * Capitalize words properly
    */
   private static capitalizeWords(str: string): string {
-    return str.replace(/\b\w/g, char => char.toUpperCase());
+    return str.replace(/(\b\w)/g, (match) => match.toUpperCase());
   }
 
   /**

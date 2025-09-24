@@ -1,0 +1,21 @@
+{
+  "expo": {
+    "name": "Cider Dictionary",
+    "slug": "cider-dictionary",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "backgroundColor": "#007AFF"
+    },
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#007AFF"
+      }
+    },
+    "platforms": ["ios", "android", "web"]
+  }
+}

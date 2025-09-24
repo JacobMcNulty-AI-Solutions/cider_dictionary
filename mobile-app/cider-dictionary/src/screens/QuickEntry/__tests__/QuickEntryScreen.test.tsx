@@ -119,8 +119,11 @@ describe('QuickEntryScreen', () => {
       await waitFor(() => {
         expect(alertSpy).toHaveBeenCalledWith(
           'Error',
-          'Failed to save the cider. Please try again.',
-          [{ text: 'OK' }]
+          'An unexpected error occurred. Please try again.',
+          expect.arrayContaining([
+            expect.objectContaining({ text: 'Retry' }),
+            expect.objectContaining({ text: 'OK' })
+          ])
         );
       });
     });

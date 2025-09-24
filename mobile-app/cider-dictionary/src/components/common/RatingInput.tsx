@@ -1,46 +1,61 @@
-import React from 'react';
+import React, { memo, useMemo, useCallback } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { Rating } from '../../types/cider';
 
 interface Props {
-  rating: number;
-  onRatingChange: (rating: number) => void;
+  rating: Rating;
+  onRatingChange: (rating: Rating) => void;
   maxRating?: number;
   label?: string;
 }
 
-export default function RatingInput({ rating, onRatingChange, maxRating = 10, label }: Props) {
-  const renderStars = () => {
-    const stars = [];
+const RatingInput = memo<Props>(({ rating, onRatingChange, maxRating = 10, label }) => {
+  // Memoize the stars array generation for better performance
+  const stars = useMemo(() => {
+    const starsArray = [];
     for (let i = 1; i <= maxRating; i++) {
-      stars.push(
-        <TouchableOpacity
-          key={i}
-          onPress={() => onRatingChange(i)}
-          style={styles.star}
-          hitSlop={{ top: 10, bottom: 10, left: 5, right: 5 }}
-        >
-          <Ionicons
-            name={i <= rating ? 'star' : 'star-outline'}
-            size={24}
-            color={i <= rating ? '#FFD700' : '#DDD'}
-          />
-        </TouchableOpacity>
-      );
+      starsArray.push(i);
     }
-    return stars;
-  };
+    return starsArray;
+  }, [maxRating]);
+
+  // Memoize the star press handlers to prevent re-creation
+  const createStarPressHandler = useCallback((starValue: number) => {
+    return () => onRatingChange(starValue as Rating);
+  }, [onRatingChange]);
+
+  const renderStar = useCallback((starValue: number) => (
+    <TouchableOpacity
+      key={starValue}
+      onPress={createStarPressHandler(starValue)}
+      style={styles.star}
+      hitSlop={{ top: 10, bottom: 10, left: 5, right: 5 }}
+      accessibilityLabel={`Set rating to ${starValue} stars`}
+      accessibilityRole="button"
+    >
+      <Ionicons
+        name={starValue <= rating ? 'star' : 'star-outline'}
+        size={24}
+        color={starValue <= rating ? '#FFD700' : '#DDD'}
+      />
+    </TouchableOpacity>
+  ), [rating, createStarPressHandler]);
 
   return (
     <View style={styles.container}>
       {label && <Text style={styles.label}>{label}</Text>}
       <View style={styles.starsContainer}>
-        {renderStars()}
+        {stars.map(renderStar)}
         <Text style={styles.ratingText}>{rating}/{maxRating}</Text>
       </View>
     </View>
   );
-}
+});
+
+RatingInput.displayName = 'RatingInput';
+
+export default RatingInput;
 
 const styles = StyleSheet.create({
   container: {

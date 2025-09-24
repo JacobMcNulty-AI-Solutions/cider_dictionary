@@ -1,7 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback, useMemo } from 'react';
 import { View, ScrollView, StyleSheet, Alert, KeyboardAvoidingView, Platform } from 'react-native';
 import { RootTabScreenProps } from '../../types/navigation';
-import { QuickEntryForm } from '../../types/cider';
+import { QuickEntryForm, FormValidationErrors, Rating } from '../../types/cider';
+import { validateQuickEntryForm, sanitizeFormData } from '../../utils/validation';
+import { AppError, DatabaseError, ErrorHandler } from '../../utils/errors';
 import SafeAreaContainer from '../../components/common/SafeAreaContainer';
 import Input from '../../components/common/Input';
 import RatingInput from '../../components/common/RatingInput';
@@ -15,65 +17,49 @@ export default function QuickEntryScreen({ navigation }: Props) {
     name: '',
     brand: '',
     abv: 0,
-    overallRating: 5, // Default to middle rating
+    overallRating: 5 as Rating, // Default to middle rating
   });
 
   const [isLoading, setIsLoading] = useState(false);
-  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [errors, setErrors] = useState<FormValidationErrors>({});
 
-  const validateForm = (): boolean => {
-    const newErrors: Record<string, string> = {};
+  // Memoize validation result to prevent unnecessary re-computations
+  const validationResult = useMemo(() => {
+    return validateQuickEntryForm(formData);
+  }, [formData]);
 
-    if (!formData.name.trim()) {
-      newErrors.name = 'Cider name is required';
-    }
+  // Use the validation result
+  const isFormValid = validationResult.isValid;
 
-    if (!formData.brand.trim()) {
-      newErrors.brand = 'Brand is required';
-    }
+  const handleSubmit = useCallback(async () => {
+    // Update errors first
+    setErrors(validationResult.errors);
 
-    if (formData.abv <= 0 || formData.abv > 20) {
-      newErrors.abv = 'ABV must be between 0.1% and 20%';
-    }
-
-    if (formData.overallRating < 1 || formData.overallRating > 10) {
-      newErrors.overallRating = 'Rating must be between 1 and 10';
-    }
-
-    setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
-  };
-
-  const handleSubmit = async () => {
-    if (!validateForm()) {
+    if (!validationResult.isValid) {
       return;
     }
 
     setIsLoading(true);
 
     try {
+      // Sanitize form data
+      const sanitizedData = sanitizeFormData(formData);
+
       // Initialize database if not already done
       await sqliteService.initializeDatabase();
 
-      // Create the cider record
+      // Create the cider record with sanitized data
       const newCider = await sqliteService.createCider({
-        name: formData.name.trim(),
-        brand: formData.brand.trim(),
-        abv: formData.abv,
-        overallRating: formData.overallRating,
+        name: sanitizedData.name,
+        brand: sanitizedData.brand,
+        abv: sanitizedData.abv,
+        overallRating: sanitizedData.overallRating,
       });
 
       console.log('New cider created:', newCider);
 
       // Reset form
-      setFormData({
-        name: '',
-        brand: '',
-        abv: 0,
-        overallRating: 5,
-      });
-
-      setErrors({});
+      resetForm();
 
       Alert.alert(
         'Success!',
@@ -91,28 +77,60 @@ export default function QuickEntryScreen({ navigation }: Props) {
         ]
       );
     } catch (error) {
-      console.error('Failed to save cider:', error);
-      Alert.alert(
-        'Error',
-        'Failed to save the cider. Please try again.',
-        [{ text: 'OK' }]
-      );
+      const appError = ErrorHandler.fromUnknown(error, 'QuickEntryScreen.handleSubmit');
+      ErrorHandler.log(appError, 'QuickEntryScreen.handleSubmit');
+
+      // Show user-friendly error message
+      const userMessage = appError instanceof AppError
+        ? appError.getUserMessage()
+        : 'Failed to save the cider. Please try again.';
+
+      const alertButtons = [{ text: 'OK' }];
+
+      // Add retry button for retryable errors
+      if (appError instanceof AppError && appError.isRetryable()) {
+        alertButtons.unshift({
+          text: 'Retry',
+          onPress: () => handleSubmit(),
+        });
+      }
+
+      Alert.alert('Error', userMessage, alertButtons);
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [formData, validationResult, navigation]);
 
-  const updateFormData = (field: keyof QuickEntryForm) => (value: string | number) => {
-    setFormData(prev => ({ ...prev, [field]: value }));
-    // Clear error when user starts typing
-    if (errors[field]) {
-      setErrors(prev => {
-        const newErrors = { ...prev };
-        delete newErrors[field];
-        return newErrors;
-      });
-    }
-  };
+  // Memoized reset function
+  const resetForm = useCallback(() => {
+    setFormData({
+      name: '',
+      brand: '',
+      abv: 0,
+      overallRating: 5 as Rating,
+    });
+    setErrors({});
+  }, []);
+
+  // Memoized form field updaters for better performance
+  const updateFormData = useCallback((field: keyof QuickEntryForm) =>
+    (value: string | number) => {
+      setFormData(prev => ({ ...prev, [field]: value }));
+      // Clear error when user starts typing - will be recalculated by useMemo
+      if (errors[field]) {
+        setErrors(prev => {
+          const newErrors = { ...prev };
+          delete newErrors[field];
+          return newErrors;
+        });
+      }
+    }, [errors]);
+
+  // Memoize individual field updaters to prevent re-renders
+  const updateName = useMemo(() => updateFormData('name'), [updateFormData]);
+  const updateBrand = useMemo(() => updateFormData('brand'), [updateFormData]);
+  const updateAbv = useMemo(() => updateFormData('abv'), [updateFormData]);
+  const updateRating = useMemo(() => updateFormData('overallRating'), [updateFormData]);
 
   return (
     <SafeAreaContainer>
@@ -129,23 +147,25 @@ export default function QuickEntryScreen({ navigation }: Props) {
             <Input
               label="Cider Name"
               value={formData.name}
-              onChangeText={updateFormData('name')}
+              onChangeText={updateName}
               placeholder="e.g., Angry Orchard Crisp Apple"
               error={errors.name}
               required
               autoCapitalize="words"
               returnKeyType="next"
+              maxLength={100}
             />
 
             <Input
               label="Brand"
               value={formData.brand}
-              onChangeText={updateFormData('brand')}
+              onChangeText={updateBrand}
               placeholder="e.g., Angry Orchard"
               error={errors.brand}
               required
               autoCapitalize="words"
               returnKeyType="next"
+              maxLength={50}
             />
 
             <Input
@@ -153,7 +173,7 @@ export default function QuickEntryScreen({ navigation }: Props) {
               value={formData.abv === 0 ? '' : formData.abv.toString()}
               onChangeText={(text) => {
                 const numValue = parseFloat(text) || 0;
-                updateFormData('abv')(numValue);
+                updateAbv(numValue);
               }}
               placeholder="e.g., 5.0"
               error={errors.abv}
@@ -164,7 +184,7 @@ export default function QuickEntryScreen({ navigation }: Props) {
             <RatingInput
               label="Overall Rating"
               rating={formData.overallRating}
-              onRatingChange={updateFormData('overallRating')}
+              onRatingChange={updateRating}
               maxRating={10}
             />
             {errors.overallRating && (

@@ -1,8 +1,9 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { View, FlatList, StyleSheet, Text, RefreshControl } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { RootTabScreenProps } from '../../types/navigation';
 import { BasicCiderRecord } from '../../types/cider';
+import { AppError, ErrorHandler } from '../../utils/errors';
 import SafeAreaContainer from '../../components/common/SafeAreaContainer';
 import LoadingSpinner from '../../components/common/LoadingSpinner';
 import CiderCard from '../../components/cards/CiderCard';
@@ -15,7 +16,7 @@ export default function CollectionScreen({ navigation }: Props) {
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
-  const loadCiders = async (showLoading = true) => {
+  const loadCiders = useCallback(async (showLoading = true) => {
     try {
       if (showLoading) {
         setIsLoading(true);
@@ -30,12 +31,16 @@ export default function CollectionScreen({ navigation }: Props) {
 
       console.log('Loaded ciders:', cidersData.length);
     } catch (error) {
-      console.error('Failed to load ciders:', error);
+      const appError = ErrorHandler.fromUnknown(error, 'CollectionScreen.loadCiders');
+      ErrorHandler.log(appError, 'CollectionScreen.loadCiders');
+
+      // Show user-friendly error if needed - for now just log
+      console.error('Failed to load ciders:', appError.getUserMessage());
     } finally {
       setIsLoading(false);
       setIsRefreshing(false);
     }
-  };
+  }, []);
 
   // Load ciders when screen comes into focus
   useFocusEffect(
@@ -49,21 +54,22 @@ export default function CollectionScreen({ navigation }: Props) {
     loadCiders();
   }, []);
 
-  const handleRefresh = () => {
+  const handleRefresh = useCallback(() => {
     setIsRefreshing(true);
     loadCiders(false);
-  };
+  }, [loadCiders]);
 
-  const handleCiderPress = (cider: BasicCiderRecord) => {
+  const handleCiderPress = useCallback((cider: BasicCiderRecord) => {
     console.log('Cider pressed:', cider.name);
     // TODO: Navigate to cider details screen in Phase 2
-  };
+  }, []);
 
-  const renderCiderCard = ({ item }: { item: BasicCiderRecord }) => (
+  const renderCiderCard = useCallback(({ item }: { item: BasicCiderRecord }) => (
     <CiderCard cider={item} onPress={handleCiderPress} />
-  );
+  ), [handleCiderPress]);
 
-  const renderEmptyState = () => (
+  // Memoize empty state and header components
+  const emptyStateComponent = useMemo(() => (
     <View style={styles.emptyState}>
       <Text style={styles.emptyTitle}>No ciders yet!</Text>
       <Text style={styles.emptySubtitle}>
@@ -73,9 +79,9 @@ export default function CollectionScreen({ navigation }: Props) {
         Track your favorites and discover new ones!
       </Text>
     </View>
-  );
+  ), []);
 
-  const renderListHeader = () => {
+  const headerComponent = useMemo(() => {
     if (ciders.length === 0) return null;
 
     return (
@@ -85,7 +91,10 @@ export default function CollectionScreen({ navigation }: Props) {
         </Text>
       </View>
     );
-  };
+  }, [ciders.length]);
+
+  // Key extractor for FlatList performance
+  const keyExtractor = useCallback((item: BasicCiderRecord) => item.id, []);
 
   if (isLoading) {
     return (
@@ -99,10 +108,10 @@ export default function CollectionScreen({ navigation }: Props) {
     <SafeAreaContainer>
       <FlatList
         data={ciders}
-        keyExtractor={(item) => item.id}
+        keyExtractor={keyExtractor}
         renderItem={renderCiderCard}
-        ListEmptyComponent={renderEmptyState}
-        ListHeaderComponent={renderListHeader}
+        ListEmptyComponent={emptyStateComponent}
+        ListHeaderComponent={headerComponent}
         contentContainerStyle={ciders.length === 0 ? styles.emptyContainer : styles.listContainer}
         refreshControl={
           <RefreshControl
@@ -113,6 +122,11 @@ export default function CollectionScreen({ navigation }: Props) {
           />
         }
         showsVerticalScrollIndicator={false}
+        removeClippedSubviews={true}
+        maxToRenderPerBatch={10}
+        windowSize={10}
+        initialNumToRender={8}
+        getItemLayout={undefined} // Let FlatList optimize automatically
       />
     </SafeAreaContainer>
   );

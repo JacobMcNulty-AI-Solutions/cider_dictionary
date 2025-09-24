@@ -18,18 +18,61 @@ A React Native mobile application for systematically tracking and analyzing pers
 ```
 cider_dictionary/
 ├── docs/                           # All project documentation
-│   ├── specifications/            # Core project requirements
+│   ├── specifications/            # Core project requirements (SPARC Phase 1)
+│   │   ├── README.md             # Specifications phase documentation guide
 │   │   ├── problem-analysis.md   # Project vision and user analysis
 │   │   ├── technical-specification.md # Firebase-first architecture
-│   │   └── sparc-comprehensive-specification.md # Detailed requirements
+│   │   └── sparc-comprehensive-specification.md # Complete requirements
+│   ├── pseudocode/               # Algorithm definitions (SPARC Phase 2)
+│   │   ├── README.md             # Pseudocode phase documentation guide
+│   │   ├── pseudocode-development-plan.md # Planning document
+│   │   ├── 01-data-structures.pseudo # Core data models and types
+│   │   ├── 02-database-operations.pseudo # SQLite operations
+│   │   ├── 03-state-management.pseudo # Application state patterns
+│   │   ├── 04-quick-entry-system.pseudo # 30-second workflow
+│   │   ├── 05-search-and-discovery.pseudo # Search functionality
+│   │   ├── 06-experience-logging.pseudo # Tasting note creation
+│   │   ├── 07-collection-analytics.pseudo # Personal collection insights
+│   │   ├── 08-venue-analytics.pseudo # Venue discovery and data
+│   │   ├── 09-rankings-system.pseudo # Rating and ranking algorithms
+│   │   ├── 10-offline-sync-orchestration.pseudo # Sync logic
+│   │   ├── 11-firebase-optimization.pseudo # Firebase integration
+│   │   ├── 12-performance-optimization.pseudo # Performance monitoring
+│   │   ├── 13-ui-interactions.pseudo # User interface behavior
+│   │   └── 14-error-handling-system.pseudo # Error management
+│   ├── architecture/             # System design (SPARC Phase 3)
+│   │   ├── README.md             # Architecture documentation hub
+│   │   ├── architecture-documentation-plan.md # Strategic planning
+│   │   ├── architecture-dependencies-matrix.md # Dependency mapping
+│   │   ├── documentation-integration-strategy.md # Integration approach
+│   │   ├── 01-system-overview.md # High-level architecture
+│   │   ├── 02-data-flow-architecture.md # State management patterns
+│   │   ├── 03-firebase-integration-architecture.md # Firebase patterns
+│   │   ├── 04-component-architecture.md # React Native components
+│   │   ├── 05-offline-first-patterns.md # Offline sync patterns
+│   │   ├── 06-performance-patterns.md # Performance optimization
+│   │   ├── 07-analytics-architecture.md # Analytics patterns
+│   │   ├── 08-security-patterns.md # Security implementation
+│   │   ├── 09-testing-strategies.md # Testing architecture
+│   │   └── 10-build-deployment-patterns.md # Build & deployment
+│   ├── implementation/           # 4-phase development plan (SPARC Phase 4)
+│   │   ├── README.md             # Implementation plan overview
+│   │   ├── implementation-plan-phase-1.md # Prototype (basic functionality)
+│   │   ├── implementation-plan-phase-2.md # Basic features
+│   │   ├── implementation-plan-phase-3.md # MVP with production features
+│   │   └── implementation-plan-phase-4.md # Complete feature set
 │   ├── design/                   # UI/UX and design documentation
 │   │   └── ui-ux-specification.md # Interface design guidelines
 │   ├── database/                 # Data model documentation
 │   │   └── cider-data-model.md   # Database structure with progressive disclosure
-│   └── research/                 # Background research on cider classification
-│       └── research_results/     # Completed cider classification research
-├── src/                          # React Native source code (to be created)
-└── README.md                     # This file
+│   ├── research/                 # Background research on cider classification
+│   │   ├── research_questions/   # Original research specifications (6 files)
+│   │   └── research_results/     # Completed research findings (6 files)
+│   └── README.md                 # Documentation hub and SPARC progress
+├── mobile-app/                   # React Native application (to be created)
+│   ├── package.json             # Dependencies and scripts
+│   └── src/                     # Source code (to be implemented)
+└── README.md                     # This file - project overview and getting started
 ```
 
 ## 🏗️ Architecture Overview
@@ -42,8 +85,9 @@ cider_dictionary/
 - **Cost Target**: £0/month (within all free tiers)
 
 ### **Technology Stack**
-- **Frontend**: React Native 0.72+ with TypeScript
-- **Development**: Expo SDK 49+
+- **Frontend**: React Native 0.75.4 with TypeScript
+- **Development**: Expo SDK 54
+- **Database**: SQLite (primary) + Firebase (sync)
 - **Navigation**: React Navigation 6.x
 - **State**: Zustand + React Query
 - **Maps**: Google Maps SDK + Places API
@@ -125,20 +169,27 @@ Completeness = (Unique characteristics in your collection / Total characteristic
 - Conflict resolution for concurrent edits
 - Image upload queue with retry logic
 
-## 🚀 Getting Started (For Next Assistant)
+## 🚀 Getting Started
+
+### **SPARC Development Methodology**
+This project follows the complete SPARC methodology:
+1. ✅ **Specification** - Complete requirements and problem analysis
+2. ✅ **Pseudocode** - 14 algorithm definitions covering all core functionality
+3. ✅ **Architecture** - 10 comprehensive architecture documents
+4. ✅ **Refinement** - 4-phase implementation plan with simplified Phase 1
+5. 🔄 **Code** - Ready for implementation following the structured plan
 
 ### **Understanding the Project**
-1. **Start here**: `docs/specifications/problem-analysis.md` - Understand WHY
-2. **Data structure**: `docs/database/cider-data-model.md` - Understand WHAT
-3. **Architecture**: `docs/specifications/technical-specification.md` - Understand HOW
-4. **Interface**: `docs/design/ui-ux-specification.md` - Understand USER EXPERIENCE
+1. **Start here**: `docs/specifications/sparc-comprehensive-specification.md` - Complete requirements
+2. **Implementation**: `docs/implementation/` - 4-phase development plan
+3. **Architecture**: `docs/architecture/01-system-overview.md` - System design
+4. **Algorithms**: `docs/pseudocode/` - Detailed logic for all features
 
 ### **Development Approach**
-1. **Read specifications thoroughly** - Everything is already designed
-2. **Follow Firebase-first architecture** - No complex sync logic needed
-3. **Implement progressive disclosure** - Start simple, add complexity optionally
-4. **Stay within free tiers** - Monitor Firebase/Google Maps usage
-5. **Prioritize offline-first** - Users drink ciders in pubs without WiFi
+1. **Follow the 4-phase plan** - Prototype → Basic → MVP → Full features
+2. **Offline-first architecture** - SQLite primary, Firebase sync
+3. **Progressive disclosure** - Start simple, add expert features optionally
+4. **Performance targets** - 30-second quick entry, sub-200ms search
 
 ### **Critical Implementation Notes**
 - **Progressive Disclosure**: Core form must work with just 4 fields
@@ -174,25 +225,31 @@ Completeness = (Unique characteristics in your collection / Total characteristic
 - Google Maps: <28k loads monthly (personal usage only)
 - All within free tiers for individual users
 
-## 📋 Development Priorities
+## 📋 4-Phase Implementation Plan
 
-### **Phase 1: Core MVP**
-1. Firebase setup and authentication
-2. Basic cider entry (4 required fields)
-3. Simple list view with search
-4. Experience logging workflow
+### **Phase 1: Prototype**
+- Basic working app with simplified 5-field data model
+- SQLite storage and basic Firebase setup
+- Essential UI components (Add, List, Simple Analytics)
+- Target: Functional prototype for validation
 
-### **Phase 2: Enhanced Features**
-1. Progressive disclosure forms
-2. Analytics dashboard
-3. Map integration
-4. Offline sync testing
+### **Phase 2: Basic Features**
+- Comprehensive 50+ field cider data model
+- Local encryption and venue database
+- Enhanced UI components with progressive disclosure
+- Target: Core functionality with proper data structure
 
-### **Phase 3: Polish**
-1. Animations and micro-interactions
-2. Achievement system
-3. Image optimization
-4. Performance optimization
+### **Phase 3: MVP**
+- Production-level error handling and monitoring
+- Performance optimization and analytics
+- Complete offline sync and conflict resolution
+- Target: Production-ready application
+
+### **Phase 4: Full Features**
+- Advanced venue consolidation algorithms
+- Collection completeness and social features
+- Expert mode with full Long Ashton classification
+- Target: Complete feature set with advanced capabilities
 
 ## ⚠️ Important Constraints
 
@@ -217,10 +274,10 @@ Completeness = (Unique characteristics in your collection / Total characteristic
 ## 🔍 Quick Reference
 
 ### **Most Important Files**
-1. `docs/specifications/problem-analysis.md` - Project foundation
-2. `docs/database/cider-data-model.md` - Data structure
-3. `docs/specifications/technical-specification.md` - Implementation guide
-4. `docs/design/ui-ux-specification.md` - Interface design
+1. `docs/specifications/sparc-comprehensive-specification.md` - Complete requirements
+2. `docs/implementation/` - 4-phase implementation plans
+3. `docs/architecture/01-system-overview.md` - System architecture
+4. `docs/pseudocode/01-data-structures.pseudo` - Core data models
 
 ### **Key Algorithms**
 - Collection completeness calculation

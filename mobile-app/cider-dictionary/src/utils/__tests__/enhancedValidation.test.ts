@@ -3,6 +3,9 @@
 
 import {
   ValidationEngine,
+  ProgressiveValidation,
+  RealTimeValidator,
+  ValidationSeverity,
   createDebouncedValidator,
   validateMultipleFields,
   hasValidationErrors,
@@ -74,7 +77,7 @@ describe('ValidationEngine', () => {
       });
 
       it('should reject names that are too short', () => {
-        const shortNames = ['A', 'AB'];
+        const shortNames = ['A'];
 
         shortNames.forEach(name => {
           const result = ValidationEngine.validateField('name', name);

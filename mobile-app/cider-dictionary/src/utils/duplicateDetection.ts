@@ -30,7 +30,7 @@ export interface FuzzyMatchResult {
 // STRING SIMILARITY ALGORITHMS
 // =============================================================================
 
-class StringSimilarity {
+export class StringSimilarity {
   /**
    * Calculate Jaro-Winkler similarity (optimized for names)
    */
@@ -136,8 +136,8 @@ class StringSimilarity {
       ngrams2.add(s2.substring(i, i + n));
     }
 
-    const intersection = new Set([...ngrams1].filter(x => ngrams2.has(x)));
-    const union = new Set([...ngrams1, ...ngrams2]);
+    const intersection = new Set(Array.from(ngrams1).filter(x => ngrams2.has(x)));
+    const union = new Set([...Array.from(ngrams1), ...Array.from(ngrams2)]);
 
     return intersection.size / union.size;
   }
@@ -446,7 +446,7 @@ export class DuplicateDetectionEngine {
   static getSimilarBrandNames(partialBrand: string, existingCiders: CiderMasterRecord[]): string[] {
     if (partialBrand.length < 2) return [];
 
-    const uniqueBrands = [...new Set(existingCiders.map(c => c.brand))];
+    const uniqueBrands = Array.from(new Set(existingCiders.map(c => c.brand)));
     const suggestions: Array<{ brand: string; score: number }> = [];
 
     for (const brand of uniqueBrands) {

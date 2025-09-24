@@ -3,8 +3,8 @@ import React from 'react';
 import { Ionicons } from '@expo/vector-icons';
 
 import { RootTabParamList } from '../types/navigation';
-import CollectionScreen from '../screens/Collection/CollectionScreen';
-import QuickEntryScreen from '../screens/QuickEntry/QuickEntryScreen';
+import EnhancedCollectionScreen from '../screens/Collection/EnhancedCollectionScreen';
+import EnhancedQuickEntryScreen from '../screens/QuickEntry/EnhancedQuickEntryScreen';
 import AnalyticsScreen from '../screens/Analytics/AnalyticsScreen';
 import SettingsScreen from '../screens/Settings/SettingsScreen';
 
@@ -44,12 +44,12 @@ export default function TabNavigator() {
     >
       <Tab.Screen
         name="Collection"
-        component={CollectionScreen}
+        component={EnhancedCollectionScreen}
         options={{ title: 'My Ciders' }}
       />
       <Tab.Screen
         name="QuickEntry"
-        component={QuickEntryScreen}
+        component={EnhancedQuickEntryScreen}
         options={{ title: 'Add Cider' }}
       />
       <Tab.Screen

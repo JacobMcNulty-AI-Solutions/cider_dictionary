@@ -12,7 +12,8 @@
       "Bash(taskkill:*)",
       "Bash(xargs ls:*)",
       "Bash(xargs cat:*)",
-      "mcp__ide__getDiagnostics"
+      "mcp__ide__getDiagnostics",
+      "Bash(npm test:*)"
     ],
     "deny": [],
     "ask": []

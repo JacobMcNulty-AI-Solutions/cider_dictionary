@@ -32,7 +32,7 @@ export default function SettingsScreen({ navigation }: Props) {
   const handleAbout = () => {
     Alert.alert(
       'About Cider Dictionary',
-      'Phase 1 Prototype\nVersion 1.0.0\n\nA personal cider journaling app to track and discover amazing ciders.\n\nBuilt with React Native and Expo.',
+      'Phase 2 Enhanced\nVersion 2.0.0\n\nA comprehensive cider tracking and discovery platform with advanced features including progressive forms, intelligent duplicate detection, venue consolidation, and enhanced analytics.\n\nBuilt with React Native and Expo.',
       [{ text: 'OK' }]
     );
   };
@@ -40,7 +40,7 @@ export default function SettingsScreen({ navigation }: Props) {
   const handleHelp = () => {
     Alert.alert(
       'Help',
-      'Getting Started:\n\n1. Tap "Add Cider" to record a new cider\n2. Fill in the basic information\n3. Rate the cider from 1-10\n4. View your collection and statistics\n\nMore features coming in Phase 2!',
+      'Getting Started:\n\n1. Tap "Add Cider" to record a new cider with our 3-level progressive form\n2. Fill in basic, enthusiast, or expert level details\n3. Rate the cider from 1-10 with comprehensive taste profiles\n4. View your enhanced collection with smart filtering and sorting\n5. Explore detailed analytics and insights\n\nEnjoy the full Phase 2 feature set!',
       [{ text: 'OK' }]
     );
   };
@@ -48,7 +48,7 @@ export default function SettingsScreen({ navigation }: Props) {
   const handleFeedback = () => {
     Alert.alert(
       'Feedback',
-      'This is a Phase 1 prototype. Your feedback is valuable for future development!\n\nPlease share your thoughts on the basic functionality.',
+      'This is the Phase 2 enhanced version with comprehensive cider tracking features!\n\nYour feedback helps us improve the advanced functionality including progressive forms, duplicate detection, venue consolidation, and analytics.',
       [{ text: 'OK' }]
     );
   };
@@ -83,7 +83,7 @@ export default function SettingsScreen({ navigation }: Props) {
         </View>
 
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Coming in Phase 2</Text>
+          <Text style={styles.sectionTitle}>Phase 2 Features</Text>
 
           <SettingItem
             icon="person-outline"
@@ -118,7 +118,7 @@ export default function SettingsScreen({ navigation }: Props) {
 
         <View style={styles.footer}>
           <Text style={styles.footerText}>Cider Dictionary</Text>
-          <Text style={styles.footerSubtext}>Phase 1 Prototype</Text>
+          <Text style={styles.footerSubtext}>Phase 2 Enhanced</Text>
         </View>
 
       </ScrollView>

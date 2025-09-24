@@ -419,7 +419,7 @@ export class FormDisclosureManager {
 
     const newFieldStates = validationResult ? {
       ...currentState.fieldStates,
-      [fieldKey]: validationResult.isValid ? 'valid' : 'error'
+      [fieldKey]: validationResult.isValid ? 'valid' as const : 'error' as const
     } : currentState.fieldStates;
 
     const formCompleteness = this.calculateFormCompleteness(

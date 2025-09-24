@@ -220,7 +220,7 @@ export default function AnalyticsScreen({ navigation }: Props) {
         )}
 
         <Text style={styles.footer}>
-          Pull down to refresh • More analytics coming in Phase 2!
+          Pull down to refresh • Enhanced Phase 2 analytics!
         </Text>
       </ScrollView>
     </SafeAreaContainer>

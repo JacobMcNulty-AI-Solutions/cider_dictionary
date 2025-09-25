@@ -71,14 +71,14 @@ describe('Validation Utils', () => {
     });
 
     it('should fail validation for name too long', () => {
-      const form = { ...validForm, name: 'a'.repeat(VALIDATION_CONSTANTS.NAME_MAX_LENGTH + 1) };
+      const form = { ...validForm, name: 'a'.repeat(VALIDATION_CONSTANTS.MAX_NAME_LENGTH + 1) };
       const result = validateQuickEntryForm(form);
       expect(result.isValid).toBe(false);
       expect(result.errors.name).toContain('must be less than');
     });
 
     it('should fail validation for brand too long', () => {
-      const form = { ...validForm, brand: 'a'.repeat(VALIDATION_CONSTANTS.BRAND_MAX_LENGTH + 1) };
+      const form = { ...validForm, brand: 'a'.repeat(VALIDATION_CONSTANTS.MAX_BRAND_LENGTH + 1) };
       const result = validateQuickEntryForm(form);
       expect(result.isValid).toBe(false);
       expect(result.errors.brand).toContain('must be less than');

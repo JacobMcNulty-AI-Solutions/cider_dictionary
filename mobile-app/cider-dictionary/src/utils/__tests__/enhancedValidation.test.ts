@@ -217,7 +217,7 @@ describe('ValidationEngine', () => {
 
     describe('Rating Validation', () => {
       it('should validate rating values within range', () => {
-        const validRatings = [0, 0.5, 1, 2.5, 3, 4.5, 5];
+        const validRatings = [1, 1.5, 2, 5.5, 7, 8.5, 10];
 
         validRatings.forEach(rating => {
           const result = ValidationEngine.validateField('overallRating', rating);
@@ -227,17 +227,17 @@ describe('ValidationEngine', () => {
       });
 
       it('should reject ratings outside valid range', () => {
-        const invalidRatings = [-1, -0.5, 5.5, 6, 10];
+        const invalidRatings = [-1, -0.5, 0, 0.5, 10.5, 11, 15];
 
         invalidRatings.forEach(rating => {
           const result = ValidationEngine.validateField('overallRating', rating);
           expect(result.isValid).toBe(false);
-          expect(result.errors).toContain('Rating must be between 0 and 5');
+          expect(result.errors).toContain('Rating must be between 1 and 10');
         });
       });
 
       it('should handle decimal precision appropriately', () => {
-        const preciseRatings = [4.25, 3.75, 2.125]; // Quarter and eighth precision
+        const preciseRatings = [7.25, 6.75, 8.125]; // Quarter and eighth precision
 
         preciseRatings.forEach(rating => {
           const result = ValidationEngine.validateField('overallRating', rating);

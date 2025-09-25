@@ -298,8 +298,8 @@ export type DatabaseOperationResult<T> = {
 export const VALIDATION_CONSTANTS = {
   ABV_MIN: 0.1,
   ABV_MAX: 20,
-  RATING_MIN: 0,
-  RATING_MAX: 5,
+  RATING_MIN: 1,
+  RATING_MAX: 10,
   MAX_NAME_LENGTH: 100,
   MIN_NAME_LENGTH: 2,
   MAX_BRAND_LENGTH: 50,

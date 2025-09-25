@@ -30,15 +30,15 @@ export function validateQuickEntryForm(formData: QuickEntryForm): {
   // Name validation
   if (!formData.name.trim()) {
     errors.name = 'Cider name is required';
-  } else if (formData.name.trim().length > VALIDATION_CONSTANTS.NAME_MAX_LENGTH) {
-    errors.name = `Name must be less than ${VALIDATION_CONSTANTS.NAME_MAX_LENGTH} characters`;
+  } else if (formData.name.trim().length > VALIDATION_CONSTANTS.MAX_NAME_LENGTH) {
+    errors.name = `Name must be less than ${VALIDATION_CONSTANTS.MAX_NAME_LENGTH} characters`;
   }
 
   // Brand validation
   if (!formData.brand.trim()) {
     errors.brand = 'Brand is required';
-  } else if (formData.brand.trim().length > VALIDATION_CONSTANTS.BRAND_MAX_LENGTH) {
-    errors.brand = `Brand must be less than ${VALIDATION_CONSTANTS.BRAND_MAX_LENGTH} characters`;
+  } else if (formData.brand.trim().length > VALIDATION_CONSTANTS.MAX_BRAND_LENGTH) {
+    errors.brand = `Brand must be less than ${VALIDATION_CONSTANTS.MAX_BRAND_LENGTH} characters`;
   }
 
   // ABV validation

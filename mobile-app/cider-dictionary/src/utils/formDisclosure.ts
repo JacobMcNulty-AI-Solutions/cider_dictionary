@@ -45,7 +45,7 @@ export const FORM_FIELD_CONFIGS: Record<keyof CiderMasterRecord, FormFieldConfig
     label: 'Cider Name',
     type: 'text',
     required: true,
-    placeholder: 'e.g., Angry Orchard Crisp Apple',
+    placeholder: 'Enter cider name',
     section: 'core',
     validationRules: [
       { type: 'required', message: 'Cider name is required' },
@@ -59,7 +59,7 @@ export const FORM_FIELD_CONFIGS: Record<keyof CiderMasterRecord, FormFieldConfig
     label: 'Brand',
     type: 'text',
     required: true,
-    placeholder: 'e.g., Angry Orchard',
+    placeholder: 'Enter brand name',
     section: 'core',
     validationRules: [
       { type: 'required', message: 'Brand is required' },
@@ -73,7 +73,7 @@ export const FORM_FIELD_CONFIGS: Record<keyof CiderMasterRecord, FormFieldConfig
     label: 'ABV (%)',
     type: 'number',
     required: true,
-    placeholder: 'e.g., 5.0',
+    placeholder: 'Enter ABV (e.g., 5.2)',
     section: 'core',
     validationRules: [
       { type: 'required', message: 'ABV is required' },

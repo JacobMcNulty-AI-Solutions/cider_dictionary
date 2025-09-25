@@ -43,9 +43,9 @@ const RatingInput = memo<Props>(({ rating, onRatingChange, maxRating = 10, label
   ), [rating, createStarPressHandler]);
 
   return (
-    <View style={styles.container}>
+    <View style={styles.container} testID="rating-input">
       {label && <Text style={styles.label}>{label}</Text>}
-      <View style={styles.starsContainer}>
+      <View style={styles.starsContainer} testID="rating-stars">
         {stars.map(renderStar)}
         <Text style={styles.ratingText}>{rating}/{maxRating}</Text>
       </View>

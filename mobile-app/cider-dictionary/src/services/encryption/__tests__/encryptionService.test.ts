@@ -31,8 +31,22 @@ const mockAsyncStorage = {
 jest.mock('@react-native-async-storage/async-storage', () => mockAsyncStorage);
 
 // Mock btoa and atob for Node.js environment
-global.btoa = jest.fn().mockImplementation((str: string) => Buffer.from(str, 'binary').toString('base64'));
-global.atob = jest.fn().mockImplementation((str: string) => Buffer.from(str, 'base64').toString('binary'));
+global.btoa = jest.fn().mockImplementation((str: string) => {
+  try {
+    return Buffer.from(str, 'binary').toString('base64');
+  } catch (error) {
+    console.error('btoa mock error:', error);
+    throw error;
+  }
+});
+global.atob = jest.fn().mockImplementation((str: string) => {
+  try {
+    return Buffer.from(str, 'base64').toString('binary');
+  } catch (error) {
+    console.error('atob mock error:', error);
+    throw error;
+  }
+});
 
 // Mock TextEncoder and TextDecoder for Node.js environment
 global.TextEncoder = class TextEncoder {
@@ -97,7 +111,9 @@ describe('EncryptionService', () => {
 
   describe('Initialization', () => {
     it('should initialize with new encryption key when none exists', async () => {
+      // Setup mocks explicitly for this test
       mockAsyncStorage.getItem.mockResolvedValue(null);
+      mockAsyncStorage.setItem.mockResolvedValue(undefined);
 
       await EncryptionService.initialize();
 

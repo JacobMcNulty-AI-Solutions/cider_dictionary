@@ -49,7 +49,11 @@ export default function Button({
       activeOpacity={0.7}
     >
       {loading ? (
-        <ActivityIndicator color={variant === 'primary' ? '#fff' : '#007AFF'} size="small" />
+        <ActivityIndicator
+          color={variant === 'primary' ? '#fff' : '#007AFF'}
+          size="small"
+          testID="loading-spinner"
+        />
       ) : (
         <Text style={textStyleCombined}>{title}</Text>
       )}

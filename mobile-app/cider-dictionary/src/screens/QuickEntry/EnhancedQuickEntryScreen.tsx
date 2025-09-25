@@ -35,6 +35,7 @@ import ProgressHeader from '../../components/forms/ProgressHeader';
 import ValidatedInput from '../../components/forms/ValidatedInput';
 import RatingInput from '../../components/common/RatingInput';
 import SelectInput from '../../components/forms/SelectInput';
+import TagSelector from '../../components/forms/TagSelector';
 
 type Props = RootTabScreenProps<'QuickEntry'>;
 
@@ -417,6 +418,39 @@ export default function EnhancedQuickEntryScreen({ navigation }: Props) {
             multiSelect={true}
             searchable={true}
             required={config.required}
+          />
+        );
+
+      case 'tags':
+        return (
+          <TagSelector
+            key={fieldKey}
+            label={config.label}
+            selectedTags={(value as string[]) || []}
+            onTagsChange={(tags) => handleFieldChange(fieldKey, tags)}
+            validation={validation}
+            required={config.required}
+            maxTags={10}
+          />
+        );
+
+      case 'characteristics':
+        // For now, render characteristics as a simple text input
+        // This can be enhanced later with a specialized component
+        return (
+          <ValidatedInput
+            key={fieldKey}
+            label={config.label}
+            value={typeof value === 'object' ? JSON.stringify(value) : (value as string) || ''}
+            onChangeText={(text) => {
+              // For now, store as text. Can be enhanced to parse structured data
+              handleFieldChange(fieldKey, text);
+            }}
+            placeholder={config.placeholder}
+            validation={validation}
+            required={config.required}
+            multiline={true}
+            numberOfLines={3}
           />
         );
 

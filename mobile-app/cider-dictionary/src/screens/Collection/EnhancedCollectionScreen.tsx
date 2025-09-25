@@ -283,10 +283,10 @@ export default function EnhancedCollectionScreen({ navigation }: Props) {
   ), [selectedCiders.length, exitSelectionMode, handleDeleteSelected]);
 
   const renderEmptyState = useCallback(() => (
-    <View style={styles.emptyContainer}>
+    <View style={styles.emptyContainer} testID="empty-collection-state">
       <Text style={styles.emptyIcon}>🍺</Text>
       <Text style={styles.emptyTitle}>
-        {searchQuery ? 'No matching ciders found' : 'No ciders yet'}
+        {searchQuery ? 'No matching ciders found' : 'No Ciders Found'}
       </Text>
       <Text style={styles.emptySubtitle}>
         {searchQuery
@@ -371,13 +371,14 @@ export default function EnhancedCollectionScreen({ navigation }: Props) {
   }
 
   return (
-    <SafeAreaContainer>
+    <SafeAreaContainer testID="enhanced-collection-screen">
       {isSelectionMode ? renderSelectionHeader() : renderHeader()}
 
       {isLoading ? (
-        <LoadingSpinner />
+        <LoadingSpinner testID="loading-spinner" />
       ) : (
         <FlatList
+          testID="cider-list"
           data={filteredCiders}
           renderItem={renderCiderItem}
           keyExtractor={(item) => item.id}

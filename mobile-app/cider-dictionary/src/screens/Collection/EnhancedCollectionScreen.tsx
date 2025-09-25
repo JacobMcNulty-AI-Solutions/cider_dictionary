@@ -19,7 +19,7 @@ import { CiderMasterRecord } from '../../types/cider';
 import { useCiderStore } from '../../store/ciderStore';
 import SafeAreaContainer from '../../components/common/SafeAreaContainer';
 import LoadingSpinner from '../../components/common/LoadingSpinner';
-import CiderCard from '../../components/cards/CiderCard';
+import EnhancedCiderCard from '../../components/cards/EnhancedCiderCard';
 import SearchBar from '../../components/collection/SearchBar';
 
 type Props = RootTabScreenProps<'Collection'>;
@@ -85,10 +85,10 @@ export default function EnhancedCollectionScreen({ navigation }: Props) {
       toggleCiderSelection(cider.id);
     } else {
       // Navigate to cider detail screen
-      // navigation.navigate('CiderDetail', { ciderId: cider.id });
+      navigation.navigate('CiderDetail', { ciderId: cider.id });
       console.log('Navigate to cider detail:', cider.id);
     }
-  }, [isSelectionMode]);
+  }, [isSelectionMode, navigation]);
 
   const handleCiderLongPress = useCallback((cider: CiderMasterRecord) => {
     if (!isSelectionMode) {
@@ -176,7 +176,7 @@ export default function EnhancedCollectionScreen({ navigation }: Props) {
           },
         ]}
       >
-        <CiderCard
+        <EnhancedCiderCard
           cider={item}
           onPress={() => handleCiderPress(item)}
           onLongPress={() => handleCiderLongPress(item)}
@@ -223,9 +223,10 @@ export default function EnhancedCollectionScreen({ navigation }: Props) {
           <TouchableOpacity
             style={styles.sortButton}
             onPress={() => setShowSortMenu(true)}
+            testID="sort-button"
           >
-            <Text style={styles.sortButtonText}>
-              Sort: {sortOrder} {sortDirection === 'desc' ? '↓' : '↑'}
+            <Text style={styles.sortButtonText} testID="current-sort-indicator">
+              Sort: {sortOrder.charAt(0).toUpperCase() + sortOrder.slice(1)} {sortDirection === 'desc' ? '↓' : '↑'}
             </Text>
           </TouchableOpacity>
 
@@ -253,10 +254,11 @@ export default function EnhancedCollectionScreen({ navigation }: Props) {
   ]);
 
   const renderSelectionHeader = useCallback(() => (
-    <View style={styles.selectionHeader}>
+    <View style={styles.selectionHeader} testID="selection-header">
       <TouchableOpacity
         style={styles.selectionCancelButton}
         onPress={exitSelectionMode}
+        testID="selection-cancel-button"
       >
         <Text style={styles.selectionCancelText}>Cancel</Text>
       </TouchableOpacity>
@@ -322,7 +324,7 @@ export default function EnhancedCollectionScreen({ navigation }: Props) {
           style={styles.sortMenuBackdrop}
           onPress={() => setShowSortMenu(false)}
         />
-        <View style={styles.sortMenu}>
+        <View style={styles.sortMenu} testID="sort-modal">
           {sortOptions.map((option) => (
             <TouchableOpacity
               key={option.key}
@@ -331,6 +333,7 @@ export default function EnhancedCollectionScreen({ navigation }: Props) {
                 sortOrder === option.key && styles.sortOptionActive
               ]}
               onPress={() => handleSortPress(option.key)}
+              testID={`sort-by-${option.key}`}
             >
               <Text
                 style={[

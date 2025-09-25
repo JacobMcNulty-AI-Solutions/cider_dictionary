@@ -146,7 +146,7 @@ export const DISCLOSURE_CONFIGS: Record<DisclosureLevel, DisclosureConfig> = {
     fields: ['name', 'brand', 'abv', 'overallRating', 'tasteTags', 'containerType',
              'appleClassification', 'productionMethods', 'detailedRatings'],
     targetTime: 300,
-    optional: ['venue', 'photo', 'notes']
+    optional: ['venue', 'photo', 'notes', 'traditionalStyle', 'sweetness', 'carbonation', 'clarity', 'color']
   }
 };
 

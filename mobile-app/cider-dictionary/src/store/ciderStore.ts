@@ -6,6 +6,7 @@ import { subscribeWithSelector } from 'zustand/middleware';
 import { CiderMasterRecord, ConsolidatedVenue, EnhancedAnalytics } from '../types/cider';
 import { DuplicateDetectionEngine, DuplicateDetectionResult } from '../utils/duplicateDetection';
 import { VenueConsolidationService } from '../utils/venueConsolidation';
+import { sqliteService } from '../services/database/sqlite';
 
 // =============================================================================
 // STORE INTERFACES
@@ -131,8 +132,8 @@ export const useCiderStore = create<CiderStore>()(
           version: 1,
         };
 
-        // TODO: Save to database (SQLite)
-        // await sqliteService.createCider(newCider);
+        // Save to database
+        await sqliteService.createCider(newCider);
 
         // Update store
         set(state => {
@@ -327,15 +328,15 @@ export const useCiderStore = create<CiderStore>()(
       set({ isLoading: true, error: null });
 
       try {
-        // TODO: Load from database
-        // const ciders = await sqliteService.getAllCiders();
+        // Initialize database and load ciders
+        await sqliteService.initializeDatabase();
+        const ciders = await sqliteService.getAllCiders();
 
-        // For now, keep existing ciders in memory since no database is implemented
-        const { ciders: existingCiders, searchQuery } = get();
+        const { searchQuery } = get();
 
-        // Apply current filters to existing ciders
+        // Apply current filters to loaded ciders
         const filteredCiders = searchQuery
-          ? existingCiders.filter(cider =>
+          ? ciders.filter(cider =>
               cider.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
               cider.brand.toLowerCase().includes(searchQuery.toLowerCase()) ||
               (cider.notes && cider.notes.toLowerCase().includes(searchQuery.toLowerCase())) ||
@@ -343,9 +344,10 @@ export const useCiderStore = create<CiderStore>()(
                 tag.toLowerCase().includes(searchQuery.toLowerCase())
               ))
             )
-          : existingCiders;
+          : ciders;
 
         set({
+          ciders,
           filteredCiders,
           isLoading: false,
           lastSyncTimestamp: Date.now(),

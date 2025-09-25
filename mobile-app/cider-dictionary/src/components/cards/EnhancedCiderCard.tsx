@@ -21,6 +21,7 @@ interface Props {
   selectionMode?: boolean;
   viewMode?: 'list' | 'grid';
   showFullDetails?: boolean;
+  testID?: string;
 }
 
 const EnhancedCiderCard = memo<Props>(({
@@ -30,7 +31,8 @@ const EnhancedCiderCard = memo<Props>(({
   selected = false,
   selectionMode = false,
   viewMode = 'list',
-  showFullDetails = false
+  showFullDetails = false,
+  testID
 }) => {
   const screenWidth = Dimensions.get('window').width;
   const cardWidth = viewMode === 'grid' ? (screenWidth - 32) / 2 - 8 : screenWidth - 32;
@@ -207,6 +209,7 @@ const EnhancedCiderCard = memo<Props>(({
       onPress={handlePress}
       onLongPress={handleLongPress}
       activeOpacity={0.7}
+      testID={testID || `cider-card-${cider.id}`}
     >
       {renderSelectionIndicator()}
 

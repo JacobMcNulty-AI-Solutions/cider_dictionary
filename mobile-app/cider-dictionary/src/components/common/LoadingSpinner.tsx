@@ -4,11 +4,12 @@ import { View, ActivityIndicator, Text, StyleSheet } from 'react-native';
 interface Props {
   message?: string;
   size?: 'small' | 'large';
+  testID?: string;
 }
 
-export default function LoadingSpinner({ message, size = 'large' }: Props) {
+export default function LoadingSpinner({ message, size = 'large', testID }: Props) {
   return (
-    <View style={styles.container}>
+    <View style={styles.container} testID={testID || 'loading-spinner'}>
       <ActivityIndicator size={size} color="#007AFF" />
       {message && <Text style={styles.message}>{message}</Text>}
     </View>

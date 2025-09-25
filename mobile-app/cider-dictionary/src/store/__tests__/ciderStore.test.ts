@@ -25,6 +25,32 @@ jest.mock('../../utils/venueConsolidation', () => ({
   },
 }));
 
+// Mock SQLite service
+jest.mock('../../services/database/sqlite', () => ({
+  sqliteService: {
+    initializeDatabase: jest.fn().mockResolvedValue(undefined),
+    createCider: jest.fn().mockImplementation(async (cider) => {
+      // Return the cider with a generated ID and timestamps
+      return {
+        ...cider,
+        id: `cider_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        syncStatus: 'synced',
+        version: 1,
+      };
+    }),
+    getAllCiders: jest.fn().mockResolvedValue([]),
+    getCiderById: jest.fn().mockResolvedValue(null),
+    updateCider: jest.fn().mockResolvedValue(undefined),
+    deleteCider: jest.fn().mockResolvedValue(undefined),
+    searchCiders: jest.fn().mockResolvedValue([]),
+    getCidersByBrand: jest.fn().mockResolvedValue([]),
+    getCidersByVenue: jest.fn().mockResolvedValue([]),
+    findSimilarCiders: jest.fn().mockResolvedValue([]),
+  },
+}));
+
 // Test fixtures
 const createMockCider = (overrides: Partial<CiderMasterRecord> = {}): CiderMasterRecord => ({
   id: `cider_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`,

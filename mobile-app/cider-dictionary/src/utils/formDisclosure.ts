@@ -18,7 +18,7 @@ import {
 export interface FormFieldConfig {
   key: keyof CiderMasterRecord;
   label: string;
-  type: 'text' | 'number' | 'rating' | 'select' | 'multiselect' | 'tags' | 'characteristics';
+  type: 'text' | 'number' | 'rating' | 'select' | 'multiselect' | 'tags';
   required: boolean;
   placeholder: string;
   section: 'core' | 'optional' | 'enthusiast' | 'expert';
@@ -136,59 +136,70 @@ export const FORM_FIELD_CONFIGS: Record<keyof CiderMasterRecord, FormFieldConfig
     ]
   },
 
-  basicCharacteristics: {
-    key: 'basicCharacteristics',
-    label: 'Basic Characteristics',
-    type: 'characteristics',
+  // Individual characteristic fields (following data model specification)
+  sweetness: {
+    key: 'sweetness',
+    label: 'Sweetness Level',
+    type: 'select',
     required: false,
-    placeholder: 'Describe characteristics',
+    placeholder: 'Select sweetness level',
     section: 'enthusiast',
-    subFields: {
-      sweetness: {
-        key: 'sweetness' as keyof CiderMasterRecord,
-        label: 'Sweetness',
-        type: 'select',
-        required: false,
-        placeholder: 'Select sweetness level',
-        section: 'enthusiast',
-        options: [
-          { label: 'Bone Dry', value: 'bone_dry' },
-          { label: 'Dry', value: 'dry' },
-          { label: 'Off-Dry', value: 'off_dry' },
-          { label: 'Medium', value: 'medium' },
-          { label: 'Sweet', value: 'sweet' }
-        ]
-      },
-      carbonation: {
-        key: 'carbonation' as keyof CiderMasterRecord,
-        label: 'Carbonation',
-        type: 'select',
-        required: false,
-        placeholder: 'Select carbonation level',
-        section: 'enthusiast',
-        options: [
-          { label: 'Still', value: 'still' },
-          { label: 'Light Sparkling', value: 'light_sparkling' },
-          { label: 'Sparkling', value: 'sparkling' },
-          { label: 'Highly Carbonated', value: 'highly_carbonated' }
-        ]
-      },
-      clarity: {
-        key: 'clarity' as keyof CiderMasterRecord,
-        label: 'Clarity',
-        type: 'select',
-        required: false,
-        placeholder: 'Select clarity',
-        section: 'enthusiast',
-        options: [
-          { label: 'Crystal Clear', value: 'crystal_clear' },
-          { label: 'Clear', value: 'clear' },
-          { label: 'Hazy', value: 'hazy' },
-          { label: 'Cloudy', value: 'cloudy' },
-          { label: 'Opaque', value: 'opaque' }
-        ]
-      }
-    }
+    options: [
+      { label: 'Bone Dry', value: 'bone_dry' },
+      { label: 'Dry', value: 'dry' },
+      { label: 'Off-Dry', value: 'off_dry' },
+      { label: 'Medium', value: 'medium' },
+      { label: 'Sweet', value: 'sweet' }
+    ]
+  },
+
+  carbonation: {
+    key: 'carbonation',
+    label: 'Carbonation',
+    type: 'select',
+    required: false,
+    placeholder: 'Select carbonation level',
+    section: 'enthusiast',
+    options: [
+      { label: 'Still', value: 'still' },
+      { label: 'Lightly Sparkling (Pétillant)', value: 'lightly_sparkling' },
+      { label: 'Sparkling', value: 'sparkling' },
+      { label: 'Highly Carbonated', value: 'highly_carbonated' }
+    ]
+  },
+
+  clarity: {
+    key: 'clarity',
+    label: 'Clarity',
+    type: 'select',
+    required: false,
+    placeholder: 'Select clarity',
+    section: 'enthusiast',
+    options: [
+      { label: 'Crystal Clear', value: 'crystal_clear' },
+      { label: 'Clear', value: 'clear' },
+      { label: 'Hazy', value: 'hazy' },
+      { label: 'Cloudy', value: 'cloudy' },
+      { label: 'Opaque', value: 'opaque' }
+    ]
+  },
+
+  color: {
+    key: 'color',
+    label: 'Color',
+    type: 'select',
+    required: false,
+    placeholder: 'Select color',
+    section: 'enthusiast',
+    options: [
+      { label: 'Pale Straw', value: 'pale_straw' },
+      { label: 'Golden', value: 'golden' },
+      { label: 'Amber', value: 'amber' },
+      { label: 'Copper', value: 'copper' },
+      { label: 'Ruby', value: 'ruby' },
+      { label: 'Pink/Rosé', value: 'pink_rose' },
+      { label: 'Dark Amber', value: 'dark_amber' }
+    ]
   },
 
   tasteTags: {

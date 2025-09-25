@@ -71,11 +71,12 @@ export interface CiderMasterRecord {
 
   // Enthusiast level fields
   traditionalStyle?: TraditionalStyle;
-  basicCharacteristics?: {
-    sweetness: 'bone_dry' | 'dry' | 'off_dry' | 'medium' | 'sweet';
-    carbonation: 'still' | 'light_sparkling' | 'sparkling' | 'highly_carbonated';
-    clarity: 'crystal_clear' | 'clear' | 'hazy' | 'cloudy' | 'opaque';
-  };
+
+  // Individual characteristic fields (following data model specification)
+  sweetness?: 'bone_dry' | 'dry' | 'off_dry' | 'medium' | 'sweet';
+  carbonation?: 'still' | 'lightly_sparkling' | 'sparkling' | 'highly_carbonated';
+  clarity?: 'crystal_clear' | 'clear' | 'hazy' | 'cloudy' | 'opaque';
+  color?: 'pale_straw' | 'golden' | 'amber' | 'copper' | 'ruby' | 'pink_rose' | 'dark_amber';
   tasteTags?: string[];
   containerType?: ContainerType;
 
@@ -139,7 +140,7 @@ export const DISCLOSURE_CONFIGS: Record<DisclosureLevel, DisclosureConfig> = {
   enthusiast: {
     fields: ['name', 'brand', 'abv', 'overallRating', 'tasteTags', 'containerType'],
     targetTime: 120,
-    optional: ['photo', 'notes', 'traditionalStyle', 'basicCharacteristics']
+    optional: ['photo', 'notes', 'traditionalStyle', 'sweetness', 'carbonation', 'clarity', 'color']
   },
   expert: {
     fields: ['name', 'brand', 'abv', 'overallRating', 'tasteTags', 'containerType',
@@ -164,7 +165,10 @@ export interface QuickEntryForm {
   photo?: string;
   notes?: string;
   traditionalStyle?: TraditionalStyle;
-  basicCharacteristics?: CiderMasterRecord['basicCharacteristics'];
+  sweetness?: CiderMasterRecord['sweetness'];
+  carbonation?: CiderMasterRecord['carbonation'];
+  clarity?: CiderMasterRecord['clarity'];
+  color?: CiderMasterRecord['color'];
   tasteTags?: string[];
   containerType?: ContainerType;
   appleClassification?: CiderMasterRecord['appleClassification'];
@@ -220,11 +224,10 @@ export interface FormValidationErrors {
   traditionalStyle?: string;
   tasteTags?: string;
   containerType?: string;
-  basicCharacteristics?: {
-    sweetness?: string;
-    carbonation?: string;
-    clarity?: string;
-  };
+  sweetness?: string;
+  carbonation?: string;
+  clarity?: string;
+  color?: string;
   appleClassification?: {
     categories?: string;
     varieties?: string;

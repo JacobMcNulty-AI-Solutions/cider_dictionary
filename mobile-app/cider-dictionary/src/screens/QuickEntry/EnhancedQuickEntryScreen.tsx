@@ -434,25 +434,6 @@ export default function EnhancedQuickEntryScreen({ navigation }: Props) {
           />
         );
 
-      case 'characteristics':
-        // For now, render characteristics as a simple text input
-        // This can be enhanced later with a specialized component
-        return (
-          <ValidatedInput
-            key={fieldKey}
-            label={config.label}
-            value={typeof value === 'object' ? JSON.stringify(value) : (value as string) || ''}
-            onChangeText={(text) => {
-              // For now, store as text. Can be enhanced to parse structured data
-              handleFieldChange(fieldKey, text);
-            }}
-            placeholder={config.placeholder}
-            validation={validation}
-            required={config.required}
-            multiline={true}
-            numberOfLines={3}
-          />
-        );
 
       // Add more field types as needed
       default:

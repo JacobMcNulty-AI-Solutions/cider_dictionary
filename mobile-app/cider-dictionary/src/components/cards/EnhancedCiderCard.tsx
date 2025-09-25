@@ -117,9 +117,9 @@ const EnhancedCiderCard = memo<Props>(({
   };
 
   const renderCharacteristics = () => {
-    if (!showFullDetails || !cider.basicCharacteristics) return null;
+    if (!showFullDetails || (!cider.sweetness && !cider.carbonation && !cider.clarity)) return null;
 
-    const { sweetness, carbonation, clarity } = cider.basicCharacteristics;
+    const { sweetness, carbonation, clarity } = cider;
 
     return (
       <View style={styles.characteristicsContainer}>

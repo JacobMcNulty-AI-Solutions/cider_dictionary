@@ -11,6 +11,8 @@ declare global {
 export type RootStackParamList = {
   TabNavigator: undefined;
   CiderDetail: { ciderId: string };
+  ExperienceLog: { ciderId: string };
+  ExperienceHistory: { ciderId: string };
 };
 
 export type RootTabParamList = {

@@ -308,6 +308,20 @@ export default function CiderDetailScreen({ route, navigation }: Props) {
         {/* Actions */}
         <View style={styles.actionsSection}>
           <Button
+            title="Log Experience"
+            onPress={() => navigation.navigate('ExperienceLog', { ciderId })}
+            variant="primary"
+            style={styles.experienceButton}
+          />
+
+          <Button
+            title="View Experience History"
+            onPress={() => navigation.navigate('ExperienceHistory', { ciderId })}
+            variant="secondary"
+            style={styles.historyButton}
+          />
+
+          <Button
             title="Delete Cider"
             onPress={handleDelete}
             variant="secondary"
@@ -435,6 +449,13 @@ const styles = StyleSheet.create({
   },
   actionsSection: {
     marginTop: 20,
+    gap: 12,
+  },
+  experienceButton: {
+    backgroundColor: '#32D74B',
+  },
+  historyButton: {
+    backgroundColor: '#FF9500',
   },
   deleteButton: {
     backgroundColor: '#F44336',

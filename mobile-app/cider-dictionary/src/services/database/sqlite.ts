@@ -1,5 +1,7 @@
 import * as SQLite from 'expo-sqlite';
 import { BasicCiderRecord, CiderMasterRecord, CiderDatabase, Rating } from '../../types/cider';
+import { ExperienceLog } from '../../types/experience';
+import { SyncOperation, SyncOperationType, SyncStatus } from '../../types/sync';
 import { DatabaseError, ErrorHandler, withRetry } from '../../utils/errors';
 
 // Database connection pool for better performance
@@ -105,6 +107,7 @@ class DatabaseConnectionManager {
   private async createTables(): Promise<void> {
     if (!this.db) return;
 
+    // Create ciders table
     await this.db.execAsync(`
       CREATE TABLE IF NOT EXISTS ciders (
         id TEXT PRIMARY KEY,
@@ -139,6 +142,75 @@ class DatabaseConnectionManager {
         syncStatus TEXT DEFAULT 'pending',
         version INTEGER DEFAULT 1
       );
+    `);
+
+    // Create experiences table
+    await this.db.execAsync(`
+      CREATE TABLE IF NOT EXISTS experiences (
+        id TEXT PRIMARY KEY,
+        userId TEXT NOT NULL,
+        ciderId TEXT NOT NULL,
+
+        -- Experience details
+        date TEXT NOT NULL,
+        venue TEXT NOT NULL, -- JSON object with venue info
+
+        -- Price and value
+        price REAL NOT NULL,
+        containerSize INTEGER NOT NULL,
+        pricePerMl REAL NOT NULL,
+
+        -- Optional experience data
+        notes TEXT,
+        rating INTEGER,
+        weatherConditions TEXT,
+        companionType TEXT,
+
+        -- System fields
+        createdAt TEXT NOT NULL,
+        updatedAt TEXT NOT NULL,
+        syncStatus TEXT DEFAULT 'pending',
+        version INTEGER DEFAULT 1,
+
+        FOREIGN KEY (ciderId) REFERENCES ciders (id) ON DELETE CASCADE
+      );
+    `);
+
+    // Create sync operations queue table
+    await this.db.execAsync(`
+      CREATE TABLE IF NOT EXISTS sync_operations (
+        id TEXT PRIMARY KEY,
+        type TEXT NOT NULL,
+        data TEXT NOT NULL, -- JSON serialized data
+        timestamp TEXT NOT NULL,
+        retryCount INTEGER DEFAULT 0,
+        maxRetries INTEGER DEFAULT 3,
+        status TEXT DEFAULT 'pending',
+        errorMessage TEXT
+      );
+    `);
+
+    // Create sync conflicts table
+    await this.db.execAsync(`
+      CREATE TABLE IF NOT EXISTS sync_conflicts (
+        id TEXT PRIMARY KEY,
+        entityId TEXT NOT NULL,
+        entityType TEXT NOT NULL,
+        localVersion TEXT NOT NULL, -- JSON
+        remoteVersion TEXT NOT NULL, -- JSON
+        conflictFields TEXT NOT NULL, -- JSON array
+        createdAt TEXT NOT NULL,
+        resolution TEXT -- JSON object, nullable
+      );
+    `);
+
+    // Create indexes for better query performance
+    await this.db.execAsync(`
+      CREATE INDEX IF NOT EXISTS idx_experiences_cider_id ON experiences(ciderId);
+      CREATE INDEX IF NOT EXISTS idx_experiences_date ON experiences(date DESC);
+      CREATE INDEX IF NOT EXISTS idx_experiences_price_per_ml ON experiences(pricePerMl);
+      CREATE INDEX IF NOT EXISTS idx_sync_operations_status ON sync_operations(status);
+      CREATE INDEX IF NOT EXISTS idx_sync_operations_timestamp ON sync_operations(timestamp);
     `);
   }
 
@@ -389,6 +461,185 @@ export class BasicSQLiteService implements CiderDatabase {
       averageAbv: Math.round((totalAbv / ciders.length) * 10) / 10,
       highestRated: sortedByRating[0],
       lowestRated: sortedByRating[sortedByRating.length - 1]
+    };
+  }
+
+  // Experience logging methods
+  async createExperience(experience: ExperienceLog): Promise<ExperienceLog> {
+    try {
+      return await withRetry(async () => {
+        const db = await this.connectionManager.getDatabase();
+
+        await db.runAsync(
+          `INSERT INTO experiences (
+            id, userId, ciderId, date, venue, price, containerSize, pricePerMl,
+            notes, rating, weatherConditions, companionType,
+            createdAt, updatedAt, syncStatus, version
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            experience.id,
+            experience.userId,
+            experience.ciderId,
+            experience.date.toISOString(),
+            JSON.stringify(experience.venue),
+            experience.price,
+            experience.containerSize,
+            experience.pricePerMl,
+            experience.notes || null,
+            experience.rating || null,
+            experience.weatherConditions || null,
+            experience.companionType || null,
+            experience.createdAt.toISOString(),
+            experience.updatedAt.toISOString(),
+            experience.syncStatus,
+            experience.version
+          ]
+        );
+
+        console.log('Experience created successfully:', experience.id);
+        return experience;
+      }, 2, 1000);
+    } catch (error) {
+      const dbError = new DatabaseError(
+        `Failed to create experience for cider: ${experience.ciderId}`,
+        'Failed to save experience. Please check your connection and try again.',
+        true,
+        error instanceof Error ? error : undefined
+      );
+      ErrorHandler.log(dbError, 'BasicSQLiteService.createExperience');
+      throw dbError;
+    }
+  }
+
+  async getExperiencesByCiderId(ciderId: string): Promise<ExperienceLog[]> {
+    try {
+      const db = await this.connectionManager.getDatabase();
+      const result = await db.getAllAsync(
+        'SELECT * FROM experiences WHERE ciderId = ? ORDER BY date DESC',
+        [ciderId]
+      );
+
+      return result.map((row: any) => this.mapRowToExperience(row));
+    } catch (error) {
+      const dbError = new DatabaseError(
+        `Failed to get experiences for cider: ${ciderId}`,
+        'Unable to load experience history. Please try again.',
+        true,
+        error instanceof Error ? error : undefined
+      );
+      ErrorHandler.log(dbError, 'BasicSQLiteService.getExperiencesByCiderId');
+      throw dbError;
+    }
+  }
+
+  async getAllExperiences(): Promise<ExperienceLog[]> {
+    try {
+      const db = await this.connectionManager.getDatabase();
+      const result = await db.getAllAsync('SELECT * FROM experiences ORDER BY date DESC');
+
+      return result.map((row: any) => this.mapRowToExperience(row));
+    } catch (error) {
+      const dbError = new DatabaseError(
+        'Failed to retrieve experiences',
+        'Unable to load experiences. Please try again.',
+        true,
+        error instanceof Error ? error : undefined
+      );
+      ErrorHandler.log(dbError, 'BasicSQLiteService.getAllExperiences');
+      throw dbError;
+    }
+  }
+
+  // Sync operations methods
+  async insertSyncOperation(operation: SyncOperation): Promise<void> {
+    try {
+      const db = await this.connectionManager.getDatabase();
+      await db.runAsync(
+        `INSERT INTO sync_operations (
+          id, type, data, timestamp, retryCount, maxRetries, status, errorMessage
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          operation.id,
+          operation.type,
+          JSON.stringify(operation.data),
+          operation.timestamp.toISOString(),
+          operation.retryCount,
+          operation.maxRetries,
+          operation.status,
+          operation.errorMessage || null
+        ]
+      );
+    } catch (error) {
+      console.error('Failed to insert sync operation:', error);
+      throw error;
+    }
+  }
+
+  async getPendingSyncOperations(): Promise<SyncOperation[]> {
+    try {
+      const db = await this.connectionManager.getDatabase();
+      const result = await db.getAllAsync(
+        'SELECT * FROM sync_operations WHERE status = ? ORDER BY timestamp ASC',
+        ['pending']
+      );
+
+      return result.map((row: any) => ({
+        id: row.id,
+        type: row.type as SyncOperationType,
+        data: JSON.parse(row.data),
+        timestamp: new Date(row.timestamp),
+        retryCount: row.retryCount,
+        maxRetries: row.maxRetries,
+        status: row.status as SyncStatus,
+        errorMessage: row.errorMessage || undefined
+      }));
+    } catch (error) {
+      console.error('Failed to get pending sync operations:', error);
+      throw error;
+    }
+  }
+
+  async updateSyncOperationStatus(id: string, status: SyncStatus, errorMessage?: string): Promise<void> {
+    try {
+      const db = await this.connectionManager.getDatabase();
+      await db.runAsync(
+        'UPDATE sync_operations SET status = ?, errorMessage = ? WHERE id = ?',
+        [status, errorMessage || null, id]
+      );
+    } catch (error) {
+      console.error('Failed to update sync operation status:', error);
+      throw error;
+    }
+  }
+
+  async deleteSyncOperation(id: string): Promise<void> {
+    try {
+      const db = await this.connectionManager.getDatabase();
+      await db.runAsync('DELETE FROM sync_operations WHERE id = ?', [id]);
+    } catch (error) {
+      console.error('Failed to delete sync operation:', error);
+      throw error;
+    }
+  }
+
+  private mapRowToExperience(row: any): ExperienceLog {
+    return {
+      id: row.id,
+      userId: row.userId,
+      ciderId: row.ciderId,
+      date: new Date(row.date),
+      venue: JSON.parse(row.venue),
+      price: row.price,
+      containerSize: row.containerSize,
+      pricePerMl: row.pricePerMl,
+      notes: row.notes || undefined,
+      rating: row.rating || undefined,
+      weatherConditions: row.weatherConditions || undefined,
+      companionType: row.companionType || undefined,
+      createdAt: new Date(row.createdAt),
+      updatedAt: new Date(row.updatedAt),
+      syncStatus: row.syncStatus,
+      version: row.version
     };
   }
 }

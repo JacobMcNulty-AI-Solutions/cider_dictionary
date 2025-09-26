@@ -70,7 +70,7 @@ export const ImagePicker: React.FC<ImagePickerProps> = ({
       const result = await ImagePickerExpo.launchCameraAsync({
         mediaTypes: ImagePickerExpo.MediaTypeOptions.Images,
         allowsEditing: true,
-        aspect: [4, 3],
+        aspect: [3, 4], // Portrait orientation for bottles
         quality: 0.8,
         base64: false
       });
@@ -95,7 +95,7 @@ export const ImagePicker: React.FC<ImagePickerProps> = ({
       const result = await ImagePickerExpo.launchImageLibraryAsync({
         mediaTypes: ImagePickerExpo.MediaTypeOptions.Images,
         allowsEditing: true,
-        aspect: [4, 3],
+        aspect: [3, 4], // Portrait orientation for bottles
         quality: 0.8,
         base64: false
       });
@@ -223,7 +223,7 @@ const styles = StyleSheet.create({
     color: '#F44336',
   },
   imageContainer: {
-    height: 200,
+    height: 267, // Portrait height (3:4 aspect ratio, same as camera)
     borderRadius: 8,
     borderWidth: 2,
     borderStyle: 'dashed',

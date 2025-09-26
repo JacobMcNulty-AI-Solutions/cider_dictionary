@@ -225,8 +225,8 @@ export const useCiderStore = create<CiderStore>()(
       set({ isLoading: true, error: null });
 
       try {
-        // TODO: Delete from database
-        // await sqliteService.deleteCider(id);
+        // Delete from database
+        await sqliteService.deleteCider(id);
 
         // Update store
         set(state => {

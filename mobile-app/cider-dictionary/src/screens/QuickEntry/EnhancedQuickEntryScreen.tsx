@@ -247,7 +247,7 @@ export default function EnhancedQuickEntryScreen({ navigation }: Props) {
     try {
       const completionTime = (Date.now() - formState.startTime) / 1000;
 
-      // Create cider record with required fields and defaults
+      // Create cider record with required fields only having defaults
       const ciderData = {
         ...formState.formData,
         // Ensure required fields are properly typed with defaults
@@ -256,11 +256,18 @@ export default function EnhancedQuickEntryScreen({ navigation }: Props) {
         abv: formState.formData.abv || 5.0,
         overallRating: formState.formData.overallRating || 5,
         userId: 'default-user', // TODO: Replace with actual user ID when authentication is implemented
-        // Ensure other required fields have defaults
-        tasteTags: formState.formData.tasteTags || [],
-        notes: formState.formData.notes || '',
-        containerType: formState.formData.containerType || 'bottle',
+        // Remove any undefined optional fields to avoid saving empty defaults
       };
+
+      // Remove undefined optional fields to prevent saving empty values
+      Object.keys(ciderData).forEach(key => {
+        if (ciderData[key as keyof typeof ciderData] === undefined ||
+            ciderData[key as keyof typeof ciderData] === '' ||
+            (Array.isArray(ciderData[key as keyof typeof ciderData]) &&
+             (ciderData[key as keyof typeof ciderData] as any[]).length === 0)) {
+          delete ciderData[key as keyof typeof ciderData];
+        }
+      });
 
       const ciderId = await addCider(ciderData);
 

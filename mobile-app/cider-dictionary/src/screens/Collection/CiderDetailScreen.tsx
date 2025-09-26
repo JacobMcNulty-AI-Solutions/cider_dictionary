@@ -369,10 +369,13 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     overflow: 'hidden',
     marginBottom: 16,
+    alignItems: 'center',
+    paddingVertical: 16,
   },
   photo: {
-    width: '100%',
-    height: 200,
+    width: 200, // Portrait width for bottle photos
+    height: 267, // Portrait height (3:4 aspect ratio, same as camera)
+    borderRadius: 8,
   },
   section: {
     backgroundColor: '#fff',

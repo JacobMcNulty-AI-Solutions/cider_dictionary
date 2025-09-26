@@ -214,9 +214,11 @@ const EnhancedCiderCard = memo<Props>(({
       {renderSelectionIndicator()}
 
       <View style={styles.cardContent}>
-        {renderPhoto()}
+        <View style={styles.mainContent}>
+          {renderPhoto()}
 
-        <View style={styles.headerSection}>
+          <View style={styles.detailsContent}>
+            <View style={styles.headerSection}>
           <View style={styles.titleContainer}>
             <Text
               style={[styles.title, viewMode === 'grid' && styles.titleGrid]}
@@ -271,14 +273,16 @@ const EnhancedCiderCard = memo<Props>(({
           {renderCharacteristics()}
         </View>
 
-        <View style={styles.footerSection}>
-          <Text style={styles.dateText}>
-            Added {formattedDate}
-          </Text>
+            <View style={styles.footerSection}>
+              <Text style={styles.dateText}>
+                Added {formattedDate}
+              </Text>
 
-          {cider.notes && (
-            <Text style={styles.notesIndicator}>📝</Text>
-          )}
+              {cider.notes && (
+                <Text style={styles.notesIndicator}>📝</Text>
+              )}
+            </View>
+          </View>
         </View>
       </View>
     </TouchableOpacity>
@@ -337,16 +341,25 @@ const styles = StyleSheet.create({
   cardContent: {
     padding: 12,
   },
+  mainContent: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+  },
+  detailsContent: {
+    flex: 1,
+    marginLeft: 12,
+  },
   photoContainer: {
-    marginBottom: 8,
+    alignItems: 'center',
   },
   photo: {
-    width: '100%',
-    height: 120,
+    width: 90, // Portrait width for bottle photos
+    height: 120, // Portrait height (4:3 aspect ratio)
     borderRadius: 8,
   },
   photoGrid: {
-    height: 80,
+    width: 60,
+    height: 80, // Smaller portrait for grid view
   },
   headerSection: {
     flexDirection: 'row',

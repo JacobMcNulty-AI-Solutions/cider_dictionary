@@ -8,7 +8,7 @@ import {
   TouchableOpacity,
   StyleSheet,
   Modal,
-  FlatList,
+  ScrollView,
   TextInput,
   SafeAreaView
 } from 'react-native';
@@ -225,13 +225,16 @@ const SelectInput: React.FC<SelectInputProps> = ({
             </View>
           )}
 
-          <FlatList
-            data={filteredOptions}
-            keyExtractor={(item, index) => `option-${index}`}
-            renderItem={renderOption}
+          <ScrollView
             style={styles.optionsList}
             showsVerticalScrollIndicator={false}
-          />
+          >
+            {filteredOptions.map((item, index) => (
+              <View key={`option-${index}`}>
+                {renderOption({ item })}
+              </View>
+            ))}
+          </ScrollView>
         </SafeAreaView>
       </Modal>
     </View>

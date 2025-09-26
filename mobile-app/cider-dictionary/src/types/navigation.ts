@@ -1,11 +1,17 @@
 import type { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
+import type { StackScreenProps } from '@react-navigation/stack';
 import type { CompositeScreenProps } from '@react-navigation/native';
 
 declare global {
   namespace ReactNavigation {
-    interface RootParamList extends RootTabParamList {}
+    interface RootParamList extends RootStackParamList {}
   }
 }
+
+export type RootStackParamList = {
+  TabNavigator: undefined;
+  CiderDetail: { ciderId: string };
+};
 
 export type RootTabParamList = {
   Collection: undefined;
@@ -14,5 +20,11 @@ export type RootTabParamList = {
   Settings: undefined;
 };
 
+export type RootStackScreenProps<Screen extends keyof RootStackParamList> =
+  StackScreenProps<RootStackParamList, Screen>;
+
 export type RootTabScreenProps<Screen extends keyof RootTabParamList> =
-  BottomTabScreenProps<RootTabParamList, Screen>;
+  CompositeScreenProps<
+    BottomTabScreenProps<RootTabParamList, Screen>,
+    StackScreenProps<RootStackParamList>
+  >;

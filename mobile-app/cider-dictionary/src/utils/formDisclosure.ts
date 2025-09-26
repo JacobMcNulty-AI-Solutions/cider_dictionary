@@ -18,7 +18,7 @@ import {
 export interface FormFieldConfig {
   key: keyof CiderMasterRecord;
   label: string;
-  type: 'text' | 'number' | 'rating' | 'select' | 'multiselect' | 'tags';
+  type: 'text' | 'number' | 'rating' | 'select' | 'multiselect' | 'tags' | 'image';
   required: boolean;
   placeholder: string;
   section: 'core' | 'optional' | 'enthusiast' | 'expert';
@@ -98,7 +98,7 @@ export const FORM_FIELD_CONFIGS: Record<keyof CiderMasterRecord, FormFieldConfig
   photo: {
     key: 'photo',
     label: 'Photo',
-    type: 'text',
+    type: 'image',
     required: false,
     placeholder: 'Take a photo',
     section: 'optional'

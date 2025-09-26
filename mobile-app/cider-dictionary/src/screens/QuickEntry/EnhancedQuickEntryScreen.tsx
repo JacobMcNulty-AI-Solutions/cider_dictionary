@@ -36,6 +36,7 @@ import ValidatedInput from '../../components/forms/ValidatedInput';
 import RatingInput from '../../components/common/RatingInput';
 import SelectInput from '../../components/forms/SelectInput';
 import TagSelector from '../../components/forms/TagSelector';
+import { ImagePicker } from '../../components/forms/ImagePicker';
 
 type Props = RootTabScreenProps<'QuickEntry'>;
 
@@ -434,6 +435,17 @@ export default function EnhancedQuickEntryScreen({ navigation }: Props) {
           />
         );
 
+      case 'image':
+        return (
+          <ImagePicker
+            key={fieldKey}
+            label={config.label}
+            value={value as string}
+            onImageSelect={(uri) => handleFieldChange(fieldKey, uri)}
+            validation={validation}
+            required={config.required}
+          />
+        );
 
       // Add more field types as needed
       default:

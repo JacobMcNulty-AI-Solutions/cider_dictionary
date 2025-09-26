@@ -1,5 +1,5 @@
 import * as SQLite from 'expo-sqlite';
-import { BasicCiderRecord, CiderDatabase, Rating } from '../../types/cider';
+import { BasicCiderRecord, CiderMasterRecord, CiderDatabase, Rating } from '../../types/cider';
 import { DatabaseError, ErrorHandler, withRetry } from '../../utils/errors';
 
 // Database connection pool for better performance
@@ -28,16 +28,41 @@ class DatabaseConnectionManager {
   private async initialize(): Promise<void> {
     try {
       this.db = await withRetry(async () => {
-        const database = await SQLite.openDatabaseAsync('cider_dictionary_v2.db');
+        const database = await SQLite.openDatabaseAsync('cider_dictionary_v3.db');
 
         await database.execAsync(`
           CREATE TABLE IF NOT EXISTS ciders (
             id TEXT PRIMARY KEY,
+            userId TEXT NOT NULL,
             name TEXT NOT NULL,
             brand TEXT NOT NULL,
             abv REAL NOT NULL,
             overallRating INTEGER NOT NULL,
-            createdAt TEXT NOT NULL
+
+            -- Optional basic fields
+            photo TEXT,
+            notes TEXT,
+
+            -- Enthusiast level fields
+            traditionalStyle TEXT,
+            sweetness TEXT,
+            carbonation TEXT,
+            clarity TEXT,
+            color TEXT,
+            tasteTags TEXT, -- JSON array
+            containerType TEXT,
+
+            -- Expert level fields (stored as JSON)
+            appleClassification TEXT, -- JSON object
+            productionMethods TEXT,   -- JSON object
+            detailedRatings TEXT,     -- JSON object
+            venue TEXT,               -- JSON object or simple string
+
+            -- System fields
+            createdAt TEXT NOT NULL,
+            updatedAt TEXT NOT NULL,
+            syncStatus TEXT DEFAULT 'pending',
+            version INTEGER DEFAULT 1
           );
         `);
 
@@ -83,11 +108,36 @@ class DatabaseConnectionManager {
     await this.db.execAsync(`
       CREATE TABLE IF NOT EXISTS ciders (
         id TEXT PRIMARY KEY,
+        userId TEXT NOT NULL,
         name TEXT NOT NULL,
         brand TEXT NOT NULL,
         abv REAL NOT NULL,
         overallRating INTEGER NOT NULL,
-        createdAt TEXT NOT NULL
+
+        -- Optional basic fields
+        photo TEXT,
+        notes TEXT,
+
+        -- Enthusiast level fields
+        traditionalStyle TEXT,
+        sweetness TEXT,
+        carbonation TEXT,
+        clarity TEXT,
+        color TEXT,
+        tasteTags TEXT, -- JSON array
+        containerType TEXT,
+
+        -- Expert level fields (stored as JSON)
+        appleClassification TEXT, -- JSON object
+        productionMethods TEXT,   -- JSON object
+        detailedRatings TEXT,     -- JSON object
+        venue TEXT,               -- JSON object or simple string
+
+        -- System fields
+        createdAt TEXT NOT NULL,
+        updatedAt TEXT NOT NULL,
+        syncStatus TEXT DEFAULT 'pending',
+        version INTEGER DEFAULT 1
       );
     `);
   }
@@ -106,29 +156,53 @@ export class BasicSQLiteService implements CiderDatabase {
     console.log('SQLite database initialized successfully');
   }
 
-  async createCider(ciderData: Omit<BasicCiderRecord, 'id' | 'createdAt'>): Promise<BasicCiderRecord> {
+  async createCider(ciderData: CiderMasterRecord): Promise<CiderMasterRecord> {
     try {
       return await withRetry(async () => {
         const db = await this.connectionManager.getDatabase();
 
-        // Generate a more robust ID using crypto-style random + timestamp
-        const id = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-        const createdAt = new Date();
-
-        const newCider: BasicCiderRecord = {
-          id,
-          ...ciderData,
-          createdAt
-        };
-
         // Use prepared statement for better performance
         await db.runAsync(
-          'INSERT INTO ciders (id, name, brand, abv, overallRating, createdAt) VALUES (?, ?, ?, ?, ?, ?)',
-          [id, ciderData.name, ciderData.brand, ciderData.abv, ciderData.overallRating, createdAt.toISOString()]
+          `INSERT INTO ciders (
+            id, userId, name, brand, abv, overallRating,
+            photo, notes,
+            traditionalStyle, sweetness, carbonation, clarity, color, tasteTags, containerType,
+            appleClassification, productionMethods, detailedRatings, venue,
+            createdAt, updatedAt, syncStatus, version
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            ciderData.id,
+            ciderData.userId,
+            ciderData.name,
+            ciderData.brand,
+            ciderData.abv,
+            ciderData.overallRating,
+
+            ciderData.photo || null,
+            ciderData.notes || null,
+
+            ciderData.traditionalStyle || null,
+            ciderData.sweetness || null,
+            ciderData.carbonation || null,
+            ciderData.clarity || null,
+            ciderData.color || null,
+            ciderData.tasteTags ? JSON.stringify(ciderData.tasteTags) : null,
+            ciderData.containerType || null,
+
+            ciderData.appleClassification ? JSON.stringify(ciderData.appleClassification) : null,
+            ciderData.productionMethods ? JSON.stringify(ciderData.productionMethods) : null,
+            ciderData.detailedRatings ? JSON.stringify(ciderData.detailedRatings) : null,
+            ciderData.venue ? (typeof ciderData.venue === 'string' ? ciderData.venue : JSON.stringify(ciderData.venue)) : null,
+
+            ciderData.createdAt.toISOString(),
+            ciderData.updatedAt.toISOString(),
+            ciderData.syncStatus,
+            ciderData.version
+          ]
         );
 
-        console.log('Cider created successfully:', newCider);
-        return newCider;
+        console.log('Cider created successfully:', ciderData);
+        return ciderData;
       }, 2, 1000);
     } catch (error) {
       const dbError = new DatabaseError(
@@ -142,18 +216,43 @@ export class BasicSQLiteService implements CiderDatabase {
     }
   }
 
-  async getAllCiders(): Promise<BasicCiderRecord[]> {
+  async getAllCiders(): Promise<CiderMasterRecord[]> {
     try {
       const db = await this.connectionManager.getDatabase();
       const result = await db.getAllAsync('SELECT * FROM ciders ORDER BY createdAt DESC');
 
-      const ciders: BasicCiderRecord[] = result.map((row: any) => ({
+      const ciders: CiderMasterRecord[] = result.map((row: any) => ({
         id: row.id,
+        userId: row.userId,
         name: row.name,
         brand: row.brand,
         abv: row.abv,
         overallRating: row.overallRating,
-        createdAt: new Date(row.createdAt)
+
+        // Optional basic fields
+        photo: row.photo || undefined,
+        notes: row.notes || undefined,
+
+        // Enthusiast level fields
+        traditionalStyle: row.traditionalStyle || undefined,
+        sweetness: row.sweetness || undefined,
+        carbonation: row.carbonation || undefined,
+        clarity: row.clarity || undefined,
+        color: row.color || undefined,
+        tasteTags: row.tasteTags ? JSON.parse(row.tasteTags) : undefined,
+        containerType: row.containerType || undefined,
+
+        // Expert level fields
+        appleClassification: row.appleClassification ? JSON.parse(row.appleClassification) : undefined,
+        productionMethods: row.productionMethods ? JSON.parse(row.productionMethods) : undefined,
+        detailedRatings: row.detailedRatings ? JSON.parse(row.detailedRatings) : undefined,
+        venue: row.venue ? (row.venue.startsWith('{') ? JSON.parse(row.venue) : row.venue) : undefined,
+
+        // System fields
+        createdAt: new Date(row.createdAt),
+        updatedAt: new Date(row.updatedAt),
+        syncStatus: row.syncStatus,
+        version: row.version
       }));
 
       return ciders;
@@ -169,7 +268,7 @@ export class BasicSQLiteService implements CiderDatabase {
     }
   }
 
-  async getCiderById(id: string): Promise<BasicCiderRecord | null> {
+  async getCiderById(id: string): Promise<CiderMasterRecord | null> {
     try {
       const db = await this.connectionManager.getDatabase();
       const result = await db.getFirstAsync('SELECT * FROM ciders WHERE id = ?', [id]);
@@ -181,11 +280,36 @@ export class BasicSQLiteService implements CiderDatabase {
       const row = result as any;
       return {
         id: row.id,
+        userId: row.userId,
         name: row.name,
         brand: row.brand,
         abv: row.abv,
         overallRating: row.overallRating,
-        createdAt: new Date(row.createdAt)
+
+        // Optional basic fields
+        photo: row.photo || undefined,
+        notes: row.notes || undefined,
+
+        // Enthusiast level fields
+        traditionalStyle: row.traditionalStyle || undefined,
+        sweetness: row.sweetness || undefined,
+        carbonation: row.carbonation || undefined,
+        clarity: row.clarity || undefined,
+        color: row.color || undefined,
+        tasteTags: row.tasteTags ? JSON.parse(row.tasteTags) : undefined,
+        containerType: row.containerType || undefined,
+
+        // Expert level fields
+        appleClassification: row.appleClassification ? JSON.parse(row.appleClassification) : undefined,
+        productionMethods: row.productionMethods ? JSON.parse(row.productionMethods) : undefined,
+        detailedRatings: row.detailedRatings ? JSON.parse(row.detailedRatings) : undefined,
+        venue: row.venue ? (row.venue.startsWith('{') ? JSON.parse(row.venue) : row.venue) : undefined,
+
+        // System fields
+        createdAt: new Date(row.createdAt),
+        updatedAt: new Date(row.updatedAt),
+        syncStatus: row.syncStatus,
+        version: row.version
       };
     } catch (error) {
       const dbError = new DatabaseError(

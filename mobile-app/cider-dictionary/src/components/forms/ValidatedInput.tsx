@@ -8,8 +8,7 @@ import {
   TextInput,
   StyleSheet,
   Animated,
-  TouchableOpacity,
-  FlatList
+  TouchableOpacity
 } from 'react-native';
 import { FieldValidationState } from '../../types/cider';
 
@@ -142,20 +141,15 @@ const ValidatedInput: React.FC<ValidatedInputProps> = ({
 
     return (
       <View style={styles.suggestionsContainer}>
-        <FlatList
-          data={suggestions}
-          keyExtractor={(item, index) => `suggestion-${index}`}
-          renderItem={({ item }) => (
-            <TouchableOpacity
-              style={styles.suggestionItem}
-              onPress={() => handleSuggestionPress(item)}
-            >
-              <Text style={styles.suggestionItemText}>{item}</Text>
-            </TouchableOpacity>
-          )}
-          showsVerticalScrollIndicator={false}
-          keyboardShouldPersistTaps="handled"
-        />
+        {suggestions.map((item, index) => (
+          <TouchableOpacity
+            key={`suggestion-${index}`}
+            style={styles.suggestionItem}
+            onPress={() => handleSuggestionPress(item)}
+          >
+            <Text style={styles.suggestionItemText}>{item}</Text>
+          </TouchableOpacity>
+        ))}
       </View>
     );
   };

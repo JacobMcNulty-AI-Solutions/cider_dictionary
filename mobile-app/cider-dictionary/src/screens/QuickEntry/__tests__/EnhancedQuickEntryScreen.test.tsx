@@ -13,6 +13,23 @@ import { VenueConsolidationService } from '../../../utils/venueConsolidation';
 // TEST SETUP AND MOCKS
 // =============================================================================
 
+// Mock expo-image-picker
+jest.mock('expo-image-picker', () => ({
+  requestCameraPermissionsAsync: jest.fn().mockResolvedValue({ status: 'granted' }),
+  requestMediaLibraryPermissionsAsync: jest.fn().mockResolvedValue({ status: 'granted' }),
+  launchCameraAsync: jest.fn().mockResolvedValue({
+    canceled: false,
+    assets: [{ uri: 'mock://image.jpg' }]
+  }),
+  launchImageLibraryAsync: jest.fn().mockResolvedValue({
+    canceled: false,
+    assets: [{ uri: 'mock://image.jpg' }]
+  }),
+  MediaTypeOptions: {
+    Images: 'Images'
+  }
+}));
+
 // Mock the store
 const mockAddCider = jest.fn();
 const mockFindDuplicates = jest.fn();

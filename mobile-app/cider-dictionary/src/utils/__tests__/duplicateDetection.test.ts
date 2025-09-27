@@ -22,7 +22,6 @@ const createMockCiderMasterRecord = (overrides: Partial<CiderMasterRecord> = {})
   abv: 5.2,
   tasteTags: ['crisp', 'fruity'],
   notes: 'Test notes',
-  containerType: 'bottle',
   venue: {
     id: 'venue1',
     name: 'Test Venue',
@@ -44,7 +43,6 @@ const createTestCiderDatabase = (): CiderMasterRecord[] => [
     brand: 'Aspall',
     abv: 5.5,
     overallRating: 4.2,
-    containerType: 'bottle',
   }),
   createMockCiderMasterRecord({
     id: 'cider2',
@@ -52,7 +50,6 @@ const createTestCiderDatabase = (): CiderMasterRecord[] => [
     brand: 'Thatchers',
     abv: 4.8,
     overallRating: 4.0,
-    containerType: 'can',
   }),
   createMockCiderMasterRecord({
     id: 'cider3',
@@ -60,7 +57,6 @@ const createTestCiderDatabase = (): CiderMasterRecord[] => [
     brand: 'Strongbow',
     abv: 5.0,
     overallRating: 3.2,
-    containerType: 'bottle',
   }),
   createMockCiderMasterRecord({
     id: 'cider4',
@@ -68,7 +64,6 @@ const createTestCiderDatabase = (): CiderMasterRecord[] => [
     brand: 'Aspall',
     abv: 8.2,
     overallRating: 4.5,
-    containerType: 'bottle',
   }),
   createMockCiderMasterRecord({
     id: 'cider5',
@@ -76,7 +71,6 @@ const createTestCiderDatabase = (): CiderMasterRecord[] => [
     brand: 'Old Mout',
     abv: 4.0,
     overallRating: 3.8,
-    containerType: 'bottle',
   }),
   createMockCiderMasterRecord({
     id: 'cider6',
@@ -84,7 +78,6 @@ const createTestCiderDatabase = (): CiderMasterRecord[] => [
     brand: 'Rekorderlig',
     abv: 4.0,
     overallRating: 3.5,
-    containerType: 'bottle',
   }),
   createMockCiderMasterRecord({
     id: 'cider7',
@@ -92,7 +85,6 @@ const createTestCiderDatabase = (): CiderMasterRecord[] => [
     brand: 'Thatchers',
     abv: 4.5,
     overallRating: 3.9,
-    containerType: 'can',
   }),
   createMockCiderMasterRecord({
     id: 'cider8',
@@ -100,7 +92,6 @@ const createTestCiderDatabase = (): CiderMasterRecord[] => [
     brand: 'Aspall',
     abv: 5.5,
     overallRating: 4.3,
-    containerType: 'draft',
   }),
 ];
 
@@ -147,14 +138,12 @@ describe('String Similarity Algorithms', () => {
       const cider1 = createMockCiderMasterRecord({
         name: 'Traditional Scrumpy',
         brand: 'Somerset Farm',
-        abv: 6.5,
-        containerType: 'bottle'
+        abv: 6.5
       });
       const cider2 = createMockCiderMasterRecord({
         name: 'Berry Fusion',
         brand: 'Urban Cidery',
-        abv: 4.2,
-        containerType: 'can'
+        abv: 4.2
       });
 
       const matchResult = CiderMatcher.calculateMatchScore(cider1, cider2);
@@ -166,14 +155,12 @@ describe('String Similarity Algorithms', () => {
       const cider1 = createMockCiderMasterRecord({
         name: '',
         brand: 'Test Brand',
-        abv: 4.0,
-        containerType: 'can'
+        abv: 4.0
       });
       const cider2 = createMockCiderMasterRecord({
         name: 'Test Name',
         brand: '',
-        abv: 6.0,
-        containerType: 'bottle'
+        abv: 6.0
       });
 
       const matchResult = CiderMatcher.calculateMatchScore(cider1, cider2);
@@ -272,33 +259,7 @@ describe('CiderMatcher', () => {
       });
     });
 
-    it('should factor in container type matches', () => {
-      const cider1 = createMockCiderMasterRecord({
-        name: 'Same Name',
-        brand: 'Same Brand',
-        containerType: 'bottle',
-      });
-      const cider2 = createMockCiderMasterRecord({
-        name: 'Same Name',
-        brand: 'Same Brand',
-        containerType: 'bottle',
-      });
 
-      const matchResult = CiderMatcher.calculateMatchScore(cider1, cider2);
-
-      expect(matchResult.reasons).toContain('Same container type');
-      expect(matchResult.matchedFields).toContain('containerType');
-    });
-
-    it('should handle missing container type gracefully', () => {
-      const cider1 = createMockCiderMasterRecord({ containerType: 'bottle' });
-      const cider2 = createMockCiderMasterRecord({ containerType: undefined as any });
-
-      const matchResult = CiderMatcher.calculateMatchScore(cider1, cider2);
-
-      expect(matchResult.score).toBeGreaterThanOrEqual(0);
-      expect(matchResult.reasons).not.toContain('Same container type');
-    });
   });
 
   describe('Potential Duplicates Finding', () => {
@@ -313,7 +274,6 @@ describe('CiderMatcher', () => {
         name: 'Aspall Dry Cider',
         brand: 'Aspall',
         abv: 5.5,
-        containerType: 'bottle' as const,
       };
 
       const potentialDuplicates = CiderMatcher.findPotentialDuplicates(newCider, testDatabase);
@@ -328,7 +288,6 @@ describe('CiderMatcher', () => {
         name: 'Aspall Premium Dry',
         brand: 'Aspall',
         abv: 5.0,
-        containerType: 'bottle' as const,
       };
 
       const potentialDuplicates = CiderMatcher.findPotentialDuplicates(newCider, testDatabase);
@@ -343,7 +302,6 @@ describe('CiderMatcher', () => {
         name: 'Thatchers Premium',
         brand: 'Thatchers',
         abv: 4.8,
-        containerType: 'can' as const,
       };
 
       const potentialDuplicates = CiderMatcher.findPotentialDuplicates(newCider, testDatabase);
@@ -361,7 +319,6 @@ describe('CiderMatcher', () => {
         name: 'Completely Different Name',
         brand: 'Unrelated Brand',
         abv: 12.0, // Very different ABV
-        containerType: 'bottle' as const,
       };
 
       const potentialDuplicates = CiderMatcher.findPotentialDuplicates(newCider, testDatabase);
@@ -375,7 +332,6 @@ describe('CiderMatcher', () => {
         name: 'Any Cider',
         brand: 'Any Brand',
         abv: 5.0,
-        containerType: 'bottle' as const,
       };
 
       const potentialDuplicates = CiderMatcher.findPotentialDuplicates(newCider, []);
@@ -398,7 +354,6 @@ describe('DuplicateDetectionEngine', () => {
         'Aspall Dry Cider',
         'Aspall',
         5.5,
-        'bottle',
         testDatabase
       );
 
@@ -414,7 +369,6 @@ describe('DuplicateDetectionEngine', () => {
         'Aspall Premium Cider',
         'Aspall',
         5.2,
-        'bottle',
         testDatabase
       );
 
@@ -432,7 +386,6 @@ describe('DuplicateDetectionEngine', () => {
         'Unique Brand New Cider',
         'Never Heard Of This Brand',
         15.0, // Unusual ABV
-        'keg',
         testDatabase
       );
 
@@ -448,7 +401,6 @@ describe('DuplicateDetectionEngine', () => {
         'Thatchers Gold',
         'Thatchers',
         undefined, // No ABV
-        undefined, // No container type
         testDatabase
       );
 
@@ -462,7 +414,6 @@ describe('DuplicateDetectionEngine', () => {
         'Any Cider',
         'Any Brand',
         5.0,
-        'bottle',
         []
       );
 
@@ -478,7 +429,6 @@ describe('DuplicateDetectionEngine', () => {
         'Cider',
         'Brand',
         5.0,
-        'bottle',
         testDatabase
       );
 
@@ -492,7 +442,6 @@ describe('DuplicateDetectionEngine', () => {
         'Aspall Imperial Dry',
         'Aspall',
         8.2,
-        'bottle',
         testDatabase
       );
 
@@ -647,7 +596,6 @@ describe('DuplicateDetectionEngine', () => {
         null as any,
         undefined as any,
         0,
-        '',
         testDatabase
       );
 
@@ -666,7 +614,6 @@ describe('DuplicateDetectionEngine', () => {
         'Cider & Company',
         'Brand & Sons',
         5.0,
-        'bottle',
         specialCharDatabase
       );
 
@@ -686,7 +633,6 @@ describe('DuplicateDetectionEngine', () => {
         longName,
         longBrand,
         5.0,
-        'bottle',
         longNameDatabase
       );
 
@@ -704,7 +650,6 @@ describe('DuplicateDetectionEngine', () => {
         'Low ABV',
         'Test',
         0.5,
-        'bottle',
         extremeDatabase
       );
 
@@ -712,7 +657,6 @@ describe('DuplicateDetectionEngine', () => {
         'High ABV',
         'Test',
         20.0,
-        'bottle',
         extremeDatabase
       );
 
@@ -731,7 +675,6 @@ describe('DuplicateDetectionEngine', () => {
         'Cidre Francois', // Without accent
         'Brasserie Francais',
         4.5,
-        'bottle',
         unicodeDatabase
       );
 
@@ -757,7 +700,6 @@ describe('DuplicateDetectionEngine', () => {
         'Cider 5000',
         'Brand 50',
         7.0,
-        'bottle',
         largeDatabase
       );
 
@@ -807,7 +749,6 @@ describe('DuplicateDetectionEngine', () => {
         'Aspall Dry Cider',
         'Aspall',
         5.5,
-        'bottle',
         realisticDatabase
       );
 

@@ -100,7 +100,7 @@ describe('Phase 3 Basic Integration Tests', () => {
         },
         price: 4.50,
         containerSize: 568,
-        pricePerMl: 4.50 / 568,
+        pricePerPint: 4.50 / 568,
         createdAt: new Date(),
         updatedAt: new Date(),
         syncStatus: 'pending',
@@ -110,7 +110,7 @@ describe('Phase 3 Basic Integration Tests', () => {
       const created = await sqliteService.createExperience(experience);
       expect(created.id).toBe('test-exp-1');
       expect(created.venue.name).toBe('Test Pub');
-      expect(created.pricePerMl).toBeCloseTo(4.50 / 568, 4); // More lenient precision
+      expect(created.pricePerPint).toBeCloseTo(4.50 / 568, 4); // More lenient precision
     });
 
     test('should retrieve experiences by cider ID', async () => {
@@ -137,7 +137,7 @@ describe('Phase 3 Basic Integration Tests', () => {
         venue: { id: 'v1', name: 'Venue 1', type: 'pub' },
         price: 4.00,
         containerSize: 500,
-        pricePerMl: 0.008,
+        pricePerPint: 0.008,
         createdAt: new Date(),
         updatedAt: new Date(),
         syncStatus: 'pending',
@@ -152,7 +152,7 @@ describe('Phase 3 Basic Integration Tests', () => {
         venue: { id: 'v2', name: 'Venue 2', type: 'restaurant' },
         price: 5.50,
         containerSize: 568,
-        pricePerMl: 0.0097,
+        pricePerPint: 0.0097,
         createdAt: new Date(),
         updatedAt: new Date(),
         syncStatus: 'pending',
@@ -249,7 +249,7 @@ describe('Phase 3 Basic Integration Tests', () => {
           venue: { id: 'test-venue', name: 'Test Venue', type: 'pub' },
           price: testCase.price,
           containerSize: testCase.size,
-          pricePerMl: testCase.price / testCase.size,
+          pricePerPint: testCase.price / testCase.size,
           createdAt: new Date(),
           updatedAt: new Date(),
           syncStatus: 'pending',
@@ -262,7 +262,7 @@ describe('Phase 3 Basic Integration Tests', () => {
         const found = retrieved.find(exp => exp.containerSize === testCase.size);
 
         expect(found).toBeDefined();
-        expect(found!.pricePerMl).toBeCloseTo(testCase.expected, 4); // Reduced precision
+        expect(found!.pricePerPint).toBeCloseTo(testCase.expected, 4); // Reduced precision
       }
     });
   });
@@ -292,7 +292,7 @@ describe('Phase 3 Basic Integration Tests', () => {
         venue: { id: 'test-venue', name: 'Integrity Venue', type: 'pub' },
         price: 4.00,
         containerSize: 500,
-        pricePerMl: 0.008,
+        pricePerPint: 0.008,
         createdAt: new Date(),
         updatedAt: new Date(),
         syncStatus: 'pending',
@@ -330,7 +330,7 @@ describe('Phase 3 Basic Integration Tests', () => {
         venue: complexVenue,
         price: 4.75,
         containerSize: 568,
-        pricePerMl: 4.75 / 568,
+        pricePerPint: 4.75 / 568,
         notes: 'Test notes with special characters: áéíóú & symbols!',
         createdAt: new Date(),
         updatedAt: new Date(),

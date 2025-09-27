@@ -7,6 +7,7 @@ import TabNavigator from './TabNavigator';
 import CiderDetailScreen from '../screens/Collection/CiderDetailScreen';
 import ExperienceLogScreen from '../screens/ExperienceLog/ExperienceLogScreen';
 import ExperienceHistoryScreen from '../screens/ExperienceHistory/ExperienceHistoryScreen';
+import ExperienceDetailScreen from '../screens/ExperienceDetail/ExperienceDetailScreen';
 import { RootStackParamList } from '../types/navigation';
 import { ErrorBoundary } from '../services/error/ErrorBoundary';
 
@@ -48,6 +49,16 @@ export default function AppNavigator() {
             options={{
               title: 'Experience History',
               headerStyle: { backgroundColor: '#FF9500' },
+              headerTintColor: '#fff',
+              headerTitleStyle: { fontWeight: 'bold' }
+            }}
+          />
+          <Stack.Screen
+            name="ExperienceDetail"
+            component={ExperienceDetailScreen}
+            options={{
+              title: 'Experience Details',
+              headerStyle: { backgroundColor: '#5856D6' },
               headerTintColor: '#fff',
               headerTitleStyle: { fontWeight: 'bold' }
             }}

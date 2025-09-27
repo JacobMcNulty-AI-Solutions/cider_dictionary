@@ -103,7 +103,7 @@ describe('Phase 3 MVP Integration Tests', () => {
         },
         price: 4.50,
         containerSize: 568,
-        pricePerMl: 4.50 / 568,
+        pricePerPint: 4.50 / 568,
         createdAt: new Date(),
         updatedAt: new Date(),
         syncStatus: 'pending',
@@ -118,7 +118,7 @@ describe('Phase 3 MVP Integration Tests', () => {
       const experiences = await sqliteService.getExperiencesByCiderId(testCider.id);
       expect(experiences).toHaveLength(1);
       expect(experiences[0].venue.name).toBe('Test Pub');
-      expect(experiences[0].pricePerMl).toBeCloseTo(0.00793, 5);
+      expect(experiences[0].pricePerPint).toBeCloseTo(0.00793, 5);
 
       // Performance target: under 30 seconds
       expect(completionTime).toBeLessThan(30);
@@ -140,7 +140,7 @@ describe('Phase 3 MVP Integration Tests', () => {
         },
         price: 5.00,
         containerSize: 500,
-        pricePerMl: 5.00 / 500, // Should be 0.01
+        pricePerPint: 5.00 / 500, // Should be 0.01
         createdAt: new Date(),
         updatedAt: new Date(),
         syncStatus: 'pending',
@@ -150,7 +150,7 @@ describe('Phase 3 MVP Integration Tests', () => {
       await sqliteService.createExperience(experience);
 
       const retrieved = await sqliteService.getExperiencesByCiderId('test-cider');
-      expect(retrieved[0].pricePerMl).toBe(0.01);
+      expect(retrieved[0].pricePerPint).toBe(0.01);
     });
   });
 
@@ -189,7 +189,7 @@ describe('Phase 3 MVP Integration Tests', () => {
           },
           price: 3.50 + i,
           containerSize: 500,
-          pricePerMl: (3.50 + i) / 500,
+          pricePerPint: (3.50 + i) / 500,
           createdAt: new Date(),
           updatedAt: new Date(),
           syncStatus: 'pending',

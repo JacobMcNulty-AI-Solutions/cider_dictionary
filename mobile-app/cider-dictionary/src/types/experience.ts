@@ -1,7 +1,7 @@
 // Phase 3: Experience Logging Types
 // Comprehensive experience tracking for cider tasting sessions
 
-import { VenueType, Rating } from './cider';
+import { VenueType, Rating, ContainerType } from './cider';
 
 export interface Location {
   latitude: number;
@@ -32,7 +32,8 @@ export interface ExperienceLog {
   // Price and value analysis
   price: number; // Total price paid
   containerSize: number; // ml
-  pricePerMl: number; // Calculated automatically
+  containerType: ContainerType; // Type of container (bottle, can, draught, etc.)
+  pricePerPint: number; // Calculated automatically (price for equivalent pint)
 
   // Optional experience data
   notes?: string;
@@ -58,6 +59,7 @@ export interface ExperienceFormState {
   };
   price: number;
   containerSize: number;
+  containerType: ContainerType;
   notes: string;
   date: Date;
   rating?: Rating;
@@ -82,12 +84,12 @@ export interface ExperienceAnalytics {
   averagePricePerMl: number;
   bestValueCider: {
     ciderId: string;
-    pricePerMl: number;
+    pricePerPint: number;
     venue: string;
   } | null;
   worstValueCider: {
     ciderId: string;
-    pricePerMl: number;
+    pricePerPint: number;
     venue: string;
   } | null;
   monthlySpending: number;

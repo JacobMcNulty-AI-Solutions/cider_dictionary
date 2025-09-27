@@ -67,7 +67,7 @@ describe('Experience Types', () => {
       },
       price: 5.50,
       containerSize: 568,
-      pricePerMl: 0.0097,
+      pricePerPint: 0.0097,
       notes: 'Great atmosphere, excellent service',
       rating: 8,
       weatherConditions: 'sunny',
@@ -86,7 +86,7 @@ describe('Experience Types', () => {
       expect(mockExperience.venue).toBeDefined();
       expect(mockExperience.price).toBeGreaterThan(0);
       expect(mockExperience.containerSize).toBeGreaterThan(0);
-      expect(mockExperience.pricePerMl).toBeGreaterThan(0);
+      expect(mockExperience.pricePerPint).toBeGreaterThan(0);
       expect(mockExperience.createdAt).toBeInstanceOf(Date);
       expect(mockExperience.updatedAt).toBeInstanceOf(Date);
       expect(mockExperience.syncStatus).toBeDefined();
@@ -101,7 +101,7 @@ describe('Experience Types', () => {
 
     it('should calculate price per ml correctly', () => {
       const expectedPricePerMl = mockExperience.price / mockExperience.containerSize;
-      expect(mockExperience.pricePerMl).toBeCloseTo(expectedPricePerMl, 4);
+      expect(mockExperience.pricePerPint).toBeCloseTo(expectedPricePerMl, 4);
     });
 
     it('should have valid optional fields when present', () => {
@@ -199,12 +199,12 @@ describe('Experience Types', () => {
       averagePricePerMl: 0.0095,
       bestValueCider: {
         ciderId: 'cider_best',
-        pricePerMl: 0.0065,
+        pricePerPint: 0.0065,
         venue: 'Budget Pub'
       },
       worstValueCider: {
         ciderId: 'cider_worst',
-        pricePerMl: 0.015,
+        pricePerPint: 0.015,
         venue: 'Expensive Restaurant'
       },
       monthlySpending: 85.50,
@@ -232,7 +232,7 @@ describe('Experience Types', () => {
       expect(mockAnalytics.monthlySpending).toBeGreaterThanOrEqual(0);
 
       if (mockAnalytics.bestValueCider && mockAnalytics.worstValueCider) {
-        expect(mockAnalytics.bestValueCider.pricePerMl).toBeLessThan(mockAnalytics.worstValueCider.pricePerMl);
+        expect(mockAnalytics.bestValueCider.pricePerPint).toBeLessThan(mockAnalytics.worstValueCider.pricePerPint);
       }
     });
 

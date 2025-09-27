@@ -116,7 +116,7 @@ export default function ExperienceHistoryScreen() {
         case 'date':
           return b.date.getTime() - a.date.getTime();
         case 'price':
-          return b.pricePerMl - a.pricePerMl;
+          return b.pricePerPint - a.pricePerPint;
         case 'rating':
           return (b.rating || 0) - (a.rating || 0);
         case 'cider':
@@ -157,14 +157,38 @@ export default function ExperienceHistoryScreen() {
     };
   }, [filteredExperiences]);
 
+  // Helper function to get venue type label
+  const getVenueTypeLabel = (type: string): string => {
+    const venueTypeLabels: Record<string, string> = {
+      'pub': 'Pub',
+      'restaurant': 'Restaurant',
+      'retail': 'Shop',
+      'festival': 'Festival',
+      'cidery': 'Cidery',
+      'home': 'Home',
+      'other': 'Other'
+    };
+    return venueTypeLabels[type] || type;
+  };
+
+  // Helper function to get container type label
+  const getContainerTypeLabel = (type: string): string => {
+    const containerTypeLabels: Record<string, string> = {
+      'bottle': 'Bottle',
+      'can': 'Can',
+      'draught': 'Draught',
+      'bag_in_box': 'Bag in Box',
+      'other': 'Other'
+    };
+    return containerTypeLabels[type] || type;
+  };
+
   // Render experience item
   const renderExperience = ({ item }: { item: ExperienceWithCider }) => (
     <TouchableOpacity
       style={styles.experienceCard}
       onPress={() => {
-        if (item.cider) {
-          navigation.navigate('CiderDetail', { ciderId: item.cider.id });
-        }
+        navigation.navigate('ExperienceDetail', { experienceId: item.id });
       }}
     >
       <View style={styles.experienceHeader}>
@@ -183,11 +207,20 @@ export default function ExperienceHistoryScreen() {
       </View>
 
       <View style={styles.experienceDetails}>
-        <View style={styles.detailRow}>
-          <Ionicons name="location-outline" size={16} color="#666" />
-          <Text style={styles.detailText}>
-            {typeof item.venue === 'string' ? item.venue : item.venue.name}
-          </Text>
+        <View style={styles.venueSection}>
+          <View style={styles.detailRow}>
+            <Ionicons name="location-outline" size={16} color="#666" />
+            <View style={styles.venueInfo}>
+              <Text style={styles.venueName}>
+                {typeof item.venue === 'string' ? item.venue : item.venue.name}
+              </Text>
+              {typeof item.venue === 'object' && item.venue.type && (
+                <Text style={styles.venueType}>
+                  {getVenueTypeLabel(item.venue.type)}
+                </Text>
+              )}
+            </View>
+          </View>
         </View>
 
         <View style={styles.detailRow}>
@@ -200,7 +233,7 @@ export default function ExperienceHistoryScreen() {
         <View style={styles.detailRow}>
           <Ionicons name="cash-outline" size={16} color="#666" />
           <Text style={styles.detailText}>
-            £{item.price.toFixed(2)} ({item.containerSize}ml) • £{item.pricePerMl.toFixed(3)}/ml
+            £{item.price.toFixed(2)} ({item.containerSize}ml {getContainerTypeLabel(item.containerType)}) • £{item.pricePerPint.toFixed(2)}/pint
           </Text>
         </View>
 
@@ -279,7 +312,7 @@ export default function ExperienceHistoryScreen() {
               >
                 <Text style={[styles.filterText, sortBy === sort && styles.activeFilterText]}>
                   {sort === 'date' ? 'Date' :
-                   sort === 'price' ? 'Price/ml' :
+                   sort === 'price' ? 'Price/pint' :
                    sort === 'rating' ? 'Rating' : 'Cider'}
                 </Text>
               </TouchableOpacity>
@@ -454,6 +487,23 @@ const styles = StyleSheet.create({
   },
   experienceDetails: {
     gap: 8,
+  },
+  venueSection: {
+    marginBottom: 4,
+  },
+  venueInfo: {
+    flex: 1,
+    marginLeft: 8,
+  },
+  venueName: {
+    fontSize: 14,
+    color: '#333',
+    fontWeight: '500',
+  },
+  venueType: {
+    fontSize: 12,
+    color: '#999',
+    marginTop: 2,
   },
   detailRow: {
     flexDirection: 'row',

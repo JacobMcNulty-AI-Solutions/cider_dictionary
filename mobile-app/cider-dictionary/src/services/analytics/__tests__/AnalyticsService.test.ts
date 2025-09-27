@@ -100,7 +100,7 @@ describe('AnalyticsService', () => {
     {
       id: 'exp1', userId: 'user1', ciderId: '1', date: new Date('2023-10-01'),
       venue: { id: 'v1', name: 'The Crown', type: 'pub' },
-      price: 4.50, containerSize: 568, pricePerMl: 4.50/568,
+      price: 4.50, containerSize: 568, pricePerPint: 4.50/568,
       createdAt: new Date(), updatedAt: new Date(), syncStatus: 'synced', version: 1
     }
   ];
@@ -133,8 +133,8 @@ describe('AnalyticsService', () => {
           completionPercentage: 78
         },
         valueAnalytics: {
-          bestValue: { ciderId: '1', pricePerMl: 0.007, venue: 'The Crown' },
-          worstValue: { ciderId: '2', pricePerMl: 0.012, venue: 'Expensive Place' },
+          bestValue: { ciderId: '1', pricePerPint: 0.007, venue: 'The Crown' },
+          worstValue: { ciderId: '2', pricePerPint: 0.012, venue: 'Expensive Place' },
           averagePricePerMl: 0.009,
           monthlySpending: 45.20
         },
@@ -272,7 +272,7 @@ describe('AnalyticsService', () => {
         },
         price: 4.50,
         containerSize: 500,
-        pricePerMl: 0.009,
+        pricePerPint: 0.009,
         createdAt: new Date('2023-10-15'),
         updatedAt: new Date('2023-10-15'),
         syncStatus: 'synced',
@@ -291,7 +291,7 @@ describe('AnalyticsService', () => {
         },
         price: 8.00,
         containerSize: 330,
-        pricePerMl: 0.024,
+        pricePerPint: 0.024,
         createdAt: new Date('2023-10-16'),
         updatedAt: new Date('2023-10-16'),
         syncStatus: 'synced',
@@ -309,8 +309,8 @@ describe('AnalyticsService', () => {
       expect(analytics.valueAnalytics.worstValue).toBeDefined();
 
       if (analytics.valueAnalytics.bestValue && analytics.valueAnalytics.worstValue) {
-        expect(analytics.valueAnalytics.bestValue.pricePerMl)
-          .toBeLessThan(analytics.valueAnalytics.worstValue.pricePerMl);
+        expect(analytics.valueAnalytics.bestValue.pricePerPint)
+          .toBeLessThan(analytics.valueAnalytics.worstValue.pricePerPint);
       }
     });
 
@@ -355,7 +355,7 @@ describe('AnalyticsService', () => {
         },
         price: 4.50,
         containerSize: 500,
-        pricePerMl: 0.009,
+        pricePerPint: 0.009,
         createdAt: new Date('2023-10-15'),
         updatedAt: new Date('2023-10-15'),
         syncStatus: 'synced',
@@ -374,7 +374,7 @@ describe('AnalyticsService', () => {
         },
         price: 5.00,
         containerSize: 500,
-        pricePerMl: 0.010,
+        pricePerPint: 0.010,
         createdAt: new Date('2023-10-16'),
         updatedAt: new Date('2023-10-16'),
         syncStatus: 'synced',
@@ -393,7 +393,7 @@ describe('AnalyticsService', () => {
         },
         price: 8.00,
         containerSize: 330,
-        pricePerMl: 0.024,
+        pricePerPint: 0.024,
         createdAt: new Date('2023-10-17'),
         updatedAt: new Date('2023-10-17'),
         syncStatus: 'synced',
@@ -455,7 +455,7 @@ describe('AnalyticsService', () => {
           venue: { id: 'venue1', name: 'Venue 1', type: 'pub' },
           price: 5.00,
           containerSize: 500,
-          pricePerMl: 0.010,
+          pricePerPint: 0.010,
           createdAt: new Date('2023-10-15'),
           updatedAt: new Date('2023-10-15'),
           syncStatus: 'synced',
@@ -469,7 +469,7 @@ describe('AnalyticsService', () => {
           venue: { id: 'venue1', name: 'Venue 1', type: 'pub' },
           price: 6.00,
           containerSize: 500,
-          pricePerMl: 0.012,
+          pricePerPint: 0.012,
           createdAt: new Date('2023-11-15'),
           updatedAt: new Date('2023-11-15'),
           syncStatus: 'synced',
@@ -524,7 +524,7 @@ describe('AnalyticsService', () => {
         venue: { id: 'venue1', name: 'Venue 1', type: 'pub' },
         price: 5.00,
         containerSize: 500,
-        pricePerMl: 0.010,
+        pricePerPint: 0.010,
         createdAt: new Date('2022-01-01'),
         updatedAt: new Date('2022-01-01'),
         syncStatus: 'synced',
@@ -539,7 +539,7 @@ describe('AnalyticsService', () => {
         venue: { id: 'venue2', name: 'Venue 2', type: 'pub' },
         price: 6.00,
         containerSize: 500,
-        pricePerMl: 0.012,
+        pricePerPint: 0.012,
         createdAt: new Date(),
         updatedAt: new Date(),
         syncStatus: 'synced',

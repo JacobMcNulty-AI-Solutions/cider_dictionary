@@ -239,8 +239,8 @@ export default function AnalyticsScreen({ navigation }: Props) {
 
           <StatCard
             icon="trending-down"
-            title="Average Price per ml"
-            value={`£${analytics.valueAnalytics.averagePricePerMl.toFixed(3)}`}
+            title="Average Price per pint"
+            value={`£${analytics.valueAnalytics.averagePricePerPint.toFixed(2)}`}
             color="#FF9500"
           />
 
@@ -262,7 +262,7 @@ export default function AnalyticsScreen({ navigation }: Props) {
                 {analytics.valueAnalytics.bestValue.cider.name} at {analytics.valueAnalytics.bestValue.venue}
               </Text>
               <Text style={styles.valuePrice}>
-                £{analytics.valueAnalytics.bestValue.pricePerMl.toFixed(3)}/ml
+                £{analytics.valueAnalytics.bestValue.pricePerPint.toFixed(2)}/pint
               </Text>
             </View>
           )}

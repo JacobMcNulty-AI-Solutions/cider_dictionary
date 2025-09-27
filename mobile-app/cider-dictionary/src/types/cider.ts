@@ -78,7 +78,6 @@ export interface CiderMasterRecord {
   clarity?: 'crystal_clear' | 'clear' | 'hazy' | 'cloudy' | 'opaque';
   color?: 'pale_straw' | 'golden' | 'amber' | 'copper' | 'ruby' | 'pink_rose' | 'dark_amber';
   tasteTags?: string[];
-  containerType?: ContainerType;
 
   // Expert level fields
   appleClassification?: {
@@ -138,12 +137,12 @@ export const DISCLOSURE_CONFIGS: Record<DisclosureLevel, DisclosureConfig> = {
     optional: ['photo']
   },
   enthusiast: {
-    fields: ['name', 'brand', 'abv', 'overallRating', 'tasteTags', 'containerType'],
+    fields: ['name', 'brand', 'abv', 'overallRating', 'tasteTags'],
     targetTime: 120,
     optional: ['photo', 'notes', 'traditionalStyle', 'sweetness', 'carbonation', 'clarity', 'color']
   },
   expert: {
-    fields: ['name', 'brand', 'abv', 'overallRating', 'tasteTags', 'containerType',
+    fields: ['name', 'brand', 'abv', 'overallRating', 'tasteTags',
              'appleClassification', 'productionMethods', 'detailedRatings'],
     targetTime: 300,
     optional: ['venue', 'photo', 'notes', 'traditionalStyle', 'sweetness', 'carbonation', 'clarity', 'color']
@@ -170,7 +169,6 @@ export interface QuickEntryForm {
   clarity?: CiderMasterRecord['clarity'];
   color?: CiderMasterRecord['color'];
   tasteTags?: string[];
-  containerType?: ContainerType;
   appleClassification?: CiderMasterRecord['appleClassification'];
   productionMethods?: CiderMasterRecord['productionMethods'];
   detailedRatings?: CiderMasterRecord['detailedRatings'];
@@ -223,7 +221,6 @@ export interface FormValidationErrors {
   overallRating?: string;
   traditionalStyle?: string;
   tasteTags?: string;
-  containerType?: string;
   sweetness?: string;
   carbonation?: string;
   clarity?: string;

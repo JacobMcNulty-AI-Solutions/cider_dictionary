@@ -300,7 +300,7 @@ describe('SyncManager', () => {
           venue: { id: 'venue_1', name: 'Test Venue', type: 'pub' },
           price: 5.0,
           containerSize: 500,
-          pricePerMl: 0.01
+          pricePerPint: 0.01
         },
         timestamp: new Date(),
         retryCount: 0,

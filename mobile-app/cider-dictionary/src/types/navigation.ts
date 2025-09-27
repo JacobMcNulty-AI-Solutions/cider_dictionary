@@ -13,6 +13,7 @@ export type RootStackParamList = {
   CiderDetail: { ciderId: string };
   ExperienceLog: { ciderId: string };
   ExperienceHistory: { ciderId: string };
+  ExperienceDetail: { experienceId: string };
 };
 
 export type RootTabParamList = {

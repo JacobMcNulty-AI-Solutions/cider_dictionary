@@ -94,7 +94,7 @@ export default function EnhancedQuickEntryScreen({ navigation }: Props) {
   // Handle Android back button
   useEffect(() => {
     const backAction = () => {
-      if (formState.formData.name || formState.formData.brand) {
+      if (formState?.formData?.name || formState?.formData?.brand) {
         Alert.alert(
           'Discard Changes?',
           'You have unsaved changes. Are you sure you want to go back?',
@@ -110,7 +110,7 @@ export default function EnhancedQuickEntryScreen({ navigation }: Props) {
 
     const backHandler = BackHandler.addEventListener('hardwareBackPress', backAction);
     return () => backHandler.remove();
-  }, [formState.formData, navigation]);
+  }, [formState?.formData, navigation]);
 
   // =============================================================================
   // FORM FIELD HANDLERS
@@ -121,113 +121,75 @@ export default function EnhancedQuickEntryScreen({ navigation }: Props) {
     value: any
   ) => {
     // Update form data immediately for responsive UI
-    let updates;
-    try {
-      updates = FormDisclosureManager.updateFormState(
-        formState,
-        fieldKey,
-        value
-      );
-    } catch (error) {
-      console.warn('FormDisclosureManager.updateFormState error:', error);
-      // Fallback for tests/runtime issues - will be handled in setFormState
-      updates = {};
-    }
+    setFormState(prev => {
+      if (!prev) return prev; // Safety check
 
-    setFormState(prev => ({
-      ...prev,
-      ...updates,
-      // Fallback updates if FormDisclosureManager failed
-      formData: updates.formData || { ...prev.formData, [fieldKey]: value }
-    }));
+      const updatedFormData = { ...prev.formData, [fieldKey]: value };
 
-    // Debounced validation for performance with error handling
-    setFormState(prevState => {
+      // Form completeness calculation - only required fields matter for submission
+      const hasName = updatedFormData.name && updatedFormData.name.trim().length > 0;
+      const hasBrand = updatedFormData.brand && updatedFormData.brand.trim().length > 0;
+      const hasAbv = updatedFormData.abv && updatedFormData.abv > 0;
+      const hasRating = updatedFormData.overallRating && updatedFormData.overallRating > 0;
+
+      // Can submit if all required fields are filled
+      const canSubmit = hasName && hasBrand && hasAbv && hasRating;
+
+      // Progress includes both required and optional fields for better UX
+      const requiredFieldsCount = [hasName, hasBrand, hasAbv, hasRating].filter(Boolean).length;
+      const optionalFieldsCount = [
+        updatedFormData.traditionalStyle,
+        updatedFormData.appleVarieties && updatedFormData.appleVarieties.length > 0,
+        updatedFormData.tasteTags && updatedFormData.tasteTags.length > 0,
+        updatedFormData.notes,
+        updatedFormData.photo
+      ].filter(Boolean).length;
+
+      const totalFields = 9; // 4 required + 5 optional
+      const completedFields = requiredFieldsCount + optionalFieldsCount;
+      const percentage = Math.round((completedFields / totalFields) * 100);
+
+      return {
+        ...prev,
+        formData: updatedFormData,
+        formCompleteness: {
+          percentage,
+          canSubmit,
+          missingFields: []
+        }
+      };
+    });
+
+    // Trigger duplicate detection for name/brand fields (simplified)
+    if ((fieldKey === 'name' || fieldKey === 'brand') && value && value.length >= 2) {
       try {
-        debouncedValidate.current(
-          fieldKey,
-          value,
-          FORM_FIELD_CONFIGS[fieldKey],
-          { ...prevState.formData, [fieldKey]: value }
-        ).then((validationResult) => {
-          const newValidationState = {
-            ...prevState.validationState,
-            [fieldKey]: {
-              isValid: validationResult.isValid,
-              errors: validationResult.errors,
-              warnings: validationResult.warnings,
-              suggestions: validationResult.suggestions,
-              showFeedback: true
-            }
-          };
+        const currentFormData = formState?.formData || {};
+        const name = fieldKey === 'name' ? value : currentFormData.name || '';
+        const brand = fieldKey === 'brand' ? value : currentFormData.brand || '';
 
-          const newFieldStates = {
-            ...prevState.fieldStates,
-            [fieldKey]: validationResult.isValid ? 'valid' : 'error'
-          };
-
-          // Recalculate form completeness
-          const formCompleteness = FormDisclosureManager.calculateFormCompleteness(
-            { ...prevState.formData, [fieldKey]: value },
-            prevState.disclosureLevel,
-            newValidationState
-          );
-
+        if (name && brand) {
+          const duplicateResult = await findDuplicates(name, brand);
           setFormState(prev => ({
             ...prev,
-            validationState: newValidationState,
-            fieldStates: newFieldStates,
-            formCompleteness
+            duplicateWarning: duplicateResult.isDuplicate || duplicateResult.hasSimilar
+              ? {
+                  type: duplicateResult.isDuplicate ? 'duplicate' : 'similar',
+                  message: duplicateResult.suggestion,
+                  confidence: duplicateResult.confidence,
+                  existingCider: duplicateResult.existingCider
+                }
+              : null
           }));
-        }).catch((error: any) => {
-          console.warn('Validation error caught:', error);
-        });
-
-        // Trigger duplicate detection for name/brand fields
-        if ((fieldKey === 'name' || fieldKey === 'brand') && value.length >= 2) {
-          const name = fieldKey === 'name' ? value : prevState.formData.name || '';
-          const brand = fieldKey === 'brand' ? value : prevState.formData.brand || '';
-
-          if (name && brand) {
-            findDuplicates(name, brand).then((duplicateResult) => {
-              setFormState(prev => ({
-                ...prev,
-                duplicateWarning: duplicateResult.isDuplicate || duplicateResult.hasSimilar
-                  ? {
-                      type: duplicateResult.isDuplicate ? 'duplicate' : 'similar',
-                      message: duplicateResult.suggestion,
-                      confidence: duplicateResult.confidence,
-                      existingCider: duplicateResult.existingCider
-                    }
-                  : null
-              }));
-            });
-          }
         }
-
-        return prevState;
       } catch (error) {
-        console.error('Validation error:', error);
-        return prevState;
+        console.warn('Duplicate detection error:', error);
       }
-    });
-  }, [findDuplicates]);
+    }
+  }, [formState?.formData, findDuplicates]);
 
   // =============================================================================
-  // PROGRESSIVE DISCLOSURE
+  // FORM SECTIONS (No Progressive Disclosure)
   // =============================================================================
-
-  const expandToLevel = useCallback((newLevel: DisclosureLevel) => {
-    setFormState(prev => ({
-      ...prev,
-      disclosureLevel: newLevel,
-      formCompleteness: FormDisclosureManager.calculateFormCompleteness(
-        prev.formData,
-        newLevel,
-        prev.validationState
-      )
-    }));
-  }, []);
 
   // =============================================================================
   // FORM SUBMISSION
@@ -319,6 +281,11 @@ export default function EnhancedQuickEntryScreen({ navigation }: Props) {
   // =============================================================================
 
   const renderFormField = (fieldKey: keyof CiderMasterRecord) => {
+    // Safety check for formState
+    if (!formState?.formData || !formState?.validationState) {
+      return null;
+    }
+
     // Fallback config for test environment
     const getFallbackConfig = (key: string) => {
       const configs: any = {
@@ -467,49 +434,77 @@ export default function EnhancedQuickEntryScreen({ navigation }: Props) {
   // =============================================================================
 
   const formSections = useMemo(() => {
-    try {
-      const sections = getFormSections(formState.disclosureLevel);
-      return sections;
-    } catch (error) {
-      // Simple fallback with hardcoded field configs for test compatibility
-      return [{
+    return [
+      {
         id: 'core',
         title: 'Essential Details',
-        description: 'Basic cider information',
+        description: 'Required information',
         fields: [
-          { key: 'name', label: 'Cider Name', type: 'text', required: true, placeholder: 'Enter cider name', section: 'core' },
-          { key: 'brand', label: 'Brand', type: 'text', required: true, placeholder: 'Enter brand name', section: 'core' },
-          { key: 'abv', label: 'ABV (%)', type: 'number', required: true, placeholder: 'Enter ABV (e.g., 5.2)', section: 'core' },
-          { key: 'overallRating', label: 'Overall Rating', type: 'rating', required: true, placeholder: 'Rate from 1-10', section: 'core' },
-        ] as any[],
+          { key: 'name', label: 'Cider Name', type: 'text', required: true, placeholder: 'Enter cider name' },
+          { key: 'brand', label: 'Brand', type: 'text', required: true, placeholder: 'Enter brand name' },
+          { key: 'abv', label: 'ABV (%)', type: 'number', required: true, placeholder: 'Enter ABV (e.g., 5.2)' },
+          { key: 'overallRating', label: 'Overall Rating', type: 'rating', required: true, placeholder: 'Rate from 1-10' },
+        ],
         collapsible: false,
         defaultExpanded: true,
-        requiredForLevel: ['casual', 'enthusiast', 'expert']
-      }];
-    }
-  }, [formState.disclosureLevel]);
-
-  const renderFormSection = (section: ReturnType<typeof getFormSections>[0]) => {
-    // Fallback visibility check for test environment
-    const isFieldVisible = (fieldKey: any) => {
-      if (FormDisclosureManager?.isFieldVisible) {
-        return FormDisclosureManager.isFieldVisible(fieldKey, formState.disclosureLevel);
+      },
+      {
+        id: 'characteristics',
+        title: 'Cider Characteristics',
+        description: 'Optional details to enhance your cider profile',
+        fields: [
+          { key: 'traditionalStyle', label: 'Traditional Style', type: 'select', required: false, placeholder: 'Select style (optional)', options: [
+            { label: 'English Scrumpy', value: 'english_scrumpy' },
+            { label: 'French Cidre', value: 'french_cidre' },
+            { label: 'American Heritage', value: 'american_heritage' },
+            { label: 'New England', value: 'new_england' },
+            { label: 'Spanish Sidra', value: 'spanish_sidra' },
+            { label: 'German Apfelwein', value: 'german_apfelwein' },
+            { label: 'Modern Craft', value: 'modern_craft' },
+            { label: 'Other', value: 'other' }
+          ]},
+          { key: 'appleVarieties', label: 'Apple Varieties', type: 'multiselect', required: false, placeholder: 'Select varieties (optional)', options: [
+            { label: 'Granny Smith', value: 'granny_smith' },
+            { label: 'Bramley', value: 'bramley' },
+            { label: 'Dabinett', value: 'dabinett' },
+            { label: 'Kingston Black', value: 'kingston_black' },
+            { label: 'Yarlington Mill', value: 'yarlington_mill' },
+            { label: 'Gala', value: 'gala' },
+            { label: 'Honeycrisp', value: 'honeycrisp' },
+            { label: 'Mixed Varieties', value: 'mixed' },
+            { label: 'Unknown', value: 'unknown' }
+          ]},
+          { key: 'tasteTags', label: 'Taste Profile', type: 'tags', required: false, placeholder: 'Add taste descriptors (optional)' },
+          { key: 'notes', label: 'Tasting Notes', type: 'text', required: false, placeholder: 'Personal notes about this cider (optional)', multiline: true },
+          { key: 'photo', label: 'Photo', type: 'image', required: false, placeholder: 'Add a photo (optional)' },
+        ],
+        collapsible: true,
+        defaultExpanded: false,
       }
-      // Simple fallback: for casual level, show core fields
-      return formState.disclosureLevel === 'casual' &&
-             ['name', 'brand', 'abv', 'overallRating'].includes(fieldKey);
-    };
+    ];
+  }, []);
 
-    const sectionFields = section.fields.filter(field => isFieldVisible(field.key));
+  const renderFormSection = (section: any) => {
+    // Safety check for formState
+    if (!formState?.formData) {
+      return null;
+    }
+
+    // Show all fields in the section - no filtering needed
+    const sectionFields = section.fields;
 
     if (sectionFields.length === 0) {
       return null;
     }
 
-    const completedFields = sectionFields.filter(field => {
+    const completedFields = sectionFields.filter((field: any) => {
       const value = formState.formData[field.key];
-      const validation = formState.validationState[field.key];
-      return value !== undefined && value !== '' && validation?.isValid !== false;
+      // For required fields, check they have meaningful values
+      if (field.required) {
+        return value !== undefined && value !== '' && value !== 0;
+      }
+      // For optional fields, just check they have any value
+      return value !== undefined && value !== '';
     });
 
     const completionPercentage = sectionFields.length > 0
@@ -552,18 +547,36 @@ export default function EnhancedQuickEntryScreen({ navigation }: Props) {
     );
   }
 
+  // Safety check to ensure formState is properly initialized
+  if (!formState || !formState.formData) {
+    return (
+      <SafeAreaContainer>
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+          <Text>Loading form...</Text>
+        </View>
+      </SafeAreaContainer>
+    );
+  }
+
   return (
     <SafeAreaContainer>
       <View testID="enhanced-quick-entry-screen" style={{ flex: 1 }}>
-      <ProgressHeader
-        level={formState.disclosureLevel}
-        elapsedTime={elapsedTime}
-        completionPercentage={formState.formCompleteness.percentage}
-        canSubmit={formState.formCompleteness.canSubmit}
-        onLevelExpand={expandToLevel}
-      />
+        {/* Simple Header */}
+        <View style={styles.header}>
+          <Text style={styles.headerTitle}>Add New Cider</Text>
+          <View style={styles.progressContainer}>
+            <View style={styles.progressBar}>
+              <View
+                style={[styles.progressFill, { width: `${formState.formCompleteness.percentage}%` }]}
+              />
+            </View>
+            <Text style={styles.progressText}>
+              {formState.formCompleteness.percentage}% complete
+            </Text>
+          </View>
+        </View>
 
-      <KeyboardAvoidingView
+        <KeyboardAvoidingView
         style={styles.keyboardAvoidingView}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
@@ -614,6 +627,41 @@ export default function EnhancedQuickEntryScreen({ navigation }: Props) {
 }
 
 const styles = StyleSheet.create({
+  header: {
+    backgroundColor: '#fff',
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#e0e0e0',
+  },
+  headerTitle: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#333',
+    marginBottom: 12,
+  },
+  progressContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  progressBar: {
+    flex: 1,
+    height: 6,
+    backgroundColor: '#e0e0e0',
+    borderRadius: 3,
+    overflow: 'hidden',
+  },
+  progressFill: {
+    height: '100%',
+    backgroundColor: '#007AFF',
+    borderRadius: 3,
+  },
+  progressText: {
+    fontSize: 12,
+    color: '#666',
+    minWidth: 80,
+    textAlign: 'right',
+  },
   keyboardAvoidingView: {
     flex: 1,
   },

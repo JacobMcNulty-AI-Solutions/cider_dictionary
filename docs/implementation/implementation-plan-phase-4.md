@@ -10,7 +10,6 @@ Complete the application with advanced features, performance optimizations, and 
 - **Advanced Search**: Multi-field filtering with instant results
 - **Collection Export**: JSON/CSV data export functionality
 - **Batch Operations**: Multi-select and bulk actions
-- **Progressive Web Features**: Deep linking and sharing capabilities
 
 #### 4.2 Advanced Analytics & Visualizations
 - **Interactive Charts**: Complex data visualizations with zoom/pan/filter
@@ -703,14 +702,11 @@ const DataExportScreen: React.FC = () => {
 
 ### Scalability Planning
 - **Paid Tier Migration**: Firebase paid plan transition strategy
-- **Multi-User Features**: Friends and following capabilities
 - **API Development**: Third-party integration possibilities
 - **Database Optimization**: Sharding strategies for growth
 
 ### Community and Support
 - **User Feedback**: In-app feedback collection system
 - **Documentation**: User guide and FAQ development
-- **Community Building**: Discord/Reddit community management
-- **Feature Requests**: Public roadmap and voting system
 
 This comprehensive 4-phase implementation plan provides a structured, incremental approach to building the Cider Dictionary application while maintaining focus on performance, user experience, and technical excellence throughout the development process.

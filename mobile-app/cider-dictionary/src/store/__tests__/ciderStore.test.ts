@@ -61,7 +61,6 @@ const createMockCider = (overrides: Partial<CiderMasterRecord> = {}): CiderMaste
   abv: 5.2,
   tasteTags: ['crisp', 'fruity'],
   notes: 'Great cider for testing',
-  containerType: 'bottle',
   venue: {
     id: 'venue1',
     name: 'Test Venue',
@@ -147,7 +146,6 @@ describe('CiderStore', () => {
         abv: 5.0,
         tasteTags: ['dry', 'apple'],
         notes: 'Added via test',
-        containerType: 'can' as const,
         userId: 'test-user',
       };
 
@@ -244,9 +242,9 @@ describe('CiderStore', () => {
   describe('Batch Operations', () => {
     it('should add multiple ciders successfully', async () => {
       const cidersData = [
-        createMockCider({ name: 'Batch Cider 1', brand: 'Batch Brand', overallRating: 4 as Rating, abv: 5.0, containerType: 'bottle' }),
-        createMockCider({ name: 'Batch Cider 2', brand: 'Batch Brand', overallRating: 4 as Rating, abv: 4.5, containerType: 'can' }),
-        createMockCider({ name: 'Batch Cider 3', brand: 'Batch Brand', overallRating: 5 as Rating, abv: 5.5, containerType: 'draught' }),
+        createMockCider({ name: 'Batch Cider 1', brand: 'Batch Brand', overallRating: 4 as Rating, abv: 5.0 }),
+        createMockCider({ name: 'Batch Cider 2', brand: 'Batch Brand', overallRating: 4 as Rating, abv: 4.5 }),
+        createMockCider({ name: 'Batch Cider 3', brand: 'Batch Brand', overallRating: 5 as Rating, abv: 5.5 }),
       ];
 
       let ciderIds: string[];

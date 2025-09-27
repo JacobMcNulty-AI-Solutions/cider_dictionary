@@ -250,14 +250,6 @@ const EnhancedCiderCard = memo<Props>(({
               </Text>
             </View>
 
-            {cider.containerType && (
-              <View style={styles.containerBadge}>
-                <Text style={styles.containerText}>
-                  {cider.containerType === 'bag_in_box' ? 'Box' :
-                   cider.containerType.charAt(0).toUpperCase() + cider.containerType.slice(1)}
-                </Text>
-              </View>
-            )}
 
             {cider.traditionalStyle && (
               <View style={[styles.styleBadge, { backgroundColor: styleColor + '20' }]}>

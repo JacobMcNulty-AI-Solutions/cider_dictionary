@@ -17,14 +17,16 @@ import { useRoute, useNavigation, RouteProp } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { Ionicons } from '@expo/vector-icons';
 
-import { ExperienceFormState, ExperienceLog, VenueSuggestion, CONTAINER_SIZES } from '../../types/experience';
-import { CiderMasterRecord, VenueType, Rating } from '../../types/cider';
+import { ExperienceFormState, ExperienceLog, CONTAINER_SIZES, VenueInfo, Location } from '../../types/experience';
+import { CiderMasterRecord, VenueType, Rating, ContainerType } from '../../types/cider';
 import { RootStackParamList } from '../../types/navigation';
 
 import SafeAreaContainer from '../../components/common/SafeAreaContainer';
 import LoadingSpinner from '../../components/common/LoadingSpinner';
 import Button from '../../components/common/Button';
 import FormSection from '../../components/forms/FormSection';
+import LocationPicker from '../../components/maps/LocationPicker';
+import VenueSelector from '../../components/venue/VenueSelector';
 
 import { sqliteService } from '../../services/database/sqlite';
 import { locationService } from '../../services/location/LocationService';
@@ -50,25 +52,27 @@ export default function ExperienceLogScreen({ route, navigation }: Props) {
   const [formState, setFormState] = useState<ExperienceFormState>({
     ciderId,
     venue: {
+      id: '',
       name: '',
       type: 'pub',
-      location: null,
-      address: undefined
+      location: undefined
     },
     price: 0,
     containerSize: CONTAINER_SIZES.PINT,
+    containerType: 'bottle',
     notes: '',
     date: new Date(),
     rating: undefined
   });
 
-  const [venueSuggestions, setVenueSuggestions] = useState<VenueSuggestion[]>([]);
   const [locationError, setLocationError] = useState<string | null>(null);
+  const [currentLocation, setCurrentLocation] = useState<Location | null>(null);
 
-  // Auto-calculate price per ml
-  const pricePerMl = useMemo(() => {
+  // Auto-calculate price per pint
+  const pricePerPint = useMemo(() => {
     if (formState.price > 0 && formState.containerSize > 0) {
-      return Math.round((formState.price / formState.containerSize) * 1000) / 1000; // Round to 3 decimal places
+      const PINT_SIZE = 568; // ml
+      return Math.round((formState.price * PINT_SIZE / formState.containerSize) * 100) / 100; // Round to 2 decimal places
     }
     return 0;
   }, [formState.price, formState.containerSize]);
@@ -76,12 +80,14 @@ export default function ExperienceLogScreen({ route, navigation }: Props) {
   // Form validation
   const isFormValid = useMemo(() => {
     return (
+      formState.venue.id &&
       formState.venue.name.trim().length >= 2 &&
+      formState.venue.location &&
       formState.price > 0 &&
       formState.containerSize > 0 &&
-      pricePerMl > 0
+      pricePerPint > 0
     );
-  }, [formState, pricePerMl]);
+  }, [formState, pricePerPint]);
 
   // Load cider data and location
   useEffect(() => {
@@ -101,17 +107,8 @@ export default function ExperienceLogScreen({ route, navigation }: Props) {
         // Get current location
         const locationResult = await locationService.getCurrentLocation();
         if (locationResult.success && locationResult.location) {
-          setFormState(prev => ({
-            ...prev,
-            venue: {
-              ...prev.venue,
-              location: locationResult.location!
-            }
-          }));
-
-          // Get venue suggestions
-          const suggestions = await locationService.getNearbyVenueSuggestions(locationResult.location!);
-          setVenueSuggestions(suggestions);
+          setCurrentLocation(locationResult.location);
+          // Don't automatically set venue location - let user choose venue first
         } else {
           setLocationError(locationResult.error || 'Unable to get location');
         }
@@ -126,56 +123,15 @@ export default function ExperienceLogScreen({ route, navigation }: Props) {
     loadInitialData();
   }, [ciderId, navigation]);
 
-  // Handle venue name change with auto-detection
-  const handleVenueNameChange = useCallback((name: string) => {
-    const validation = locationService.validateVenueName(name);
-    const detectedType = locationService.detectVenueTypeFromName(name);
-
+  const handleVenueSelect = useCallback((venue: VenueInfo) => {
     setFormState(prev => ({
       ...prev,
-      venue: {
-        ...prev.venue,
-        name: validation.suggestion || name,
-        type: name.length > 0 ? detectedType : prev.venue.type
-      }
+      venue
     }));
   }, []);
 
-  const handleVenueTypeChange = useCallback((type: VenueType) => {
-    setFormState(prev => ({
-      ...prev,
-      venue: {
-        ...prev.venue,
-        type
-      }
-    }));
-  }, []);
-
-  const handleVenueSuggestionSelect = useCallback((suggestion: VenueSuggestion) => {
-    // Special handling for manual entry
-    if (suggestion.id === 'manual-entry') {
-      setFormState(prev => ({
-        ...prev,
-        venue: {
-          name: '', // Clear name so user can type their own
-          type: 'other', // Default to 'other' for manual entry
-          location: prev.venue.location, // Keep current location
-          address: undefined
-        }
-      }));
-      return;
-    }
-
-    // Regular venue suggestion selection
-    setFormState(prev => ({
-      ...prev,
-      venue: {
-        name: suggestion.name,
-        type: suggestion.type,
-        location: suggestion.location || prev.venue.location,
-        address: suggestion.address
-      }
-    }));
+  const handleLocationUpdate = useCallback((location: Location) => {
+    setCurrentLocation(location);
   }, []);
 
   const handlePriceChange = useCallback((price: number) => {
@@ -191,6 +147,13 @@ export default function ExperienceLogScreen({ route, navigation }: Props) {
     setFormState(prev => ({
       ...prev,
       containerSize: size
+    }));
+  }, []);
+
+  const handleContainerTypeChange = useCallback((type: ContainerType) => {
+    setFormState(prev => ({
+      ...prev,
+      containerType: type
     }));
   }, []);
 
@@ -217,15 +180,11 @@ export default function ExperienceLogScreen({ route, navigation }: Props) {
         userId: 'current-user', // TODO: Get from auth context
         ciderId: formState.ciderId,
         date: formState.date,
-        venue: {
-          id: generateUUID(),
-          name: formState.venue.name,
-          type: formState.venue.type,
-          location: formState.venue.location || undefined
-        },
+        venue: formState.venue,
         price: formState.price,
         containerSize: formState.containerSize,
-        pricePerMl,
+        containerType: formState.containerType,
+        pricePerPint,
         notes: formState.notes || undefined,
         rating: formState.rating,
         createdAt: new Date(),
@@ -264,7 +223,7 @@ export default function ExperienceLogScreen({ route, navigation }: Props) {
     } finally {
       setIsSubmitting(false);
     }
-  }, [formState, isFormValid, cider, pricePerMl, startTime, navigation]);
+  }, [formState, isFormValid, cider, pricePerPint, startTime, navigation]);
 
   if (isLoading) {
     return (
@@ -312,19 +271,13 @@ export default function ExperienceLogScreen({ route, navigation }: Props) {
             </View>
           )}
 
-          {/* Venue Information */}
+          {/* Venue Selection */}
           <FormSection title="Where did you try it?">
-            <VenueInput
-              value={formState.venue.name}
-              onChangeText={handleVenueNameChange}
-              placeholder="Enter venue name..."
-              suggestions={venueSuggestions}
-              onSuggestionSelect={handleVenueSuggestionSelect}
-            />
-
-            <VenueTypeSelector
-              value={formState.venue.type}
-              onSelect={handleVenueTypeChange}
+            <VenueSelector
+              selectedVenue={formState.venue.id ? formState.venue : null}
+              currentLocation={currentLocation}
+              onVenueSelect={handleVenueSelect}
+              onLocationUpdate={handleLocationUpdate}
             />
           </FormSection>
 
@@ -343,7 +296,12 @@ export default function ExperienceLogScreen({ route, navigation }: Props) {
               presets={Object.values(CONTAINER_SIZES)}
             />
 
-            <PricePerMlDisplay value={pricePerMl} />
+            <ContainerTypeSelector
+              value={formState.containerType}
+              onSelect={handleContainerTypeChange}
+            />
+
+            <PricePerPintDisplay value={pricePerPint} />
           </FormSection>
 
           {/* Notes */}
@@ -379,88 +337,6 @@ export default function ExperienceLogScreen({ route, navigation }: Props) {
 }
 
 // Helper Components
-const VenueInput: React.FC<{
-  value: string;
-  onChangeText: (text: string) => void;
-  placeholder: string;
-  suggestions: VenueSuggestion[];
-  onSuggestionSelect: (suggestion: VenueSuggestion) => void;
-}> = ({ value, onChangeText, placeholder, suggestions, onSuggestionSelect }) => (
-  <View>
-    <TextInput
-      style={styles.input}
-      value={value}
-      onChangeText={onChangeText}
-      placeholder={placeholder}
-      autoCapitalize="words"
-      returnKeyType="next"
-    />
-    {suggestions.length > 0 && value.length < 3 && (
-      <View style={styles.suggestionsContainer}>
-        {suggestions.slice(0, 3).map((suggestion) => (
-          <TouchableOpacity
-            key={suggestion.id}
-            style={styles.suggestionItem}
-            onPress={() => onSuggestionSelect(suggestion)}
-          >
-            <Ionicons name="location-outline" size={16} color="#666" />
-            <Text style={styles.suggestionText}>{suggestion.name}</Text>
-            <Text style={styles.suggestionType}>({suggestion.type})</Text>
-            {suggestion.distance && (
-              <Text style={styles.suggestionDistance}>
-                {Math.round(suggestion.distance)}m
-              </Text>
-            )}
-          </TouchableOpacity>
-        ))}
-      </View>
-    )}
-  </View>
-);
-
-const VenueTypeSelector: React.FC<{
-  value: VenueType;
-  onSelect: (type: VenueType) => void;
-}> = ({ value, onSelect }) => {
-  const venueTypes: { value: VenueType; label: string; icon: string }[] = [
-    { value: 'pub', label: 'Pub', icon: 'beer-outline' },
-    { value: 'restaurant', label: 'Restaurant', icon: 'restaurant-outline' },
-    { value: 'retail', label: 'Shop', icon: 'storefront-outline' },
-    { value: 'festival', label: 'Festival', icon: 'musical-notes-outline' },
-    { value: 'cidery', label: 'Cidery', icon: 'business-outline' },
-    { value: 'home', label: 'Home', icon: 'home-outline' },
-    { value: 'other', label: 'Other', icon: 'ellipsis-horizontal-outline' }
-  ];
-
-  return (
-    <View style={styles.venueTypeContainer}>
-      {venueTypes.map((type) => (
-        <TouchableOpacity
-          key={type.value}
-          style={[
-            styles.venueTypeButton,
-            value === type.value && styles.venueTypeButtonActive
-          ]}
-          onPress={() => onSelect(type.value)}
-        >
-          <Ionicons
-            name={type.icon as any}
-            size={20}
-            color={value === type.value ? '#fff' : '#666'}
-          />
-          <Text
-            style={[
-              styles.venueTypeText,
-              value === type.value && styles.venueTypeTextActive
-            ]}
-          >
-            {type.label}
-          </Text>
-        </TouchableOpacity>
-      ))}
-    </View>
-  );
-};
 
 // Additional helper components
 const PriceInput: React.FC<{
@@ -511,13 +387,56 @@ const ContainerSizeSelector: React.FC<{
   </View>
 );
 
-const PricePerMlDisplay: React.FC<{
+const ContainerTypeSelector: React.FC<{
+  value: ContainerType;
+  onSelect: (type: ContainerType) => void;
+}> = ({ value, onSelect }) => {
+  const containerTypes: { value: ContainerType; label: string; icon: string }[] = [
+    { value: 'bottle', label: 'Bottle', icon: 'wine' },
+    { value: 'can', label: 'Can', icon: 'cylinder' },
+    { value: 'draught', label: 'Draught', icon: 'beer' },
+    { value: 'bag_in_box', label: 'Bag in Box', icon: 'cube' },
+    { value: 'other', label: 'Other', icon: 'help-circle' },
+  ];
+
+  return (
+    <View style={styles.inputContainer}>
+      <Text style={styles.inputLabel}>Container Type</Text>
+      <View style={styles.containerTypeRow}>
+        {containerTypes.map((type) => (
+          <TouchableOpacity
+            key={type.value}
+            style={[
+              styles.containerTypeButton,
+              value === type.value && styles.containerTypeButtonActive
+            ]}
+            onPress={() => onSelect(type.value)}
+          >
+            <Ionicons
+              name={type.icon as any}
+              size={20}
+              color={value === type.value ? '#fff' : '#666'}
+            />
+            <Text style={[
+              styles.containerTypeText,
+              value === type.value && styles.containerTypeTextActive
+            ]}>
+              {type.label}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+    </View>
+  );
+};
+
+const PricePerPintDisplay: React.FC<{
   value: number;
 }> = ({ value }) => (
-  <View style={styles.pricePerMlContainer}>
-    <Text style={styles.pricePerMlLabel}>Price per ml:</Text>
-    <Text style={styles.pricePerMlValue}>
-      £{value > 0 ? value.toFixed(3) : '0.000'}
+  <View style={styles.pricePerPintContainer}>
+    <Text style={styles.pricePerPintLabel}>Price per pint:</Text>
+    <Text style={styles.pricePerPintValue}>
+      £{value > 0 ? value.toFixed(2) : '0.00'}
     </Text>
   </View>
 );
@@ -614,62 +533,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff',
     marginBottom: 12,
   },
-  suggestionsContainer: {
-    backgroundColor: '#f8f8f8',
-    borderRadius: 8,
-    marginBottom: 12,
-  },
-  suggestionItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#eee',
-  },
-  suggestionText: {
-    fontSize: 14,
-    color: '#333',
-    marginLeft: 8,
-    flex: 1,
-  },
-  suggestionType: {
-    fontSize: 12,
-    color: '#666',
-    marginLeft: 4,
-  },
-  suggestionDistance: {
-    fontSize: 12,
-    color: '#888',
-    marginLeft: 8,
-  },
-  venueTypeContainer: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-    marginBottom: 16,
-  },
-  venueTypeButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 20,
-    backgroundColor: '#f0f0f0',
-    borderWidth: 1,
-    borderColor: '#ddd',
-  },
-  venueTypeButtonActive: {
-    backgroundColor: '#007AFF',
-    borderColor: '#007AFF',
-  },
-  venueTypeText: {
-    fontSize: 14,
-    color: '#666',
-    marginLeft: 6,
-  },
-  venueTypeTextActive: {
-    color: '#fff',
-  },
   characterCount: {
     fontSize: 12,
     color: '#888',
@@ -714,7 +577,35 @@ const styles = StyleSheet.create({
   containerSizeTextActive: {
     color: '#fff',
   },
-  pricePerMlContainer: {
+  containerTypeRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  containerTypeButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    backgroundColor: '#f0f0f0',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#ddd',
+    gap: 6,
+  },
+  containerTypeButtonActive: {
+    backgroundColor: '#007AFF',
+    borderColor: '#007AFF',
+  },
+  containerTypeText: {
+    fontSize: 14,
+    color: '#666',
+    fontWeight: '500',
+  },
+  containerTypeTextActive: {
+    color: '#fff',
+  },
+  pricePerPintContainer: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
@@ -725,12 +616,12 @@ const styles = StyleSheet.create({
     borderLeftColor: '#007AFF',
     marginBottom: 16,
   },
-  pricePerMlLabel: {
+  pricePerPintLabel: {
     fontSize: 14,
     color: '#666',
     fontWeight: '500',
   },
-  pricePerMlValue: {
+  pricePerPintValue: {
     fontSize: 16,
     fontWeight: '700',
     color: '#007AFF',

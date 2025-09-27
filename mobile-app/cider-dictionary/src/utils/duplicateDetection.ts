@@ -267,16 +267,6 @@ export class CiderMatcher {
       totalWeight += abvWeight;
     }
 
-    // Container type bonus (10% weight)
-    if (cider1.containerType && cider2.containerType) {
-      if (cider1.containerType === cider2.containerType) {
-        const containerWeight = 0.1;
-        weightedScore += 1.0 * containerWeight;
-        totalWeight += containerWeight;
-        result.reasons.push('Same container type');
-        result.matchedFields.push('containerType');
-      }
-    }
 
     result.score = totalWeight > 0 ? weightedScore / totalWeight : 0;
 
@@ -323,7 +313,6 @@ export class DuplicateDetectionEngine {
     name: string,
     brand: string,
     abv?: number,
-    containerType?: string,
     existingCiders?: CiderMasterRecord[]
   ): Promise<DuplicateDetectionResult> {
     // If no existing ciders provided, we'd normally fetch from database
@@ -333,8 +322,7 @@ export class DuplicateDetectionEngine {
     const newCider: Partial<CiderMasterRecord> = {
       name: name?.trim() || '',
       brand: brand?.trim() || '',
-      abv,
-      containerType: containerType as any
+      abv
     };
 
     const potentialDuplicates = CiderMatcher.findPotentialDuplicates(newCider, ciders);
@@ -410,7 +398,7 @@ export class DuplicateDetectionEngine {
 
     // Quick fuzzy check on first 10 results (performance optimization)
     const quickCheck = existingCiders.slice(0, 10);
-    const result = await this.performDuplicateCheck(name, brand, undefined, undefined, quickCheck);
+    const result = await this.performDuplicateCheck(name, brand, undefined, quickCheck);
 
     return {
       isDuplicate: result.isDuplicate,

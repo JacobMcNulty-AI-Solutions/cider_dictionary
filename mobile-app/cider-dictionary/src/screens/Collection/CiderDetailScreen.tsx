@@ -13,10 +13,13 @@ import {
 } from 'react-native';
 import { StackScreenProps } from '@react-navigation/stack';
 import { CiderMasterRecord } from '../../types/cider';
+import { ExperienceLog } from '../../types/experience';
 import { useCiderStore } from '../../store/ciderStore';
 import { RootStackParamList } from '../../types/navigation';
 import SafeAreaContainer from '../../components/common/SafeAreaContainer';
 import Button from '../../components/common/Button';
+import { sqliteService } from '../../services/database/sqlite';
+import { Ionicons } from '@expo/vector-icons';
 
 type Props = StackScreenProps<RootStackParamList, 'CiderDetail'>;
 
@@ -24,19 +27,28 @@ export default function CiderDetailScreen({ route, navigation }: Props) {
   const { ciderId } = route.params;
   const { getCiderById, deleteCider } = useCiderStore();
   const [cider, setCider] = useState<CiderMasterRecord | null>(null);
+  const [experiences, setExperiences] = useState<ExperienceLog[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    try {
-      const ciderData = getCiderById(ciderId);
-      setCider(ciderData);
-    } catch (error) {
-      console.error('Failed to load cider:', error);
-      Alert.alert('Error', 'Failed to load cider details');
-      navigation.goBack();
-    } finally {
-      setLoading(false);
-    }
+    const loadCiderAndExperiences = async () => {
+      try {
+        const ciderData = getCiderById(ciderId);
+        setCider(ciderData);
+
+        // Load experiences for this cider
+        const ciderExperiences = await sqliteService.getExperiencesByCiderId(ciderId);
+        setExperiences(ciderExperiences);
+      } catch (error) {
+        console.error('Failed to load cider:', error);
+        Alert.alert('Error', 'Failed to load cider details');
+        navigation.goBack();
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadCiderAndExperiences();
   }, [ciderId, getCiderById, navigation]);
 
   const handleDelete = () => {
@@ -62,6 +74,17 @@ export default function CiderDetailScreen({ route, navigation }: Props) {
         }
       ]
     );
+  };
+
+  const getContainerTypeLabel = (type: string): string => {
+    const containerTypeLabels: Record<string, string> = {
+      'bottle': 'Bottle',
+      'can': 'Can',
+      'draught': 'Draught',
+      'bag_in_box': 'Bag in Box',
+      'other': 'Other'
+    };
+    return containerTypeLabels[type] || type;
   };
 
   if (loading) {
@@ -126,12 +149,6 @@ export default function CiderDetailScreen({ route, navigation }: Props) {
             <Text style={styles.ratingValue}>{cider.overallRating}/10</Text>
           </View>
 
-          {cider.containerType && (
-            <View style={styles.detailRow}>
-              <Text style={styles.label}>Container:</Text>
-              <Text style={styles.value}>{cider.containerType}</Text>
-            </View>
-          )}
         </View>
 
         {/* Style */}
@@ -305,6 +322,68 @@ export default function CiderDetailScreen({ route, navigation }: Props) {
           )}
         </View>
 
+        {/* Recent Experiences */}
+        <View style={styles.section}>
+          <View style={styles.experiencesSectionHeader}>
+            <Text style={styles.sectionTitle}>Recent Experiences</Text>
+            {experiences.length > 3 && (
+              <TouchableOpacity onPress={() => navigation.navigate('ExperienceHistory', { ciderId })}>
+                <Text style={styles.viewAllText}>View All ({experiences.length})</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+
+          {experiences.length === 0 ? (
+            <View style={styles.noExperiencesContainer}>
+              <Ionicons name="wine-outline" size={48} color="#ccc" />
+              <Text style={styles.noExperiencesText}>No experiences logged yet</Text>
+              <Text style={styles.noExperiencesSubtext}>Start by logging your first experience!</Text>
+            </View>
+          ) : (
+            <View style={styles.experiencesContainer}>
+              {experiences.slice(0, 3).map((experience) => (
+                <TouchableOpacity
+                  key={experience.id}
+                  style={styles.experienceCard}
+                  onPress={() => navigation.navigate('ExperienceDetail', { experienceId: experience.id })}
+                >
+                  <View style={styles.experienceHeader}>
+                    <View style={styles.experienceDate}>
+                      <Text style={styles.experienceDateText}>
+                        {experience.date.toLocaleDateString()}
+                      </Text>
+                      <Text style={styles.experienceTimeText}>
+                        {experience.date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      </Text>
+                    </View>
+                    {experience.rating && (
+                      <View style={styles.experienceRating}>
+                        <Ionicons name="star" size={14} color="#FFD700" />
+                        <Text style={styles.experienceRatingText}>{experience.rating}/10</Text>
+                      </View>
+                    )}
+                  </View>
+
+                  <View style={styles.experienceVenue}>
+                    <Ionicons name="location-outline" size={16} color="#666" />
+                    <Text style={styles.experienceVenueText}>{experience.venue.name}</Text>
+                  </View>
+
+                  <View style={styles.experiencePrice}>
+                    <Text style={styles.experiencePriceText}>
+                      £{experience.price.toFixed(2)} ({experience.containerSize}ml {getContainerTypeLabel(experience.containerType || 'bottle')}) • £{experience.pricePerPint.toFixed(2)}/pint
+                    </Text>
+                  </View>
+
+                  <View style={styles.experienceActions}>
+                    <Ionicons name="chevron-forward" size={16} color="#007AFF" />
+                  </View>
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
+        </View>
+
         {/* Actions */}
         <View style={styles.actionsSection}>
           <Button
@@ -459,5 +538,95 @@ const styles = StyleSheet.create({
   },
   deleteButton: {
     backgroundColor: '#F44336',
+  },
+  experiencesSectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  viewAllText: {
+    fontSize: 14,
+    color: '#007AFF',
+    fontWeight: '500',
+  },
+  noExperiencesContainer: {
+    alignItems: 'center',
+    paddingVertical: 32,
+  },
+  noExperiencesText: {
+    fontSize: 16,
+    fontWeight: '500',
+    color: '#999',
+    marginTop: 12,
+    marginBottom: 4,
+  },
+  noExperiencesSubtext: {
+    fontSize: 14,
+    color: '#ccc',
+  },
+  experiencesContainer: {
+    gap: 12,
+  },
+  experienceCard: {
+    backgroundColor: '#f8f9fa',
+    borderRadius: 8,
+    padding: 12,
+    borderLeftWidth: 3,
+    borderLeftColor: '#007AFF',
+  },
+  experienceHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 8,
+  },
+  experienceDate: {
+    flex: 1,
+  },
+  experienceDateText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#333',
+  },
+  experienceTimeText: {
+    fontSize: 12,
+    color: '#666',
+    marginTop: 2,
+  },
+  experienceRating: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFF9E6',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 8,
+  },
+  experienceRatingText: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: '#F57C00',
+    marginLeft: 2,
+  },
+  experienceVenue: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  experienceVenueText: {
+    fontSize: 14,
+    color: '#666',
+    marginLeft: 4,
+    flex: 1,
+  },
+  experiencePrice: {
+    marginBottom: 8,
+  },
+  experiencePriceText: {
+    fontSize: 12,
+    color: '#888',
+  },
+  experienceActions: {
+    alignItems: 'flex-end',
   },
 });

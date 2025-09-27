@@ -15,15 +15,15 @@ export interface AnalyticsData {
   valueAnalytics: {
     bestValue: {
       cider: CiderMasterRecord;
-      pricePerMl: number;
+      pricePerPint: number;
       venue: string;
     } | null;
     worstValue: {
       cider: CiderMasterRecord;
-      pricePerMl: number;
+      pricePerPint: number;
       venue: string;
     } | null;
-    averagePricePerMl: number;
+    averagePricePerPint: number;
     monthlySpending: number;
   };
   venueAnalytics: {
@@ -332,13 +332,13 @@ class AnalyticsService {
       return {
         bestValue: null,
         worstValue: null,
-        averagePricePerMl: 0,
+        averagePricePerPint: 0,
         monthlySpending: 0
       };
     }
 
     // Find best and worst value experiences
-    const sortedByValue = [...experiences].sort((a, b) => a.pricePerMl - b.pricePerMl);
+    const sortedByValue = [...experiences].sort((a, b) => a.pricePerPint - b.pricePerPint);
     const bestValueExp = sortedByValue[0];
     const worstValueExp = sortedByValue[sortedByValue.length - 1];
 
@@ -346,8 +346,8 @@ class AnalyticsService {
     const worstValueCider = ciders.find(c => c.id === worstValueExp?.ciderId);
 
     // Calculate averages
-    const totalPricePerMl = experiences.reduce((sum, exp) => sum + exp.pricePerMl, 0);
-    const averagePricePerMl = totalPricePerMl / experiences.length;
+    const totalPricePerPint = experiences.reduce((sum, exp) => sum + exp.pricePerPint, 0);
+    const averagePricePerPint = totalPricePerPint / experiences.length;
 
     // Monthly spending (last 30 days)
     const thirtyDaysAgo = new Date();
@@ -359,15 +359,15 @@ class AnalyticsService {
     return {
       bestValue: bestValueCider ? {
         cider: bestValueCider,
-        pricePerMl: bestValueExp.pricePerMl,
+        pricePerPint: bestValueExp.pricePerPint,
         venue: bestValueExp.venue.name
       } : null,
       worstValue: worstValueCider ? {
         cider: worstValueCider,
-        pricePerMl: worstValueExp.pricePerMl,
+        pricePerPint: worstValueExp.pricePerPint,
         venue: worstValueExp.venue.name
       } : null,
-      averagePricePerMl: Math.round(averagePricePerMl * 1000) / 1000,
+      averagePricePerPint: Math.round(averagePricePerPint * 100) / 100,
       monthlySpending: Math.round(monthlySpending * 100) / 100
     };
   }
@@ -391,13 +391,13 @@ class AnalyticsService {
           venue: exp.venue,
           visits: 0,
           totalSpent: 0,
-          totalPricePerMl: 0
+          totalPricePerPint: 0
         };
       }
 
       acc[venueKey].visits++;
       acc[venueKey].totalSpent += exp.price;
-      acc[venueKey].totalPricePerMl += exp.pricePerMl;
+      acc[venueKey].totalPricePerPint += exp.pricePerPint;
 
       return acc;
     }, {} as Record<string, any>);
@@ -409,17 +409,17 @@ class AnalyticsService {
       venue.visits > max.visits ? venue : max, venues[0]
     );
 
-    // Find cheapest and most expensive by average price per ml
+    // Find cheapest and most expensive by average price per pint
     const cheapest = venues.reduce((min, venue) => {
-      const avgPricePerMl = venue.totalPricePerMl / venue.visits;
-      const minAvgPricePerMl = min.totalPricePerMl / min.visits;
-      return avgPricePerMl < minAvgPricePerMl ? venue : min;
+      const avgPricePerPint = venue.totalPricePerPint / venue.visits;
+      const minAvgPricePerPint = min.totalPricePerPint / min.visits;
+      return avgPricePerPint < minAvgPricePerPint ? venue : min;
     }, venues[0]);
 
     const mostExpensive = venues.reduce((max, venue) => {
-      const avgPricePerMl = venue.totalPricePerMl / venue.visits;
-      const maxAvgPricePerMl = max.totalPricePerMl / max.visits;
-      return avgPricePerMl > maxAvgPricePerMl ? venue : max;
+      const avgPricePerPint = venue.totalPricePerPint / venue.visits;
+      const maxAvgPricePerPint = max.totalPricePerPint / max.visits;
+      return avgPricePerPint > maxAvgPricePerPint ? venue : max;
     }, venues[0]);
 
     return {
@@ -429,11 +429,11 @@ class AnalyticsService {
       } : null,
       cheapest: cheapest ? {
         venue: cheapest.venue,
-        averagePrice: Math.round((cheapest.totalPricePerMl / cheapest.visits) * 1000) / 1000
+        averagePrice: Math.round((cheapest.totalPricePerPint / cheapest.visits) * 100) / 100
       } : null,
       mostExpensive: mostExpensive ? {
         venue: mostExpensive.venue,
-        averagePrice: Math.round((mostExpensive.totalPricePerMl / mostExpensive.visits) * 1000) / 1000
+        averagePrice: Math.round((mostExpensive.totalPricePerPint / mostExpensive.visits) * 100) / 100
       } : null,
       totalVenues: venues.length
     };

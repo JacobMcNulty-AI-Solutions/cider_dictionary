@@ -1,10 +1,72 @@
 // Phase 3: Offline-First Sync Manager
 // Implements complete offline-first architecture with Firebase sync
 
-import NetInfo, { NetInfoState } from '@react-native-netinfo/netinfo';
-import { AppState, AppStateStatus } from 'react-native';
-import firestore from '@react-native-firebase/firestore';
-import storage from '@react-native-firebase/storage';
+// Mock dependencies for development environment
+// import NetInfo, { NetInfoState } from '@react-native-netinfo/netinfo';
+// import { AppState, AppStateStatus } from 'react-native';
+// import firestore from '@react-native-firebase/firestore';
+// import storage from '@react-native-firebase/storage';
+
+// Mock NetInfo for development
+interface NetInfoState {
+  isConnected: boolean | null;
+  type: string | null;
+  isInternetReachable: boolean | null;
+}
+
+const mockNetInfo = {
+  addEventListener: (callback: (state: NetInfoState) => void) => {
+    // Return mock unsubscribe function
+    return () => {};
+  },
+  fetch: (): Promise<NetInfoState> => Promise.resolve({
+    isConnected: true,
+    type: 'wifi',
+    isInternetReachable: true
+  })
+};
+
+const NetInfo = mockNetInfo;
+
+// Mock AppState
+type AppStateStatus = 'active' | 'background' | 'inactive';
+
+const mockAppState = {
+  addEventListener: (event: string, callback: (state: AppStateStatus) => void) => {
+    // Return mock subscription
+    return { remove: () => {} };
+  },
+  currentState: 'active' as AppStateStatus
+};
+
+const AppState = mockAppState;
+
+// Mock Firestore
+const mockFirestoreInstance = {
+  collection: (path: string) => ({
+    doc: (id: string) => ({
+      set: (data: any) => Promise.resolve(),
+      update: (data: any) => Promise.resolve(),
+      delete: () => Promise.resolve()
+    })
+  }),
+  Timestamp: {
+    fromDate: (date: Date) => ({ toDate: () => date })
+  }
+};
+
+const firestore = () => mockFirestoreInstance;
+firestore.Timestamp = mockFirestoreInstance.Timestamp;
+
+// Mock Storage
+const mockStorage = {
+  ref: (path: string) => ({
+    putFile: (localPath: string) => Promise.resolve({ ref: { fullPath: path } }),
+    getDownloadURL: () => Promise.resolve('https://example.com/mock-url')
+  })
+};
+
+const storage = mockStorage;
 import { SyncOperation, SyncOperationType, NetworkState } from '../../types/sync';
 import { ExperienceLog } from '../../types/experience';
 import { CiderMasterRecord } from '../../types/cider';

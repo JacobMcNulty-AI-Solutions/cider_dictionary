@@ -48,14 +48,18 @@ const Input = memo<Props>(({
   };
   return (
     <View style={[styles.container, containerStyle]}>
-      <Text style={[
-        styles.label,
-        isFocused && styles.labelFocused,
-        hasError && styles.labelError
-      ]}>
-        {label}
-        {required && <Text style={styles.required}> *</Text>}
-      </Text>
+      <View style={styles.labelContainer}>
+        <Text style={[
+          styles.label,
+          isFocused && styles.labelFocused,
+          hasError && styles.labelError
+        ]}>
+          {label}
+        </Text>
+        {required && (
+          <Text style={styles.required}> *</Text>
+        )}
+      </View>
       <TextInput
         style={[styles.input, getBorderStyle()]}
         value={value}
@@ -85,11 +89,15 @@ const styles = StyleSheet.create({
   container: {
     marginBottom: 16,
   },
+  labelContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
   label: {
     fontSize: 16,
     fontWeight: '500',
     color: '#333',
-    marginBottom: 6,
     transition: 'color 0.2s ease',
   },
   labelFocused: {

@@ -7,6 +7,7 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   KeyboardAvoidingView,
   Platform,
   Alert,
@@ -23,7 +24,7 @@ import { RootStackParamList } from '../../types/navigation';
 import SafeAreaContainer from '../../components/common/SafeAreaContainer';
 import LoadingSpinner from '../../components/common/LoadingSpinner';
 import Button from '../../components/common/Button';
-import { FormSection } from '../../components/forms/FormSection';
+import FormSection from '../../components/forms/FormSection';
 
 import { sqliteService } from '../../services/database/sqlite';
 import { locationService } from '../../services/location/LocationService';
@@ -151,6 +152,21 @@ export default function ExperienceLogScreen({ route, navigation }: Props) {
   }, []);
 
   const handleVenueSuggestionSelect = useCallback((suggestion: VenueSuggestion) => {
+    // Special handling for manual entry
+    if (suggestion.id === 'manual-entry') {
+      setFormState(prev => ({
+        ...prev,
+        venue: {
+          name: '', // Clear name so user can type their own
+          type: 'other', // Default to 'other' for manual entry
+          location: prev.venue.location, // Keep current location
+          address: undefined
+        }
+      }));
+      return;
+    }
+
+    // Regular venue suggestion selection
     setFormState(prev => ({
       ...prev,
       venue: {
@@ -446,14 +462,88 @@ const VenueTypeSelector: React.FC<{
   );
 };
 
-// ... Additional helper components would be implemented here
-// For brevity, I'll include placeholder implementations
+// Additional helper components
+const PriceInput: React.FC<{
+  label: string;
+  value: number;
+  onChangeText: (value: number) => void;
+  placeholder?: string;
+}> = ({ label, value, onChangeText, placeholder }) => (
+  <View style={styles.inputContainer}>
+    <Text style={styles.inputLabel}>{label}</Text>
+    <TextInput
+      style={styles.input}
+      value={value > 0 ? value.toString() : ''}
+      onChangeText={(text) => onChangeText(parseFloat(text) || 0)}
+      placeholder={placeholder}
+      keyboardType="decimal-pad"
+      returnKeyType="done"
+    />
+  </View>
+);
 
-const PriceInput: React.FC<any> = () => <View />;
-const ContainerSizeSelector: React.FC<any> = () => <View />;
-const PricePerMlDisplay: React.FC<any> = () => <View />;
-const NotesInput: React.FC<any> = () => <View />;
-const TextInput: React.FC<any> = () => <View />;
+const ContainerSizeSelector: React.FC<{
+  value: number;
+  onSelect: (size: number) => void;
+  presets: number[];
+}> = ({ value, onSelect, presets }) => (
+  <View style={styles.inputContainer}>
+    <Text style={styles.inputLabel}>Container Size</Text>
+    <View style={styles.containerSizeRow}>
+      {presets.map((size, index) => (
+        <TouchableOpacity
+          key={`container-${index}-${size}`}
+          style={[
+            styles.containerSizeButton,
+            value === size && styles.containerSizeButtonActive
+          ]}
+          onPress={() => onSelect(size)}
+        >
+          <Text style={[
+            styles.containerSizeText,
+            value === size && styles.containerSizeTextActive
+          ]}>
+            {size >= 1000 ? `${size / 1000}L` : `${size}ml`}
+          </Text>
+        </TouchableOpacity>
+      ))}
+    </View>
+  </View>
+);
+
+const PricePerMlDisplay: React.FC<{
+  value: number;
+}> = ({ value }) => (
+  <View style={styles.pricePerMlContainer}>
+    <Text style={styles.pricePerMlLabel}>Price per ml:</Text>
+    <Text style={styles.pricePerMlValue}>
+      £{value > 0 ? value.toFixed(3) : '0.000'}
+    </Text>
+  </View>
+);
+
+const NotesInput: React.FC<{
+  value: string;
+  onChangeText: (text: string) => void;
+  placeholder?: string;
+  maxLength?: number;
+}> = ({ value, onChangeText, placeholder, maxLength = 500 }) => (
+  <View style={styles.inputContainer}>
+    <TextInput
+      style={[styles.input, styles.notesInput]}
+      value={value}
+      onChangeText={onChangeText}
+      placeholder={placeholder}
+      multiline
+      numberOfLines={4}
+      maxLength={maxLength}
+      textAlignVertical="top"
+    />
+    <Text style={styles.characterCount}>
+      {value.length}/{maxLength}
+    </Text>
+  </View>
+);
 
 // Utility functions
 const generateUUID = (): string => {
@@ -585,6 +675,65 @@ const styles = StyleSheet.create({
     color: '#888',
     textAlign: 'right',
     marginTop: 4,
+  },
+  inputContainer: {
+    marginBottom: 16,
+  },
+  inputLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#333',
+    marginBottom: 8,
+  },
+  notesInput: {
+    height: 100,
+    textAlignVertical: 'top',
+  },
+  containerSizeRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  containerSizeButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    backgroundColor: '#f0f0f0',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#ddd',
+  },
+  containerSizeButtonActive: {
+    backgroundColor: '#007AFF',
+    borderColor: '#007AFF',
+  },
+  containerSizeText: {
+    fontSize: 14,
+    color: '#666',
+    fontWeight: '500',
+  },
+  containerSizeTextActive: {
+    color: '#fff',
+  },
+  pricePerMlContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 12,
+    backgroundColor: '#f8f9fa',
+    borderRadius: 8,
+    borderLeftWidth: 3,
+    borderLeftColor: '#007AFF',
+    marginBottom: 16,
+  },
+  pricePerMlLabel: {
+    fontSize: 14,
+    color: '#666',
+    fontWeight: '500',
+  },
+  pricePerMlValue: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#007AFF',
   },
   submitContainer: {
     position: 'absolute',

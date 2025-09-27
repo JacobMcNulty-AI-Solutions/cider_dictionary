@@ -138,92 +138,135 @@ class LocationService {
 
   // Venue detection and suggestions
   async getNearbyVenueSuggestions(location: LocationType, maxResults: number = 10): Promise<VenueSuggestion[]> {
-    // In a real implementation, this would integrate with Google Places API or similar
-    // For MVP, we'll provide intelligent local suggestions based on common venue types
+    // Get location context for more realistic suggestions
+    const locationContext = await this.reverseGeocode(location);
+    const cityName = await this.extractCityName(locationContext);
 
     const suggestions: VenueSuggestion[] = [
-      // Pub suggestions
+      // Always include manual entry option at the top
       {
-        id: 'pub-local-1',
-        name: 'The Local Pub',
-        type: 'pub',
-        distance: Math.random() * 500 + 50, // 50-550m
-        confidence: 0.8,
-        location,
-        isExisting: false
-      },
-      {
-        id: 'pub-crown-1',
-        name: 'The Crown',
-        type: 'pub',
-        distance: Math.random() * 800 + 100,
-        confidence: 0.75,
+        id: 'manual-entry',
+        name: 'Enter venue manually',
+        type: 'other',
+        distance: 0,
+        confidence: 1.0,
         location,
         isExisting: false
       },
 
-      // Restaurant suggestions
-      {
-        id: 'restaurant-1',
-        name: 'Local Restaurant',
-        type: 'restaurant',
-        distance: Math.random() * 600 + 80,
-        confidence: 0.7,
-        location,
-        isExisting: false
-      },
-
-      // Retail suggestions
+      // Common retail chains (high confidence)
       {
         id: 'retail-tesco',
-        name: 'Tesco',
+        name: `Tesco${cityName ? ` - ${cityName}` : ''}`,
         type: 'retail',
-        distance: Math.random() * 1000 + 200,
+        distance: Math.random() * 800 + 200,
         confidence: 0.9,
         location,
         isExisting: false
       },
       {
         id: 'retail-sainsburys',
-        name: "Sainsbury's",
+        name: `Sainsbury's${cityName ? ` - ${cityName}` : ''}`,
         type: 'retail',
-        distance: Math.random() * 1200 + 150,
+        distance: Math.random() * 900 + 150,
         confidence: 0.85,
         location,
         isExisting: false
       },
-
-      // Festival/Event
       {
-        id: 'festival-1',
-        name: 'Local Cider Festival',
-        type: 'festival',
-        distance: Math.random() * 2000 + 500,
-        confidence: 0.6,
+        id: 'retail-asda',
+        name: `ASDA${cityName ? ` - ${cityName}` : ''}`,
+        type: 'retail',
+        distance: Math.random() * 1200 + 300,
+        confidence: 0.8,
         location,
         isExisting: false
       },
 
-      // Brewery/Cidery
+      // Generic venue types with location context
       {
-        id: 'cidery-1',
-        name: 'Local Cidery',
-        type: 'cidery',
-        distance: Math.random() * 3000 + 1000,
+        id: 'pub-generic',
+        name: cityName ? `Local Pub in ${cityName}` : 'Local Pub',
+        type: 'pub',
+        distance: Math.random() * 600 + 100,
+        confidence: 0.7,
+        location,
+        isExisting: false
+      },
+      {
+        id: 'restaurant-generic',
+        name: cityName ? `Restaurant in ${cityName}` : 'Local Restaurant',
+        type: 'restaurant',
+        distance: Math.random() * 800 + 150,
         confidence: 0.65,
+        location,
+        isExisting: false
+      },
+      {
+        id: 'home',
+        name: 'At Home',
+        type: 'home',
+        distance: 0,
+        confidence: 1.0,
         location,
         isExisting: false
       }
     ];
 
-    // Sort by distance and confidence
+    // Add location-specific suggestions if available
+    if (cityName) {
+      suggestions.push(
+        {
+          id: 'cidery-local',
+          name: `${cityName} Cidery`,
+          type: 'cidery',
+          distance: Math.random() * 2000 + 500,
+          confidence: 0.6,
+          location,
+          isExisting: false
+        },
+        {
+          id: 'brewery-local',
+          name: `${cityName} Brewery`,
+          type: 'cidery',
+          distance: Math.random() * 1800 + 400,
+          confidence: 0.6,
+          location,
+          isExisting: false
+        }
+      );
+    }
+
+    // Sort by confidence and manual entry first, then distance
     return suggestions
       .sort((a, b) => {
-        const scoreA = (a.confidence * 0.7) + ((1000 - (a.distance || 1000)) / 1000 * 0.3);
-        const scoreB = (b.confidence * 0.7) + ((1000 - (b.distance || 1000)) / 1000 * 0.3);
+        if (a.id === 'manual-entry') return -1;
+        if (b.id === 'manual-entry') return 1;
+        if (a.id === 'home') return -1;
+        if (b.id === 'home') return 1;
+
+        const scoreA = (a.confidence * 0.8) + ((1000 - (a.distance || 1000)) / 1000 * 0.2);
+        const scoreB = (b.confidence * 0.8) + ((1000 - (b.distance || 1000)) / 1000 * 0.2);
         return scoreB - scoreA;
       })
       .slice(0, maxResults);
+  }
+
+  // Helper method to extract city name from reverse geocoding result
+  private async extractCityName(addressString: string | null): Promise<string | null> {
+    if (!addressString) return null;
+
+    // Simple extraction - look for city after comma or take the first part
+    const parts = addressString.split(',').map(part => part.trim());
+
+    // Return the city part (usually the 3rd or 4th element in UK addresses)
+    if (parts.length >= 3) {
+      return parts[2]; // City is typically the 3rd element
+    } else if (parts.length >= 2) {
+      return parts[1]; // Fallback to 2nd element
+    }
+
+    return null;
   }
 
   // Distance calculation utilities

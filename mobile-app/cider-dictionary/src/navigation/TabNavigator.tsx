@@ -5,6 +5,15 @@ import { Ionicons } from '@expo/vector-icons';
 import { RootTabParamList } from '../types/navigation';
 import EnhancedCollectionScreen from '../screens/Collection/EnhancedCollectionScreen';
 import EnhancedQuickEntryScreen from '../screens/QuickEntry/EnhancedQuickEntryScreen';
+import { View, Text } from 'react-native';
+
+// Temporary placeholder component to test if EnhancedQuickEntryScreen is causing infinite loop
+const QuickEntryPlaceholder = () => (
+  <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+    <Text>Quick Entry (Temporarily Disabled)</Text>
+    <Text>Testing infinite loop fix</Text>
+  </View>
+);
 import AnalyticsScreen from '../screens/Analytics/AnalyticsScreen';
 import SettingsScreen from '../screens/Settings/SettingsScreen';
 

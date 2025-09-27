@@ -2,7 +2,27 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { View, ScrollView, StyleSheet, Text, RefreshControl, TouchableOpacity, Dimensions } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
-import { LineChart, BarChart, PieChart } from 'react-native-chart-kit';
+// Mock chart components for development
+// import { LineChart, BarChart, PieChart } from 'react-native-chart-kit';
+
+// Mock chart components
+const LineChart = ({ data, ...props }: any) => (
+  <View style={{ height: 200, backgroundColor: '#f0f0f0', justifyContent: 'center', alignItems: 'center' }}>
+    <Text>Line Chart (Mock)</Text>
+  </View>
+);
+
+const BarChart = ({ data, ...props }: any) => (
+  <View style={{ height: 200, backgroundColor: '#f0f0f0', justifyContent: 'center', alignItems: 'center' }}>
+    <Text>Bar Chart (Mock)</Text>
+  </View>
+);
+
+const PieChart = ({ data, ...props }: any) => (
+  <View style={{ height: 200, backgroundColor: '#f0f0f0', justifyContent: 'center', alignItems: 'center' }}>
+    <Text>Pie Chart (Mock)</Text>
+  </View>
+);
 import { RootTabScreenProps } from '../../types/navigation';
 import SafeAreaContainer from '../../components/common/SafeAreaContainer';
 import LoadingSpinner from '../../components/common/LoadingSpinner';

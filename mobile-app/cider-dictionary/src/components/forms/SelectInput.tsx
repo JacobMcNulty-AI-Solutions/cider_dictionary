@@ -151,10 +151,14 @@ const SelectInput: React.FC<SelectInputProps> = ({
   return (
     <View style={[styles.container, containerStyle]}>
       <View style={styles.labelRow}>
-        <Text style={[styles.label, required && styles.requiredLabel]}>
-          {label}
-          {required && <Text style={styles.asterisk}> *</Text>}
-        </Text>
+        <View style={styles.labelContainer}>
+          <Text style={[styles.label, required && styles.requiredLabel]}>
+            {label}
+          </Text>
+          {required && (
+            <Text style={styles.asterisk}> *</Text>
+          )}
+        </View>
         {validation?.showFeedback && (
           <Text style={validation.isValid ? styles.validIcon : styles.errorIcon}>
             {validation.isValid ? '✓' : '✗'}
@@ -250,6 +254,11 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 6,
+  },
+  labelContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
   },
   label: {
     fontSize: 16,

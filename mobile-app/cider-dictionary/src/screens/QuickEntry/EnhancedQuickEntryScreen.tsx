@@ -130,87 +130,88 @@ export default function EnhancedQuickEntryScreen({ navigation }: Props) {
       );
     } catch (error) {
       console.warn('FormDisclosureManager.updateFormState error:', error);
-      // Fallback for tests/runtime issues
-      updates = {
-        formData: { ...formState.formData, [fieldKey]: value },
-        validationState: formState.validationState,
-        fieldStates: formState.fieldStates,
-        formCompleteness: {
-          percentage: 100,
-          canSubmit: true,
-          missingFields: []
-        }
-      };
+      // Fallback for tests/runtime issues - will be handled in setFormState
+      updates = {};
     }
 
-    setFormState(prev => ({ ...prev, ...updates }));
+    setFormState(prev => ({
+      ...prev,
+      ...updates,
+      // Fallback updates if FormDisclosureManager failed
+      formData: updates.formData || { ...prev.formData, [fieldKey]: value }
+    }));
 
     // Debounced validation for performance with error handling
-    try {
-      const validationResult = await debouncedValidate.current(
-        fieldKey,
-        value,
-        FORM_FIELD_CONFIGS[fieldKey],
-        { ...formState.formData, [fieldKey]: value }
-      ).catch((error: any) => {
-        console.warn('Validation error caught:', error);
-        return { isValid: true, errors: [], warnings: [], suggestions: [] };
-      });
+    setFormState(prevState => {
+      try {
+        debouncedValidate.current(
+          fieldKey,
+          value,
+          FORM_FIELD_CONFIGS[fieldKey],
+          { ...prevState.formData, [fieldKey]: value }
+        ).then((validationResult) => {
+          const newValidationState = {
+            ...prevState.validationState,
+            [fieldKey]: {
+              isValid: validationResult.isValid,
+              errors: validationResult.errors,
+              warnings: validationResult.warnings,
+              suggestions: validationResult.suggestions,
+              showFeedback: true
+            }
+          };
 
-      const newValidationState = {
-        ...formState.validationState,
-        [fieldKey]: {
-          isValid: validationResult.isValid,
-          errors: validationResult.errors,
-          warnings: validationResult.warnings,
-          suggestions: validationResult.suggestions,
-          showFeedback: true
-        }
-      };
+          const newFieldStates = {
+            ...prevState.fieldStates,
+            [fieldKey]: validationResult.isValid ? 'valid' : 'error'
+          };
 
-      const newFieldStates = {
-        ...formState.fieldStates,
-        [fieldKey]: validationResult.isValid ? 'valid' : 'error'
-      };
+          // Recalculate form completeness
+          const formCompleteness = FormDisclosureManager.calculateFormCompleteness(
+            { ...prevState.formData, [fieldKey]: value },
+            prevState.disclosureLevel,
+            newValidationState
+          );
 
-      // Recalculate form completeness
-      const formCompleteness = FormDisclosureManager.calculateFormCompleteness(
-        { ...formState.formData, [fieldKey]: value },
-        formState.disclosureLevel,
-        newValidationState
-      );
-
-      setFormState(prev => ({
-        ...prev,
-        validationState: newValidationState,
-        fieldStates: newFieldStates,
-        formCompleteness
-      }));
-
-      // Trigger duplicate detection for name/brand fields
-      if ((fieldKey === 'name' || fieldKey === 'brand') && value.length >= 2) {
-        const name = fieldKey === 'name' ? value : formState.formData.name || '';
-        const brand = fieldKey === 'brand' ? value : formState.formData.brand || '';
-
-        if (name && brand) {
-          const duplicateResult = await findDuplicates(name, brand);
           setFormState(prev => ({
             ...prev,
-            duplicateWarning: duplicateResult.isDuplicate || duplicateResult.hasSimilar
-              ? {
-                  type: duplicateResult.isDuplicate ? 'duplicate' : 'similar',
-                  message: duplicateResult.suggestion,
-                  confidence: duplicateResult.confidence,
-                  existingCider: duplicateResult.existingCider
-                }
-              : null
+            validationState: newValidationState,
+            fieldStates: newFieldStates,
+            formCompleteness
           }));
+        }).catch((error: any) => {
+          console.warn('Validation error caught:', error);
+        });
+
+        // Trigger duplicate detection for name/brand fields
+        if ((fieldKey === 'name' || fieldKey === 'brand') && value.length >= 2) {
+          const name = fieldKey === 'name' ? value : prevState.formData.name || '';
+          const brand = fieldKey === 'brand' ? value : prevState.formData.brand || '';
+
+          if (name && brand) {
+            findDuplicates(name, brand).then((duplicateResult) => {
+              setFormState(prev => ({
+                ...prev,
+                duplicateWarning: duplicateResult.isDuplicate || duplicateResult.hasSimilar
+                  ? {
+                      type: duplicateResult.isDuplicate ? 'duplicate' : 'similar',
+                      message: duplicateResult.suggestion,
+                      confidence: duplicateResult.confidence,
+                      existingCider: duplicateResult.existingCider
+                    }
+                  : null
+              }));
+            });
+          }
         }
+
+        return prevState;
+      } catch (error) {
+        console.error('Validation error:', error);
+        return prevState;
       }
-    } catch (error) {
-      console.error('Validation error:', error);
-    }
-  }, [formState, findDuplicates]);
+    });
+  }, [findDuplicates]);
 
   // =============================================================================
   // PROGRESSIVE DISCLOSURE
@@ -317,7 +318,7 @@ export default function EnhancedQuickEntryScreen({ navigation }: Props) {
   // RENDER FORM FIELDS
   // =============================================================================
 
-  const renderFormField = useCallback((fieldKey: keyof CiderMasterRecord) => {
+  const renderFormField = (fieldKey: keyof CiderMasterRecord) => {
     // Fallback config for test environment
     const getFallbackConfig = (key: string) => {
       const configs: any = {
@@ -459,7 +460,7 @@ export default function EnhancedQuickEntryScreen({ navigation }: Props) {
         console.log('Unknown field type for:', fieldKey, 'type:', config.type);
         return null;
     }
-  }, [formState, handleFieldChange, getSimilarCiderNames, getSimilarBrandNames, handleNameSuggestion, handleBrandSuggestion]);
+  };
 
   // =============================================================================
   // RENDER SECTIONS
@@ -470,7 +471,6 @@ export default function EnhancedQuickEntryScreen({ navigation }: Props) {
       const sections = getFormSections(formState.disclosureLevel);
       return sections;
     } catch (error) {
-
       // Simple fallback with hardcoded field configs for test compatibility
       return [{
         id: 'core',
@@ -489,7 +489,7 @@ export default function EnhancedQuickEntryScreen({ navigation }: Props) {
     }
   }, [formState.disclosureLevel]);
 
-  const renderFormSection = useCallback((section: ReturnType<typeof getFormSections>[0]) => {
+  const renderFormSection = (section: ReturnType<typeof getFormSections>[0]) => {
     // Fallback visibility check for test environment
     const isFieldVisible = (fieldKey: any) => {
       if (FormDisclosureManager?.isFieldVisible) {
@@ -529,7 +529,7 @@ export default function EnhancedQuickEntryScreen({ navigation }: Props) {
         })}
       </View>
     );
-  }, [formState, renderFormField]);
+  };
 
   // =============================================================================
   // RENDER

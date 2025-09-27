@@ -1,8 +1,33 @@
 // Phase 3: Firebase Performance Monitoring and Cost Tracking
 // Comprehensive monitoring with automated alerts for free tier limits
 
-import perf, { FirebasePerformanceTypes } from '@react-native-firebase/performance';
+// Mock Firebase Performance for development
+// import perf, { FirebasePerformanceTypes } from '@react-native-firebase/perf';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+
+// Mock Firebase Performance Types for development
+interface FirebasePerformanceTypes {
+  Trace: any;
+  HttpMetric: any;
+}
+
+// Mock performance monitoring for development environment
+const mockPerf = () => ({
+  newTrace: (traceName: string) => ({
+    start: () => Promise.resolve(),
+    stop: () => Promise.resolve(),
+    putAttribute: () => {},
+    putMetric: () => {},
+    incrementMetric: () => {},
+  }),
+  newHttpMetric: (url: string, method: string) => ({
+    start: () => Promise.resolve(),
+    stop: () => Promise.resolve(),
+    putAttribute: () => {},
+  })
+});
+
+const perf = mockPerf;
 
 interface PerformanceMetrics {
   experienceEntryTime: number[];

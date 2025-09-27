@@ -64,10 +64,14 @@ const FormSection: React.FC<FormSectionProps> = ({
         activeOpacity={collapsible ? 0.7 : 1}
       >
         <View style={styles.titleRow}>
-          <Text style={[styles.title, required && styles.requiredTitle]}>
-            {title}
-            {required && <Text style={styles.asterisk}> *</Text>}
-          </Text>
+          <View style={styles.titleContainer}>
+            <Text style={[styles.title, required && styles.requiredTitle]}>
+              {title}
+            </Text>
+            {required && (
+              <Text style={styles.asterisk}> *</Text>
+            )}
+          </View>
 
           {completionPercentage !== undefined && (
             <View style={styles.progressContainer}>
@@ -134,11 +138,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 4,
   },
+  titleContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
   title: {
     fontSize: 18,
     fontWeight: '600',
     color: '#333',
-    flex: 1,
   },
   requiredTitle: {
     color: '#1976D2',

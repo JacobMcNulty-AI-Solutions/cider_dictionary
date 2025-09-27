@@ -32,48 +32,8 @@ class DatabaseConnectionManager {
       this.db = await withRetry(async () => {
         const database = await SQLite.openDatabaseAsync('cider_dictionary_v3.db');
 
-        await database.execAsync(`
-          CREATE TABLE IF NOT EXISTS ciders (
-            id TEXT PRIMARY KEY,
-            userId TEXT NOT NULL,
-            name TEXT NOT NULL,
-            brand TEXT NOT NULL,
-            abv REAL NOT NULL,
-            overallRating INTEGER NOT NULL,
-
-            -- Optional basic fields
-            photo TEXT,
-            notes TEXT,
-
-            -- Enthusiast level fields
-            traditionalStyle TEXT,
-            sweetness TEXT,
-            carbonation TEXT,
-            clarity TEXT,
-            color TEXT,
-            tasteTags TEXT, -- JSON array
-            containerType TEXT,
-
-            -- Expert level fields (stored as JSON)
-            appleClassification TEXT, -- JSON object
-            productionMethods TEXT,   -- JSON object
-            detailedRatings TEXT,     -- JSON object
-            venue TEXT,               -- JSON object or simple string
-
-            -- System fields
-            createdAt TEXT NOT NULL,
-            updatedAt TEXT NOT NULL,
-            syncStatus TEXT DEFAULT 'pending',
-            version INTEGER DEFAULT 1
-          );
-        `);
-
-        // Create indexes for better query performance
-        await database.execAsync(`
-          CREATE INDEX IF NOT EXISTS idx_ciders_created_at ON ciders(createdAt DESC);
-          CREATE INDEX IF NOT EXISTS idx_ciders_rating ON ciders(overallRating);
-          CREATE INDEX IF NOT EXISTS idx_ciders_brand ON ciders(brand);
-        `);
+        // Create all tables using the same method as fallback
+        await this.createTablesInDatabase(database);
 
         return database;
       }, 3, 500);
@@ -88,7 +48,7 @@ class DatabaseConnectionManager {
       try {
         console.log('Attempting fallback to in-memory database...');
         this.db = await SQLite.openDatabaseAsync(':memory:');
-        await this.createTables();
+        await this.createTablesInDatabase(this.db);
         this.initialized = true;
         console.log('Fallback in-memory database initialized');
       } catch (fallbackError) {
@@ -104,11 +64,10 @@ class DatabaseConnectionManager {
     }
   }
 
-  private async createTables(): Promise<void> {
-    if (!this.db) return;
+  private async createTablesInDatabase(database: SQLite.SQLiteDatabase): Promise<void> {
 
     // Create ciders table
-    await this.db.execAsync(`
+    await database.execAsync(`
       CREATE TABLE IF NOT EXISTS ciders (
         id TEXT PRIMARY KEY,
         userId TEXT NOT NULL,
@@ -145,7 +104,7 @@ class DatabaseConnectionManager {
     `);
 
     // Create experiences table
-    await this.db.execAsync(`
+    await database.execAsync(`
       CREATE TABLE IF NOT EXISTS experiences (
         id TEXT PRIMARY KEY,
         userId TEXT NOT NULL,
@@ -177,7 +136,7 @@ class DatabaseConnectionManager {
     `);
 
     // Create sync operations queue table
-    await this.db.execAsync(`
+    await database.execAsync(`
       CREATE TABLE IF NOT EXISTS sync_operations (
         id TEXT PRIMARY KEY,
         type TEXT NOT NULL,
@@ -191,7 +150,7 @@ class DatabaseConnectionManager {
     `);
 
     // Create sync conflicts table
-    await this.db.execAsync(`
+    await database.execAsync(`
       CREATE TABLE IF NOT EXISTS sync_conflicts (
         id TEXT PRIMARY KEY,
         entityId TEXT NOT NULL,
@@ -205,7 +164,7 @@ class DatabaseConnectionManager {
     `);
 
     // Create indexes for better query performance
-    await this.db.execAsync(`
+    await database.execAsync(`
       CREATE INDEX IF NOT EXISTS idx_experiences_cider_id ON experiences(ciderId);
       CREATE INDEX IF NOT EXISTS idx_experiences_date ON experiences(date DESC);
       CREATE INDEX IF NOT EXISTS idx_experiences_price_per_ml ON experiences(pricePerMl);

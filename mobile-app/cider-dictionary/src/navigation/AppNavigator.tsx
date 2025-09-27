@@ -6,6 +6,7 @@ import { View, Text } from 'react-native';
 import TabNavigator from './TabNavigator';
 import CiderDetailScreen from '../screens/Collection/CiderDetailScreen';
 import ExperienceLogScreen from '../screens/ExperienceLog/ExperienceLogScreen';
+import ExperienceHistoryScreen from '../screens/ExperienceHistory/ExperienceHistoryScreen';
 import { RootStackParamList } from '../types/navigation';
 import { ErrorBoundary } from '../services/error/ErrorBoundary';
 
@@ -43,11 +44,7 @@ export default function AppNavigator() {
           />
           <Stack.Screen
             name="ExperienceHistory"
-            component={() => (
-              <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-                <Text>Experience History (Coming Soon)</Text>
-              </View>
-            )}
+            component={ExperienceHistoryScreen}
             options={{
               title: 'Experience History',
               headerStyle: { backgroundColor: '#FF9500' },

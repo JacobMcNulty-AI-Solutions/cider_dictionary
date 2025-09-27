@@ -157,10 +157,14 @@ const ValidatedInput: React.FC<ValidatedInputProps> = ({
   return (
     <View style={[styles.container, containerStyle]}>
       <View style={styles.labelRow}>
-        <Text style={[styles.label, required && styles.requiredLabel]}>
-          {label}
-          {required && <Text style={styles.asterisk}> *</Text>}
-        </Text>
+        <View style={styles.labelContainer}>
+          <Text style={[styles.label, required && styles.requiredLabel]}>
+            {label}
+          </Text>
+          {required && (
+            <Text style={styles.asterisk}> *</Text>
+          )}
+        </View>
         {getValidationIcon()}
       </View>
 
@@ -213,6 +217,11 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 6,
+  },
+  labelContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
   },
   label: {
     fontSize: 16,

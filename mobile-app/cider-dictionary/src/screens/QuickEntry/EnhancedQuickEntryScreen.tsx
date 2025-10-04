@@ -138,14 +138,38 @@ export default function EnhancedQuickEntryScreen({ navigation }: Props) {
       // Progress includes both required and optional fields for better UX
       const requiredFieldsCount = [hasName, hasBrand, hasAbv, hasRating].filter(Boolean).length;
       const optionalFieldsCount = [
+        // Basic characteristics
         updatedFormData.traditionalStyle,
-        updatedFormData.appleVarieties && updatedFormData.appleVarieties.length > 0,
+        updatedFormData.sweetness,
+        updatedFormData.carbonation,
+        updatedFormData.clarity,
+        updatedFormData.color,
         updatedFormData.tasteTags && updatedFormData.tasteTags.length > 0,
         updatedFormData.notes,
-        updatedFormData.photo
+        updatedFormData.photo,
+        // Apple classification
+        updatedFormData.appleCategories && updatedFormData.appleCategories.length > 0,
+        updatedFormData.appleVarieties && updatedFormData.appleVarieties.length > 0,
+        updatedFormData.longAshtonClassification,
+        // Production methods
+        updatedFormData.fermentation,
+        updatedFormData.specialProcesses && updatedFormData.specialProcesses.length > 0,
+        // Additives & ingredients
+        updatedFormData.fruitAdditions && updatedFormData.fruitAdditions.length > 0,
+        updatedFormData.hopVarieties && updatedFormData.hopVarieties.length > 0,
+        updatedFormData.hopCharacter && updatedFormData.hopCharacter.length > 0,
+        updatedFormData.spicesBotanicals && updatedFormData.spicesBotanicals.length > 0,
+        updatedFormData.oakTypes && updatedFormData.oakTypes.length > 0,
+        updatedFormData.barrelHistory && updatedFormData.barrelHistory.length > 0,
+        updatedFormData.alternativeWoods && updatedFormData.alternativeWoods.length > 0,
+        // Detailed ratings
+        updatedFormData.appearanceRating,
+        updatedFormData.aromaRating,
+        updatedFormData.tasteRating,
+        updatedFormData.mouthfeelRating
       ].filter(Boolean).length;
 
-      const totalFields = 9; // 4 required + 5 optional
+      const totalFields = 27; // 4 required + 23 optional
       const completedFields = requiredFieldsCount + optionalFieldsCount;
       const percentage = Math.round((completedFields / totalFields) * 100);
 
@@ -210,16 +234,120 @@ export default function EnhancedQuickEntryScreen({ navigation }: Props) {
     try {
       const completionTime = (Date.now() - formState.startTime) / 1000;
 
-      // Create cider record with required fields only having defaults
+      // Transform flat form data into proper nested structure for database
+      const formData = formState.formData;
+
+      // Build apple classification object if any fields are filled
+      const appleClassification = (() => {
+        const categories = formData.appleCategories;
+        const varieties = formData.appleVarieties;
+        const longAshton = formData.longAshtonClassification;
+
+        if (categories?.length || varieties?.length || longAshton) {
+          return {
+            categories: categories || [],
+            varieties: varieties || [],
+            longAshtonClassification: longAshton || undefined
+          };
+        }
+        return undefined;
+      })();
+
+      // Build production methods object if any fields are filled
+      const productionMethods = (() => {
+        const fermentation = formData.fermentation;
+        const specialProcesses = formData.specialProcesses;
+
+        if (fermentation || specialProcesses?.length) {
+          return {
+            fermentation: fermentation || undefined,
+            specialProcesses: specialProcesses || []
+          };
+        }
+        return undefined;
+      })();
+
+      // Build hops object if any fields are filled
+      const hops = (() => {
+        const hopVarieties = formData.hopVarieties;
+        const hopCharacter = formData.hopCharacter;
+
+        if (hopVarieties?.length || hopCharacter?.length) {
+          return {
+            varieties: hopVarieties || [],
+            character: hopCharacter || []
+          };
+        }
+        return undefined;
+      })();
+
+      // Build wood aging object if any fields are filled
+      const woodAging = (() => {
+        const oakTypes = formData.oakTypes;
+        const barrelHistory = formData.barrelHistory;
+        const alternativeWoods = formData.alternativeWoods;
+
+        if (oakTypes?.length || barrelHistory?.length || alternativeWoods?.length) {
+          return {
+            oakTypes: oakTypes || [],
+            barrelHistory: barrelHistory || [],
+            alternativeWoods: alternativeWoods || []
+          };
+        }
+        return undefined;
+      })();
+
+      // Build detailed ratings object if any fields are filled
+      const detailedRatings = (() => {
+        const appearance = formData.appearanceRating;
+        const aroma = formData.aromaRating;
+        const taste = formData.tasteRating;
+        const mouthfeel = formData.mouthfeelRating;
+
+        if (appearance || aroma || taste || mouthfeel) {
+          return {
+            appearance: appearance || undefined,
+            aroma: aroma || undefined,
+            taste: taste || undefined,
+            mouthfeel: mouthfeel || undefined
+          };
+        }
+        return undefined;
+      })();
+
+      // Create cider record with proper structure
       const ciderData = {
-        ...formState.formData,
-        // Ensure required fields are properly typed with defaults
-        name: formState.formData.name || 'Unknown Cider',
-        brand: formState.formData.brand || 'Unknown Brand',
-        abv: formState.formData.abv || 5.0,
-        overallRating: formState.formData.overallRating || 5,
+        // Required fields with defaults
+        name: formData.name || 'Unknown Cider',
+        brand: formData.brand || 'Unknown Brand',
+        abv: formData.abv || 5.0,
+        overallRating: formData.overallRating || 5,
         userId: 'default-user', // TODO: Replace with actual user ID when authentication is implemented
-        // Remove any undefined optional fields to avoid saving empty defaults
+
+        // Optional basic fields
+        photo: formData.photo || undefined,
+        notes: formData.notes || undefined,
+
+        // Enthusiast level fields
+        traditionalStyle: formData.traditionalStyle || undefined,
+        sweetness: formData.sweetness || undefined,
+        carbonation: formData.carbonation || undefined,
+        clarity: formData.clarity || undefined,
+        color: formData.color || undefined,
+        tasteTags: formData.tasteTags || undefined,
+
+        // Expert level fields (properly nested)
+        appleClassification,
+        productionMethods,
+
+        // Additives & Ingredients
+        fruitAdditions: formData.fruitAdditions || undefined,
+        hops,
+        spicesBotanicals: formData.spicesBotanicals || undefined,
+        woodAging,
+
+        detailedRatings,
+        venue: formData.venue || undefined,
       };
 
       // Remove undefined optional fields to prevent saving empty values
@@ -280,13 +408,13 @@ export default function EnhancedQuickEntryScreen({ navigation }: Props) {
   // RENDER FORM FIELDS
   // =============================================================================
 
-  const renderFormField = (fieldKey: keyof CiderMasterRecord) => {
+  const renderFormField = (fieldKey: keyof CiderMasterRecord, fieldConfig?: any) => {
     // Safety check for formState
     if (!formState?.formData || !formState?.validationState) {
       return null;
     }
 
-    // Fallback config for test environment
+    // Use passed field config or fallback for basic fields
     const getFallbackConfig = (key: string) => {
       const configs: any = {
         name: { key: 'name', label: 'Cider Name', type: 'text', required: true, placeholder: 'Enter cider name', section: 'core' },
@@ -297,7 +425,7 @@ export default function EnhancedQuickEntryScreen({ navigation }: Props) {
       return configs[key];
     };
 
-    const config = FORM_FIELD_CONFIGS?.[fieldKey] || getFallbackConfig(fieldKey);
+    const config = fieldConfig || FORM_FIELD_CONFIGS?.[fieldKey] || getFallbackConfig(fieldKey);
 
     if (!config) {
       return null;
@@ -449,34 +577,206 @@ export default function EnhancedQuickEntryScreen({ navigation }: Props) {
         defaultExpanded: true,
       },
       {
-        id: 'characteristics',
+        id: 'basic_characteristics',
         title: 'Cider Characteristics',
-        description: 'Optional details to enhance your cider profile',
+        description: 'Core characteristics and tasting notes',
         fields: [
           { key: 'traditionalStyle', label: 'Traditional Style', type: 'select', required: false, placeholder: 'Select style (optional)', options: [
-            { label: 'English Scrumpy', value: 'english_scrumpy' },
-            { label: 'French Cidre', value: 'french_cidre' },
-            { label: 'American Heritage', value: 'american_heritage' },
-            { label: 'New England', value: 'new_england' },
+            { label: 'West Country Traditional', value: 'west_country_traditional' },
+            { label: 'Eastern England Traditional', value: 'eastern_england_traditional' },
+            { label: 'French Normandy/Brittany', value: 'french_normandy_brittany' },
             { label: 'Spanish Sidra', value: 'spanish_sidra' },
             { label: 'German Apfelwein', value: 'german_apfelwein' },
-            { label: 'Modern Craft', value: 'modern_craft' },
-            { label: 'Other', value: 'other' }
+            { label: 'Modern/New World', value: 'modern_new_world' },
+            { label: 'American Traditional', value: 'american_traditional' },
+            { label: 'Other Regional', value: 'other_regional' }
           ]},
-          { key: 'appleVarieties', label: 'Apple Varieties', type: 'multiselect', required: false, placeholder: 'Select varieties (optional)', options: [
-            { label: 'Granny Smith', value: 'granny_smith' },
-            { label: 'Bramley', value: 'bramley' },
-            { label: 'Dabinett', value: 'dabinett' },
-            { label: 'Kingston Black', value: 'kingston_black' },
-            { label: 'Yarlington Mill', value: 'yarlington_mill' },
-            { label: 'Gala', value: 'gala' },
-            { label: 'Honeycrisp', value: 'honeycrisp' },
-            { label: 'Mixed Varieties', value: 'mixed' },
-            { label: 'Unknown', value: 'unknown' }
+          { key: 'sweetness', label: 'Sweetness Level', type: 'select', required: false, placeholder: 'Select sweetness (optional)', options: [
+            { label: 'Bone Dry', value: 'bone_dry' },
+            { label: 'Dry', value: 'dry' },
+            { label: 'Off Dry', value: 'off_dry' },
+            { label: 'Medium', value: 'medium' },
+            { label: 'Sweet', value: 'sweet' }
           ]},
-          { key: 'tasteTags', label: 'Taste Profile', type: 'tags', required: false, placeholder: 'Add taste descriptors (optional)' },
+          { key: 'carbonation', label: 'Carbonation', type: 'select', required: false, placeholder: 'Select carbonation (optional)', options: [
+            { label: 'Still', value: 'still' },
+            { label: 'Lightly Sparkling', value: 'lightly_sparkling' },
+            { label: 'Sparkling', value: 'sparkling' },
+            { label: 'Highly Carbonated', value: 'highly_carbonated' }
+          ]},
+          { key: 'clarity', label: 'Clarity', type: 'select', required: false, placeholder: 'Select clarity (optional)', options: [
+            { label: 'Crystal Clear', value: 'crystal_clear' },
+            { label: 'Clear', value: 'clear' },
+            { label: 'Hazy', value: 'hazy' },
+            { label: 'Cloudy', value: 'cloudy' },
+            { label: 'Opaque', value: 'opaque' }
+          ]},
+          { key: 'color', label: 'Color', type: 'select', required: false, placeholder: 'Select color (optional)', options: [
+            { label: 'Pale Straw', value: 'pale_straw' },
+            { label: 'Golden', value: 'golden' },
+            { label: 'Amber', value: 'amber' },
+            { label: 'Copper', value: 'copper' },
+            { label: 'Ruby', value: 'ruby' },
+            { label: 'Pink/Rosé', value: 'pink_rose' },
+            { label: 'Dark Amber', value: 'dark_amber' }
+          ]},
+          { key: 'tasteTags', label: 'Taste Profile', type: 'tags', required: false, placeholder: 'Add taste descriptors (optional)', options: [
+            'Dry', 'Sweet', 'Tart', 'Sharp', 'Crisp', 'Smooth', 'Refreshing',
+            'Fresh Apple', 'Cooked Apple', 'Green Apple', 'Red Apple', 'Apple Pie', 'Orchard Fresh',
+            'Fruity', 'Citrus', 'Tropical', 'Berry', 'Stone Fruit', 'Floral', 'Honey', 'Vanilla', 'Oak', 'Spicy', 'Herbal', 'Earthy', 'Funky', 'Yeasty',
+            'Light-bodied', 'Medium-bodied', 'Full-bodied', 'Fizzy', 'Still', 'Creamy', 'Astringent', 'Tannic', 'Balanced', 'Complex'
+          ] },
           { key: 'notes', label: 'Tasting Notes', type: 'text', required: false, placeholder: 'Personal notes about this cider (optional)', multiline: true },
           { key: 'photo', label: 'Photo', type: 'image', required: false, placeholder: 'Add a photo (optional)' },
+        ],
+        collapsible: true,
+        defaultExpanded: false,
+      },
+      {
+        id: 'apple_classification',
+        title: 'Apple Classification',
+        description: 'Apple varieties and classification details',
+        fields: [
+          { key: 'appleCategories', label: 'Apple Categories (Long Ashton)', type: 'multiselect', required: false, placeholder: 'Select categories (optional)', options: [
+            { label: 'Bittersweet (high tannin, low acid)', value: 'bittersweet' },
+            { label: 'Bittersharp (high tannin, high acid)', value: 'bittersharp' },
+            { label: 'Sweet (low tannin, low acid)', value: 'sweet' },
+            { label: 'Sharp (low tannin, high acid)', value: 'sharp' },
+            { label: 'Culinary/Dessert Apples', value: 'culinary_dessert' },
+            { label: 'Unknown/Blend', value: 'unknown_blend' }
+          ]},
+          { key: 'appleVarieties', label: 'Apple Varieties', type: 'tags', required: false, placeholder: 'Add specific apple varieties (optional)', options: [
+            'Kingston Black', 'Dabinett', 'Yarlington Mill', 'Harry Masters Jersey', 'Tremlett\'s Bitter', 'Court Royal', 'Foxwhelp', 'Somerset Redstreak',
+            'Bramley\'s Seedling', 'Cox\'s Orange Pippin', 'Braeburn', 'Pink Lady', 'Gala', 'Discovery'
+          ] },
+          { key: 'longAshtonClassification', label: 'Long Ashton Classification', type: 'text', required: false, placeholder: 'Long Ashton classification (optional)' },
+        ],
+        collapsible: true,
+        defaultExpanded: false,
+      },
+      {
+        id: 'production_methods',
+        title: 'Production Methods',
+        description: 'Fermentation and special production processes',
+        fields: [
+          { key: 'fermentation', label: 'Fermentation Type', type: 'select', required: false, placeholder: 'Select fermentation (optional)', options: [
+            { label: 'Wild/Spontaneous', value: 'wild_spontaneous' },
+            { label: 'Cultured Yeast', value: 'cultured_yeast' },
+            { label: 'Mixed Fermentation', value: 'mixed_fermentation' },
+            { label: 'Unknown', value: 'unknown' }
+          ]},
+          { key: 'specialProcesses', label: 'Special Processes', type: 'multiselect', required: false, placeholder: 'Select processes (optional)', options: [
+            { label: 'Keeved', value: 'keeved' },
+            { label: 'Pét-nat (Méthode Ancestrale)', value: 'pet_nat_methode_ancestrale' },
+            { label: 'Barrel-aged', value: 'barrel_aged' },
+            { label: 'Ice Cider', value: 'ice_cider' },
+            { label: 'Pasteurized', value: 'pasteurized' },
+            { label: 'Sterile Filtered', value: 'sterile_filtered' },
+            { label: 'Bottle Conditioned', value: 'bottle_conditioned' },
+            { label: 'Sour/Brett Fermented', value: 'sour_brett_fermented' },
+            { label: 'Fortified', value: 'fortified' },
+            { label: 'Solera Aged', value: 'solera_aged' }
+          ]},
+        ],
+        collapsible: true,
+        defaultExpanded: false,
+      },
+      {
+        id: 'additives_ingredients',
+        title: 'Additives & Ingredients',
+        description: 'Fruit additions, hops, spices, and wood aging',
+        fields: [
+          { key: 'fruitAdditions', label: 'Fruit Additions', type: 'multiselect', required: false, placeholder: 'Select fruit additions (optional)', options: [
+            { label: 'Pure Apple Cider', value: 'pure_apple' },
+            { label: 'Traditional Perry Pears', value: 'traditional_perry_pears' },
+            { label: 'Dessert Pears', value: 'dessert_pears' },
+            { label: 'Blackberry', value: 'blackberry' },
+            { label: 'Raspberry', value: 'raspberry' },
+            { label: 'Blueberry', value: 'blueberry' },
+            { label: 'Elderberry', value: 'elderberry' },
+            { label: 'Blackcurrant', value: 'blackcurrant' },
+            { label: 'Strawberry', value: 'strawberry' },
+            { label: 'Cherry', value: 'cherry' },
+            { label: 'Peach', value: 'peach' },
+            { label: 'Plum', value: 'plum' },
+            { label: 'Apricot', value: 'apricot' },
+            { label: 'Pineapple', value: 'pineapple' },
+            { label: 'Mango', value: 'mango' },
+            { label: 'Passion Fruit', value: 'passion_fruit' },
+            { label: 'Coconut', value: 'coconut' },
+            { label: 'Other', value: 'other' }
+          ]},
+          { key: 'hopVarieties', label: 'Hop Varieties', type: 'multiselect', required: false, placeholder: 'Select hop varieties (optional)', options: [
+            { label: 'No Hops', value: 'no_hops' },
+            { label: 'Citra', value: 'citra' },
+            { label: 'Mosaic', value: 'mosaic' },
+            { label: 'Cascade', value: 'cascade' },
+            { label: 'Amarillo', value: 'amarillo' },
+            { label: 'Simcoe', value: 'simcoe' },
+            { label: 'Target', value: 'target' },
+            { label: 'Fuggle', value: 'fuggle' },
+            { label: 'Goldings', value: 'goldings' },
+            { label: 'Other', value: 'other' }
+          ]},
+          { key: 'hopCharacter', label: 'Hop Character', type: 'multiselect', required: false, placeholder: 'Select hop character (optional)', options: [
+            { label: 'Citrus', value: 'citrus' },
+            { label: 'Floral', value: 'floral' },
+            { label: 'Pine/Resin', value: 'pine_resin' },
+            { label: 'Earthy/Spicy', value: 'earthy_spicy' }
+          ]},
+          { key: 'spicesBotanicals', label: 'Spices & Botanicals', type: 'multiselect', required: false, placeholder: 'Select spices/botanicals (optional)', options: [
+            { label: 'No Spices/Botanicals', value: 'no_spices_botanicals' },
+            { label: 'Cinnamon', value: 'cinnamon' },
+            { label: 'Nutmeg', value: 'nutmeg' },
+            { label: 'Cloves', value: 'cloves' },
+            { label: 'Ginger', value: 'ginger' },
+            { label: 'Allspice', value: 'allspice' },
+            { label: 'Elderflower', value: 'elderflower' },
+            { label: 'Chamomile', value: 'chamomile' },
+            { label: 'Lavender', value: 'lavender' },
+            { label: 'Hibiscus', value: 'hibiscus' },
+            { label: 'Juniper', value: 'juniper' },
+            { label: 'Lemongrass', value: 'lemongrass' },
+            { label: 'Rosehips', value: 'rosehips' },
+            { label: 'Pumpkin Spice', value: 'pumpkin_spice' },
+            { label: 'Mulling Spices', value: 'mulling_spices' },
+            { label: 'Chai Spices', value: 'chai_spices' },
+            { label: 'Other', value: 'other' }
+          ]},
+          { key: 'oakTypes', label: 'Oak Types', type: 'multiselect', required: false, placeholder: 'Select oak types (optional)', options: [
+            { label: 'No Wood Aging', value: 'no_wood_aging' },
+            { label: 'American Oak', value: 'american_oak' },
+            { label: 'French Oak', value: 'french_oak' },
+            { label: 'English Oak', value: 'english_oak' }
+          ]},
+          { key: 'barrelHistory', label: 'Barrel History', type: 'multiselect', required: false, placeholder: 'Select barrel history (optional)', options: [
+            { label: 'Virgin Oak', value: 'virgin_oak' },
+            { label: 'Bourbon Barrel', value: 'bourbon_barrel' },
+            { label: 'Wine Barrel', value: 'wine_barrel' },
+            { label: 'Sherry Barrel', value: 'sherry_barrel' },
+            { label: 'Rum Barrel', value: 'rum_barrel' },
+            { label: 'Gin Barrel', value: 'gin_barrel' }
+          ]},
+          { key: 'alternativeWoods', label: 'Alternative Woods', type: 'multiselect', required: false, placeholder: 'Select alternative woods (optional)', options: [
+            { label: 'Cherry', value: 'cherry' },
+            { label: 'Apple', value: 'apple' },
+            { label: 'Chestnut', value: 'chestnut' },
+            { label: 'Acacia', value: 'acacia' },
+            { label: 'Other', value: 'other' }
+          ]},
+        ],
+        collapsible: true,
+        defaultExpanded: false,
+      },
+      {
+        id: 'detailed_ratings',
+        title: 'Detailed Ratings',
+        description: 'Rate individual aspects of the cider',
+        fields: [
+          { key: 'appearanceRating', label: 'Appearance Rating', type: 'rating', required: false, placeholder: 'Rate appearance (1-10)' },
+          { key: 'aromaRating', label: 'Aroma Rating', type: 'rating', required: false, placeholder: 'Rate aroma (1-10)' },
+          { key: 'tasteRating', label: 'Taste Rating', type: 'rating', required: false, placeholder: 'Rate taste (1-10)' },
+          { key: 'mouthfeelRating', label: 'Mouthfeel Rating', type: 'rating', required: false, placeholder: 'Rate mouthfeel (1-10)' },
         ],
         collapsible: true,
         defaultExpanded: false,
@@ -518,7 +818,7 @@ export default function EnhancedQuickEntryScreen({ navigation }: Props) {
         {sectionFields.map(field => {
           return (
             <React.Fragment key={field.key}>
-              {renderFormField(field.key, field)}
+              {renderFormField(field.key as keyof CiderMasterRecord, field)}
             </React.Fragment>
           );
         })}

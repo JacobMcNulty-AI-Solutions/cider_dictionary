@@ -76,14 +76,21 @@ export default function CiderDetailScreen({ route, navigation }: Props) {
     );
   };
 
-  const getContainerTypeLabel = (type: string): string => {
+  const getContainerTypeLabel = (type: string, customType?: string): string => {
     const containerTypeLabels: Record<string, string> = {
       'bottle': 'Bottle',
       'can': 'Can',
       'draught': 'Draught',
+      'keg': 'Keg',
       'bag_in_box': 'Bag in Box',
       'other': 'Other'
     };
+
+    // If type is 'other' and customType is provided, return the custom type
+    if (type === 'other' && customType) {
+      return customType;
+    }
+
     return containerTypeLabels[type] || type;
   };
 
@@ -371,7 +378,7 @@ export default function CiderDetailScreen({ route, navigation }: Props) {
 
                   <View style={styles.experiencePrice}>
                     <Text style={styles.experiencePriceText}>
-                      £{experience.price.toFixed(2)} ({experience.containerSize}ml {getContainerTypeLabel(experience.containerType || 'bottle')}) • £{experience.pricePerPint.toFixed(2)}/pint
+                      £{experience.price.toFixed(2)} ({experience.containerSize}ml {getContainerTypeLabel(experience.containerType || 'bottle', experience.containerTypeCustom)}) • £{experience.pricePerPint.toFixed(2)}/pint
                     </Text>
                   </View>
 

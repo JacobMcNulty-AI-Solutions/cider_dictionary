@@ -65,8 +65,14 @@ class DatabaseConnectionManager {
   }
 
   private async createTablesInDatabase(database: SQLite.SQLiteDatabase): Promise<void> {
+    // Enable foreign key constraints
+    await database.execAsync('PRAGMA foreign_keys = ON;');
+
     // Check if we need to migrate from pricePerMl to pricePerPint
     await this.migrateExperiencesTable(database);
+
+    // Check if we need to migrate ciders table for comprehensive characteristics
+    await this.migrateCidersTable(database);
 
     // Create ciders table
     await database.execAsync(`
@@ -96,6 +102,12 @@ class DatabaseConnectionManager {
         detailedRatings TEXT,     -- JSON object
         venue TEXT,               -- JSON object or simple string
 
+        -- Additives & Ingredients (stored as JSON)
+        fruitAdditions TEXT,      -- JSON array
+        hops TEXT,                -- JSON object
+        spicesBotanicals TEXT,    -- JSON array
+        woodAging TEXT,           -- JSON object
+
         -- System fields
         createdAt TEXT NOT NULL,
         updatedAt TEXT NOT NULL,
@@ -119,6 +131,7 @@ class DatabaseConnectionManager {
         price REAL NOT NULL,
         containerSize INTEGER NOT NULL,
         containerType TEXT NOT NULL,
+        containerTypeCustom TEXT,
         pricePerPint REAL NOT NULL,
 
         -- Optional experience data
@@ -184,51 +197,120 @@ class DatabaseConnectionManager {
       const hasContainerType = tableInfo.some((col: any) => col.name === 'containerType');
 
       // Migrate pricePerMl to pricePerPint
-      if (hasOldColumn && !hasNewColumn) {
+      if (hasOldColumn) {
         console.log('Migrating experiences table from pricePerMl to pricePerPint...');
 
-        // Add the new column
-        await database.execAsync(`ALTER TABLE experiences ADD COLUMN pricePerPint REAL`);
-
-        // Convert existing data: pricePerPint = pricePerMl * 568 (pint size in ml)
+        // SQLite doesn't support DROP COLUMN directly, so we need to recreate the table
+        // 1. Create new table with correct schema
         await database.execAsync(`
-          UPDATE experiences
-          SET pricePerPint = pricePerMl * 568
-          WHERE pricePerMl IS NOT NULL
+          CREATE TABLE IF NOT EXISTS experiences_new (
+            id TEXT PRIMARY KEY,
+            userId TEXT NOT NULL,
+            ciderId TEXT NOT NULL,
+            date TEXT NOT NULL,
+            venue TEXT NOT NULL,
+            price REAL NOT NULL,
+            containerSize INTEGER NOT NULL,
+            containerType TEXT NOT NULL,
+            containerTypeCustom TEXT,
+            pricePerPint REAL NOT NULL,
+            notes TEXT,
+            rating INTEGER,
+            weatherConditions TEXT,
+            companionType TEXT,
+            createdAt TEXT NOT NULL,
+            updatedAt TEXT NOT NULL,
+            syncStatus TEXT DEFAULT 'pending',
+            version INTEGER DEFAULT 1,
+            FOREIGN KEY (ciderId) REFERENCES ciders (id) ON DELETE CASCADE
+          );
         `);
 
-        // Drop the old index
-        await database.execAsync(`DROP INDEX IF EXISTS idx_experiences_price_per_ml`);
+        // 2. Copy data from old table to new table, converting pricePerMl to pricePerPint
+        await database.execAsync(`
+          INSERT INTO experiences_new (
+            id, userId, ciderId, date, venue, price, containerSize, containerType, containerTypeCustom,
+            pricePerPint, notes, rating, weatherConditions, companionType,
+            createdAt, updatedAt, syncStatus, version
+          )
+          SELECT
+            id, userId, ciderId, date, venue, price, containerSize,
+            COALESCE(containerType, 'bottle') as containerType,
+            containerTypeCustom,
+            COALESCE(pricePerPint, pricePerMl * 568) as pricePerPint,
+            notes, rating, weatherConditions, companionType,
+            createdAt, updatedAt, syncStatus, version
+          FROM experiences;
+        `);
 
-        // Create new index
-        await database.execAsync(`CREATE INDEX IF NOT EXISTS idx_experiences_price_per_pint ON experiences(pricePerPint)`);
+        // 3. Drop old table
+        await database.execAsync(`DROP TABLE experiences;`);
+
+        // 4. Rename new table to old name
+        await database.execAsync(`ALTER TABLE experiences_new RENAME TO experiences;`);
+
+        // 5. Recreate indexes
+        await database.execAsync(`
+          CREATE INDEX IF NOT EXISTS idx_experiences_cider_id ON experiences(ciderId);
+          CREATE INDEX IF NOT EXISTS idx_experiences_date ON experiences(date DESC);
+          CREATE INDEX IF NOT EXISTS idx_experiences_price_per_pint ON experiences(pricePerPint);
+        `);
 
         console.log('PricePerPint migration completed successfully');
+      } else if (!hasNewColumn && !hasOldColumn) {
+        // Table exists but has neither column - add pricePerPint
+        console.log('Adding pricePerPint column to experiences table...');
+        await database.execAsync(`ALTER TABLE experiences ADD COLUMN pricePerPint REAL NOT NULL DEFAULT 0`);
       }
 
       // Add containerType to experiences if not present
       if (!hasContainerType) {
         console.log('Adding containerType to experiences table...');
-
-        // Add the containerType column
         await database.execAsync(`ALTER TABLE experiences ADD COLUMN containerType TEXT DEFAULT 'bottle'`);
+      }
 
-        // Set default containerType for existing experiences based on containerSize
-        await database.execAsync(`
-          UPDATE experiences
-          SET containerType = CASE
-            WHEN containerSize >= 500 THEN 'draught'
-            WHEN containerSize = 440 THEN 'can'
-            WHEN containerSize = 500 THEN 'can'
-            ELSE 'bottle'
-          END
-          WHERE containerType IS NULL
-        `);
-
-        console.log('ContainerType migration completed successfully');
+      // Add containerTypeCustom to experiences if not present
+      const hasContainerTypeCustom = tableInfo.some((col: any) => col.name === 'containerTypeCustom');
+      if (!hasContainerTypeCustom) {
+        console.log('Adding containerTypeCustom to experiences table...');
+        await database.execAsync(`ALTER TABLE experiences ADD COLUMN containerTypeCustom TEXT`);
+        console.log('ContainerTypeCustom column added successfully');
       }
     } catch (error) {
       console.warn('Migration attempt failed, table may not exist yet:', error);
+      // This is expected if the table doesn't exist yet
+    }
+  }
+
+  private async migrateCidersTable(database: SQLite.SQLiteDatabase): Promise<void> {
+    try {
+      // Check if ciders table exists and has the new comprehensive characteristics columns
+      const tableInfo = await database.getAllAsync(`PRAGMA table_info(ciders)`);
+      const existingColumns = tableInfo.map((col: any) => col.name);
+
+      // List of new columns that need to be added for comprehensive characteristics
+      const newColumns = [
+        { name: 'fruitAdditions', type: 'TEXT' },
+        { name: 'hops', type: 'TEXT' },
+        { name: 'spicesBotanicals', type: 'TEXT' },
+        { name: 'woodAging', type: 'TEXT' }
+      ];
+
+      // Add missing columns
+      let migrationNeeded = false;
+      for (const column of newColumns) {
+        if (!existingColumns.includes(column.name)) {
+          console.log(`Adding ${column.name} column to ciders table...`);
+          await database.execAsync(`ALTER TABLE ciders ADD COLUMN ${column.name} ${column.type}`);
+          migrationNeeded = true;
+        }
+      }
+
+      if (migrationNeeded) {
+        console.log('Ciders table migration completed successfully');
+      }
+    } catch (error) {
+      console.warn('Ciders migration attempt failed, table may not exist yet:', error);
       // This is expected if the table doesn't exist yet
     }
   }
@@ -259,8 +341,9 @@ export class BasicSQLiteService implements CiderDatabase {
             photo, notes,
             traditionalStyle, sweetness, carbonation, clarity, color, tasteTags,
             appleClassification, productionMethods, detailedRatings, venue,
+            fruitAdditions, hops, spicesBotanicals, woodAging,
             createdAt, updatedAt, syncStatus, version
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [
             ciderData.id,
             ciderData.userId,
@@ -283,6 +366,11 @@ export class BasicSQLiteService implements CiderDatabase {
             ciderData.productionMethods ? JSON.stringify(ciderData.productionMethods) : null,
             ciderData.detailedRatings ? JSON.stringify(ciderData.detailedRatings) : null,
             ciderData.venue ? (typeof ciderData.venue === 'string' ? ciderData.venue : JSON.stringify(ciderData.venue)) : null,
+
+            ciderData.fruitAdditions ? JSON.stringify(ciderData.fruitAdditions) : null,
+            ciderData.hops ? JSON.stringify(ciderData.hops) : null,
+            ciderData.spicesBotanicals ? JSON.stringify(ciderData.spicesBotanicals) : null,
+            ciderData.woodAging ? JSON.stringify(ciderData.woodAging) : null,
 
             ciderData.createdAt.toISOString(),
             ciderData.updatedAt.toISOString(),
@@ -336,6 +424,12 @@ export class BasicSQLiteService implements CiderDatabase {
         productionMethods: row.productionMethods ? JSON.parse(row.productionMethods) : undefined,
         detailedRatings: row.detailedRatings ? JSON.parse(row.detailedRatings) : undefined,
         venue: row.venue ? (row.venue.startsWith('{') ? JSON.parse(row.venue) : row.venue) : undefined,
+
+        // Additives & Ingredients
+        fruitAdditions: row.fruitAdditions ? JSON.parse(row.fruitAdditions) : undefined,
+        hops: row.hops ? JSON.parse(row.hops) : undefined,
+        spicesBotanicals: row.spicesBotanicals ? JSON.parse(row.spicesBotanicals) : undefined,
+        woodAging: row.woodAging ? JSON.parse(row.woodAging) : undefined,
 
         // System fields
         createdAt: new Date(row.createdAt),
@@ -488,10 +582,10 @@ export class BasicSQLiteService implements CiderDatabase {
 
         await db.runAsync(
           `INSERT INTO experiences (
-            id, userId, ciderId, date, venue, price, containerSize, containerType, pricePerPint,
+            id, userId, ciderId, date, venue, price, containerSize, containerType, containerTypeCustom, pricePerPint,
             notes, rating, weatherConditions, companionType,
             createdAt, updatedAt, syncStatus, version
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [
             experience.id,
             experience.userId,
@@ -501,6 +595,7 @@ export class BasicSQLiteService implements CiderDatabase {
             experience.price,
             experience.containerSize,
             experience.containerType,
+            experience.containerTypeCustom || null,
             experience.pricePerPint,
             experience.notes || null,
             experience.rating || null,
@@ -563,6 +658,23 @@ export class BasicSQLiteService implements CiderDatabase {
         error instanceof Error ? error : undefined
       );
       ErrorHandler.log(dbError, 'BasicSQLiteService.getAllExperiences');
+      throw dbError;
+    }
+  }
+
+  async deleteExperience(id: string): Promise<void> {
+    try {
+      const db = await this.connectionManager.getDatabase();
+      await db.runAsync('DELETE FROM experiences WHERE id = ?', [id]);
+      console.log('Experience deleted successfully:', id);
+    } catch (error) {
+      const dbError = new DatabaseError(
+        `Failed to delete experience: ${id}`,
+        'Unable to delete experience. Please try again.',
+        true,
+        error instanceof Error ? error : undefined
+      );
+      ErrorHandler.log(dbError, 'BasicSQLiteService.deleteExperience');
       throw dbError;
     }
   }
@@ -652,6 +764,7 @@ export class BasicSQLiteService implements CiderDatabase {
       price: row.price,
       containerSize: row.containerSize,
       containerType: row.containerType || 'bottle', // Default for migration
+      containerTypeCustom: row.containerTypeCustom || undefined,
       pricePerPint,
       notes: row.notes || undefined,
       rating: row.rating || undefined,

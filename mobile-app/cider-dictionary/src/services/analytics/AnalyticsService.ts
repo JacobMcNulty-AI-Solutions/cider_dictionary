@@ -93,7 +93,7 @@ class AnalyticsService {
         },
         valueAnalytics: this.calculateValueAnalytics(cidersInRange, experiencesInRange),
         venueAnalytics: this.calculateVenueAnalytics(experiencesInRange),
-        trends: this.calculateTrends(experiencesInRange, timeRange)
+        trends: this.calculateTrends(experiencesInRange, timeRange, cidersInRange)
       };
 
       const calculationTime = Date.now() - startTime;
@@ -439,7 +439,7 @@ class AnalyticsService {
     };
   }
 
-  private calculateTrends(experiences: ExperienceLog[], timeRange: TimeRange) {
+  private calculateTrends(experiences: ExperienceLog[], timeRange: TimeRange, ciders: CiderMasterRecord[] = []) {
     // Monthly trend
     const monthlyData = experiences.reduce((acc, exp) => {
       const monthKey = exp.date.toISOString().substring(0, 7); // YYYY-MM
@@ -462,14 +462,12 @@ class AnalyticsService {
       }))
       .sort((a, b) => a.month.localeCompare(b.month));
 
-    // Rating distribution (from experiences if available, otherwise from ciders)
+    // Rating distribution from ciders (not experiences - ciders have ratings, experiences don't)
     const ratingDistribution: { rating: number; count: number }[] = [];
-    const ratingCounts = experiences
-      .filter(exp => exp.rating)
-      .reduce((acc, exp) => {
-        acc[exp.rating!] = (acc[exp.rating!] || 0) + 1;
-        return acc;
-      }, {} as Record<number, number>);
+    const ratingCounts = ciders.reduce((acc, cider) => {
+      acc[cider.overallRating] = (acc[cider.overallRating] || 0) + 1;
+      return acc;
+    }, {} as Record<number, number>);
 
     for (let rating = 1; rating <= 10; rating++) {
       ratingDistribution.push({

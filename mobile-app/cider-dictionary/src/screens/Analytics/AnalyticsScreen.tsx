@@ -2,27 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { View, ScrollView, StyleSheet, Text, RefreshControl, TouchableOpacity, Dimensions } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
-// Mock chart components for development
-// import { LineChart, BarChart, PieChart } from 'react-native-chart-kit';
-
-// Mock chart components
-const LineChart = ({ data, ...props }: any) => (
-  <View style={{ height: 200, backgroundColor: '#f0f0f0', justifyContent: 'center', alignItems: 'center' }}>
-    <Text>Line Chart (Mock)</Text>
-  </View>
-);
-
-const BarChart = ({ data, ...props }: any) => (
-  <View style={{ height: 200, backgroundColor: '#f0f0f0', justifyContent: 'center', alignItems: 'center' }}>
-    <Text>Bar Chart (Mock)</Text>
-  </View>
-);
-
-const PieChart = ({ data, ...props }: any) => (
-  <View style={{ height: 200, backgroundColor: '#f0f0f0', justifyContent: 'center', alignItems: 'center' }}>
-    <Text>Pie Chart (Mock)</Text>
-  </View>
-);
+import { LineChart, BarChart } from 'react-native-chart-kit';
 import { RootTabScreenProps } from '../../types/navigation';
 import SafeAreaContainer from '../../components/common/SafeAreaContainer';
 import LoadingSpinner from '../../components/common/LoadingSpinner';
@@ -313,6 +293,8 @@ export default function AnalyticsScreen({ navigation }: Props) {
                 }}
                 width={screenWidth - 32}
                 height={200}
+                yAxisLabel=""
+                yAxisSuffix=""
                 chartConfig={{
                   backgroundColor: '#ffffff',
                   backgroundGradientFrom: '#ffffff',
@@ -325,38 +307,54 @@ export default function AnalyticsScreen({ navigation }: Props) {
                   }
                 }}
                 style={styles.chart}
+                bezier
               />
             </View>
 
-            <View style={styles.chartContainer}>
-              <Text style={styles.chartTitle}>Rating Distribution</Text>
-              <BarChart
-                data={{
-                  labels: analytics.trends.ratingDistribution
-                    .filter(item => item.count > 0)
-                    .map(item => item.rating.toString()),
-                  datasets: [{
-                    data: analytics.trends.ratingDistribution
+            {analytics.trends.ratingDistribution.some(item => item.count > 0) ? (
+              <View style={styles.chartContainer}>
+                <Text style={styles.chartTitle}>Rating Distribution</Text>
+                <BarChart
+                  data={{
+                    labels: analytics.trends.ratingDistribution
                       .filter(item => item.count > 0)
-                      .map(item => item.count)
-                  }]
-                }}
-                width={screenWidth - 32}
-                height={200}
-                chartConfig={{
-                  backgroundColor: '#ffffff',
-                  backgroundGradientFrom: '#ffffff',
-                  backgroundGradientTo: '#ffffff',
-                  decimalPlaces: 0,
-                  color: (opacity = 1) => `rgba(255, 215, 0, ${opacity})`,
-                  labelColor: (opacity = 1) => `rgba(0, 0, 0, ${opacity})`,
-                  style: {
-                    borderRadius: 16
-                  }
-                }}
-                style={styles.chart}
-              />
-            </View>
+                      .map(item => item.rating.toString()),
+                    datasets: [{
+                      data: analytics.trends.ratingDistribution
+                        .filter(item => item.count > 0)
+                        .map(item => item.count)
+                    }]
+                  }}
+                  width={screenWidth - 32}
+                  height={200}
+                  yAxisLabel=""
+                  yAxisSuffix=""
+                  chartConfig={{
+                    backgroundColor: '#ffffff',
+                    backgroundGradientFrom: '#ffffff',
+                    backgroundGradientTo: '#ffffff',
+                    decimalPlaces: 0,
+                    color: (opacity = 1) => `rgba(255, 215, 0, ${opacity})`,
+                    labelColor: (opacity = 1) => `rgba(0, 0, 0, ${opacity})`,
+                    style: {
+                      borderRadius: 16
+                    }
+                  }}
+                  style={styles.chart}
+                />
+              </View>
+            ) : (
+              <View style={styles.chartContainer}>
+                <Text style={styles.chartTitle}>Rating Distribution</Text>
+                <View style={styles.noDataContainer}>
+                  <Ionicons name="bar-chart-outline" size={48} color="#DDD" />
+                  <Text style={styles.noDataText}>No ratings yet</Text>
+                  <Text style={styles.noDataSubtext}>
+                    Rate your cider experiences to see distribution
+                  </Text>
+                </View>
+              </View>
+            )}
           </View>
         )}
 
@@ -546,6 +544,23 @@ const styles = StyleSheet.create({
   chart: {
     marginVertical: 8,
     borderRadius: 16,
+  },
+  noDataContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 40,
+  },
+  noDataText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#999',
+    marginTop: 12,
+  },
+  noDataSubtext: {
+    fontSize: 14,
+    color: '#BBB',
+    marginTop: 4,
+    textAlign: 'center',
   },
   footer: {
     fontSize: 12,

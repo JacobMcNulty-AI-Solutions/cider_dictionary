@@ -172,14 +172,21 @@ export default function ExperienceHistoryScreen() {
   };
 
   // Helper function to get container type label
-  const getContainerTypeLabel = (type: string): string => {
+  const getContainerTypeLabel = (type: string, customType?: string): string => {
     const containerTypeLabels: Record<string, string> = {
       'bottle': 'Bottle',
       'can': 'Can',
       'draught': 'Draught',
+      'keg': 'Keg',
       'bag_in_box': 'Bag in Box',
       'other': 'Other'
     };
+
+    // If type is 'other' and customType is provided, return the custom type
+    if (type === 'other' && customType) {
+      return customType;
+    }
+
     return containerTypeLabels[type] || type;
   };
 
@@ -233,7 +240,7 @@ export default function ExperienceHistoryScreen() {
         <View style={styles.detailRow}>
           <Ionicons name="cash-outline" size={16} color="#666" />
           <Text style={styles.detailText}>
-            £{item.price.toFixed(2)} ({item.containerSize}ml {getContainerTypeLabel(item.containerType)}) • £{item.pricePerPint.toFixed(2)}/pint
+            £{item.price.toFixed(2)} ({item.containerSize}ml {getContainerTypeLabel(item.containerType, item.containerTypeCustom)}) • £{item.pricePerPint.toFixed(2)}/pint
           </Text>
         </View>
 

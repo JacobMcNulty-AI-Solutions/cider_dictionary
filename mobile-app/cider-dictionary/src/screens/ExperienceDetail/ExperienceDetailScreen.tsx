@@ -80,14 +80,21 @@ export default function ExperienceDetailScreen() {
     return venueTypeLabels[type] || type;
   };
 
-  const getContainerTypeLabel = (type: string): string => {
+  const getContainerTypeLabel = (type: string, customType?: string): string => {
     const containerTypeLabels: Record<string, string> = {
       'bottle': 'Bottle',
       'can': 'Can',
       'draught': 'Draught',
+      'keg': 'Keg',
       'bag_in_box': 'Bag in Box',
       'other': 'Other'
     };
+
+    // If type is 'other' and customType is provided, return the custom type
+    if (type === 'other' && customType) {
+      return customType;
+    }
+
     return containerTypeLabels[type] || type;
   };
 
@@ -107,6 +114,48 @@ export default function ExperienceDetailScreen() {
       navigation.navigate('CiderDetail', { ciderId: cider.id });
     }
   };
+
+  const handleDelete = () => {
+    Alert.alert(
+      'Delete Experience',
+      'Are you sure you want to delete this experience? This action cannot be undone.',
+      [
+        {
+          text: 'Cancel',
+          style: 'cancel'
+        },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await sqliteService.deleteExperience(experienceId);
+              Alert.alert('Success', 'Experience deleted successfully', [
+                {
+                  text: 'OK',
+                  onPress: () => navigation.goBack()
+                }
+              ]);
+            } catch (error) {
+              console.error('Failed to delete experience:', error);
+              Alert.alert('Error', 'Failed to delete experience. Please try again.');
+            }
+          }
+        }
+      ]
+    );
+  };
+
+  // Set up header button
+  useEffect(() => {
+    navigation.setOptions({
+      headerRight: () => (
+        <TouchableOpacity onPress={handleDelete} style={{ marginRight: 16 }}>
+          <Ionicons name="trash-outline" size={24} color="#FF3B30" />
+        </TouchableOpacity>
+      ),
+    });
+  }, [navigation, experienceId]);
 
   if (isLoading) {
     return (
@@ -231,7 +280,7 @@ export default function ExperienceDetailScreen() {
             <View style={styles.priceItem}>
               <Text style={styles.priceLabel}>Container</Text>
               <Text style={styles.priceValue}>
-                {experience.containerSize}ml {getContainerTypeLabel(experience.containerType)}
+                {experience.containerSize}ml {getContainerTypeLabel(experience.containerType, experience.containerTypeCustom)}
               </Text>
             </View>
             <View style={styles.priceItem}>

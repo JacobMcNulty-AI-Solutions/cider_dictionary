@@ -32,7 +32,8 @@ export interface ExperienceLog {
   // Price and value analysis
   price: number; // Total price paid
   containerSize: number; // ml
-  containerType: ContainerType; // Type of container (bottle, can, draught, etc.)
+  containerType: ContainerType; // Type of container (bottle, can, draught, keg, etc.)
+  containerTypeCustom?: string; // Custom container type when 'other' is selected
   pricePerPint: number; // Calculated automatically (price for equivalent pint)
 
   // Optional experience data
@@ -60,6 +61,7 @@ export interface ExperienceFormState {
   price: number;
   containerSize: number;
   containerType: ContainerType;
+  containerTypeCustom?: string;
   notes: string;
   date: Date;
   rating?: Rating;
@@ -105,11 +107,10 @@ export interface ExperienceAnalytics {
 // Container size presets (ml)
 export const CONTAINER_SIZES = {
   HALF_PINT: 284,
-  PINT: 568,
   BOTTLE_330: 330,
-  BOTTLE_500: 500,
   CAN_440: 440,
-  CAN_500: 500,
+  BOTTLE_CAN_500: 500,
+  PINT: 568,
   LARGE_BOTTLE: 750,
 } as const;
 

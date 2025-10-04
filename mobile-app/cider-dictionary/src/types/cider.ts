@@ -34,6 +34,7 @@ export type ContainerType =
   | 'can'
   | 'bag_in_box'
   | 'draught'
+  | 'keg'
   | 'other';
 
 // Venue types for UK market categorization
@@ -70,7 +71,7 @@ export interface CiderMasterRecord {
   notes?: string; // Encrypted field
 
   // Enthusiast level fields
-  traditionalStyle?: TraditionalStyle;
+  traditionalStyle?: 'west_country_traditional' | 'eastern_england_traditional' | 'french_normandy_brittany' | 'spanish_sidra' | 'german_apfelwein' | 'modern_new_world' | 'american_traditional' | 'other_regional';
 
   // Individual characteristic fields (following data model specification)
   sweetness?: 'bone_dry' | 'dry' | 'off_dry' | 'medium' | 'sweet';
@@ -81,21 +82,37 @@ export interface CiderMasterRecord {
 
   // Expert level fields
   appleClassification?: {
-    categories: AppleCategory[];
+    categories?: ('bittersweet' | 'bittersharp' | 'sweet' | 'sharp' | 'culinary_dessert' | 'unknown_blend')[];
     varieties?: string[];
     longAshtonClassification?: string;
   };
 
   productionMethods?: {
-    fermentation?: 'wild' | 'cultured_yeast' | 'mixed' | 'unknown';
-    specialProcesses?: ('keeved' | 'pet_nat' | 'barrel_aged' | 'ice_cider' | 'other')[];
+    fermentation?: 'wild_spontaneous' | 'cultured_yeast' | 'mixed_fermentation' | 'unknown';
+    specialProcesses?: ('keeved' | 'pet_nat_methode_ancestrale' | 'barrel_aged' | 'ice_cider' | 'pasteurized' | 'sterile_filtered' | 'bottle_conditioned' | 'sour_brett_fermented' | 'fortified' | 'solera_aged')[];
+  };
+
+  // Additives & Ingredients
+  fruitAdditions?: ('pure_apple' | 'traditional_perry_pears' | 'dessert_pears' | 'blackberry' | 'raspberry' | 'blueberry' | 'elderberry' | 'blackcurrant' | 'strawberry' | 'cherry' | 'peach' | 'plum' | 'apricot' | 'pineapple' | 'mango' | 'passion_fruit' | 'coconut' | 'other')[];
+
+  hops?: {
+    varieties?: ('no_hops' | 'citra' | 'mosaic' | 'cascade' | 'amarillo' | 'simcoe' | 'target' | 'fuggle' | 'goldings' | 'other')[];
+    character?: ('citrus' | 'floral' | 'pine_resin' | 'earthy_spicy')[];
+  };
+
+  spicesBotanicals?: ('no_spices_botanicals' | 'cinnamon' | 'nutmeg' | 'cloves' | 'ginger' | 'allspice' | 'elderflower' | 'chamomile' | 'lavender' | 'hibiscus' | 'juniper' | 'lemongrass' | 'rosehips' | 'pumpkin_spice' | 'mulling_spices' | 'chai_spices' | 'other')[];
+
+  woodAging?: {
+    oakTypes?: ('no_wood_aging' | 'american_oak' | 'french_oak' | 'english_oak')[];
+    barrelHistory?: ('virgin_oak' | 'bourbon_barrel' | 'wine_barrel' | 'sherry_barrel' | 'rum_barrel' | 'gin_barrel')[];
+    alternativeWoods?: ('cherry' | 'apple' | 'chestnut' | 'acacia' | 'other')[];
   };
 
   detailedRatings?: {
-    appearance: Rating;
-    aroma: Rating;
-    taste: Rating;
-    mouthfeel: Rating;
+    appearance?: Rating;
+    aroma?: Rating;
+    taste?: Rating;
+    mouthfeel?: Rating;
   };
 
   // Venue information

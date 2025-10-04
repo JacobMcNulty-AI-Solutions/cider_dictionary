@@ -153,7 +153,16 @@ export default function ExperienceLogScreen({ route, navigation }: Props) {
   const handleContainerTypeChange = useCallback((type: ContainerType) => {
     setFormState(prev => ({
       ...prev,
-      containerType: type
+      containerType: type,
+      // Clear custom type if switching away from 'other'
+      containerTypeCustom: type === 'other' ? prev.containerTypeCustom : undefined
+    }));
+  }, []);
+
+  const handleContainerTypeCustomChange = useCallback((customType: string) => {
+    setFormState(prev => ({
+      ...prev,
+      containerTypeCustom: customType
     }));
   }, []);
 
@@ -184,6 +193,7 @@ export default function ExperienceLogScreen({ route, navigation }: Props) {
         price: formState.price,
         containerSize: formState.containerSize,
         containerType: formState.containerType,
+        containerTypeCustom: formState.containerTypeCustom,
         pricePerPint,
         notes: formState.notes || undefined,
         rating: formState.rating,
@@ -299,6 +309,8 @@ export default function ExperienceLogScreen({ route, navigation }: Props) {
             <ContainerTypeSelector
               value={formState.containerType}
               onSelect={handleContainerTypeChange}
+              customValue={formState.containerTypeCustom}
+              onCustomChange={handleContainerTypeCustomChange}
             />
 
             <PricePerPintDisplay value={pricePerPint} />
@@ -344,19 +356,44 @@ const PriceInput: React.FC<{
   value: number;
   onChangeText: (value: number) => void;
   placeholder?: string;
-}> = ({ label, value, onChangeText, placeholder }) => (
-  <View style={styles.inputContainer}>
-    <Text style={styles.inputLabel}>{label}</Text>
-    <TextInput
-      style={styles.input}
-      value={value > 0 ? value.toString() : ''}
-      onChangeText={(text) => onChangeText(parseFloat(text) || 0)}
-      placeholder={placeholder}
-      keyboardType="decimal-pad"
-      returnKeyType="done"
-    />
-  </View>
-);
+}> = ({ label, value, onChangeText, placeholder }) => {
+  const [displayValue, setDisplayValue] = React.useState(value > 0 ? value.toString() : '');
+
+  // Update display value when prop value changes
+  React.useEffect(() => {
+    if (value === 0 && displayValue !== '') {
+      setDisplayValue('');
+    }
+  }, [value, displayValue]);
+
+  const handleTextChange = (text: string) => {
+    // Allow empty string, numbers, and one decimal point with up to 2 decimal places
+    if (text === '' || /^\d*\.?\d{0,2}$/.test(text)) {
+      setDisplayValue(text);
+      // Only update parent if we have a valid number
+      const numValue = parseFloat(text);
+      if (!isNaN(numValue)) {
+        onChangeText(numValue);
+      } else if (text === '') {
+        onChangeText(0);
+      }
+    }
+  };
+
+  return (
+    <View style={styles.inputContainer}>
+      <Text style={styles.inputLabel}>{label}</Text>
+      <TextInput
+        style={styles.input}
+        value={displayValue}
+        onChangeText={handleTextChange}
+        placeholder={placeholder}
+        keyboardType="decimal-pad"
+        returnKeyType="done"
+      />
+    </View>
+  );
+};
 
 const ContainerSizeSelector: React.FC<{
   value: number;
@@ -390,11 +427,14 @@ const ContainerSizeSelector: React.FC<{
 const ContainerTypeSelector: React.FC<{
   value: ContainerType;
   onSelect: (type: ContainerType) => void;
-}> = ({ value, onSelect }) => {
+  customValue?: string;
+  onCustomChange?: (value: string) => void;
+}> = ({ value, onSelect, customValue, onCustomChange }) => {
   const containerTypes: { value: ContainerType; label: string; icon: string }[] = [
     { value: 'bottle', label: 'Bottle', icon: 'wine' },
-    { value: 'can', label: 'Can', icon: 'cylinder' },
+    { value: 'can', label: 'Can', icon: 'download' },
     { value: 'draught', label: 'Draught', icon: 'beer' },
+    { value: 'keg', label: 'Keg', icon: 'flask' },
     { value: 'bag_in_box', label: 'Bag in Box', icon: 'cube' },
     { value: 'other', label: 'Other', icon: 'help-circle' },
   ];
@@ -426,6 +466,18 @@ const ContainerTypeSelector: React.FC<{
           </TouchableOpacity>
         ))}
       </View>
+      {value === 'other' && onCustomChange && (
+        <View style={{ marginTop: 12 }}>
+          <TextInput
+            style={styles.input}
+            value={customValue || ''}
+            onChangeText={onCustomChange}
+            placeholder="Specify container type..."
+            placeholderTextColor="#999"
+            returnKeyType="done"
+          />
+        </View>
+      )}
     </View>
   );
 };

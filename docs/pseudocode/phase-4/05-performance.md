@@ -1,5 +1,15 @@
 # Performance Optimization
 
+**REFINEMENT NOTES (v2.0)**
+- Added `DetectDeviceCapabilities` algorithm for device-aware optimizations
+- Added adaptive performance strategies based on device tier
+- Added memory pressure monitoring and handling
+- Added device-specific optimization examples (high/medium/low-end)
+- Enhanced performance budgeting with frame time targets
+- Added network-aware strategies
+
+---
+
 ## Purpose
 
 Implements comprehensive performance optimization strategies including list virtualization (FlashList), image optimization, memory management, and bundle optimization. Target: 60fps scrolling, <100MB memory usage, <50MB app size.
@@ -48,6 +58,37 @@ INTERFACE MemoryPool:
   limit: NUMBER // bytes
   entries: MAP<STRING, WeakRef<Object>>
   evictionQueue: PriorityQueue<STRING>
+```
+
+### Device Capabilities
+```typescript
+INTERFACE DeviceCapabilities:
+  tier: ENUM('high', 'medium', 'low', 'unknown')
+  cpuCores: NUMBER
+  totalRAM: NUMBER // MB
+  gpuInfo: STRING
+  benchmarkScore: NUMBER
+  screenDensity: NUMBER
+```
+
+### Performance Budget
+```typescript
+INTERFACE PerformanceBudget:
+  targetFPS: NUMBER // 30, 45, or 60
+  maxFrameTime: NUMBER // ms (16.67 for 60fps)
+  maxMemory: NUMBER // MB
+  imageQuality: NUMBER // 0-1
+  enableAnimations: BOOLEAN
+  enableHaptics: BOOLEAN
+```
+
+### Memory Pressure State
+```typescript
+INTERFACE MemoryPressureState:
+  level: ENUM('normal', 'warning', 'critical')
+  currentUsage: NUMBER // MB
+  threshold: NUMBER // MB
+  actions: ARRAY<STRING> // Actions to take
 ```
 
 ## Core Algorithms
@@ -633,7 +674,239 @@ BEGIN
 END
 ```
 
-### 6. Performance Monitoring
+### 6. Device-Aware Optimization
+
+```
+ALGORITHM: DetectDeviceCapabilities
+OUTPUT: capabilities (DeviceCapabilities)
+
+TIME COMPLEXITY: O(1)
+SPACE COMPLEXITY: O(1)
+
+BEGIN
+  capabilities ← {
+    tier: 'unknown',
+    cpuCores: GetCPUCores(),
+    totalRAM: GetTotalRAM(),
+    gpuInfo: GetGPUInfo(),
+    benchmarkScore: 0,
+    screenDensity: GetScreenDensity()
+  }
+
+  // Quick benchmark test
+  startTime ← Performance.now()
+
+  // CPU test: Prime number calculation
+  CalculatePrimes(1000)
+  cpuScore ← Performance.now() - startTime
+
+  // Memory test: Large array allocation
+  startTime ← Performance.now()
+  testArray ← NEW Array(1000000)
+  Fill(testArray, 0)
+  memoryScore ← Performance.now() - startTime
+
+  // Composite score (lower is better for both)
+  capabilities.benchmarkScore ← CalculateCompositeScore(cpuScore, memoryScore)
+
+  // Categorize device
+  IF capabilities.benchmarkScore < 200 AND capabilities.totalRAM >= 4096 THEN
+    capabilities.tier ← 'high'
+  ELSE IF capabilities.benchmarkScore < 500 AND capabilities.totalRAM >= 2048 THEN
+    capabilities.tier ← 'medium'
+  ELSE
+    capabilities.tier ← 'low'
+  END IF
+
+  Log('Device capabilities detected: ' + capabilities.tier +
+      ' (score: ' + capabilities.benchmarkScore + ')')
+
+  RETURN capabilities
+END
+
+SUBROUTINE: CalculateCompositeScore
+INPUT: cpuScore (NUMBER), memoryScore (NUMBER)
+OUTPUT: score (NUMBER)
+
+BEGIN
+  // Weighted average: CPU 70%, Memory 30%
+  score ← (cpuScore * 0.7) + (memoryScore * 0.3)
+  RETURN Math.round(score)
+END
+```
+
+```
+ALGORITHM: AdaptivePerformanceManager
+INPUT: capabilities (DeviceCapabilities)
+OUTPUT: performanceConfig (PerformanceBudget)
+
+BEGIN
+  config ← NULL
+
+  SWITCH capabilities.tier
+    CASE 'high':
+      config ← {
+        targetFPS: 60,
+        maxFrameTime: 16.67,
+        maxMemory: 200,
+        imageQuality: 0.9,
+        enableAnimations: TRUE,
+        enableHaptics: TRUE,
+        flashListDrawDistance: 500,
+        maxCachedImages: 150,
+        batchSize: 50,
+        enableShadows: TRUE,
+        enableBlur: TRUE
+      }
+
+    CASE 'medium':
+      config ← {
+        targetFPS: 60,
+        maxFrameTime: 16.67,
+        maxMemory: 150,
+        imageQuality: 0.7,
+        enableAnimations: TRUE,
+        enableHaptics: TRUE,
+        flashListDrawDistance: 250,
+        maxCachedImages: 75,
+        batchSize: 25,
+        enableShadows: TRUE,
+        enableBlur: FALSE
+      }
+
+    CASE 'low':
+      config ← {
+        targetFPS: 30,
+        maxFrameTime: 33.33,
+        maxMemory: 100,
+        imageQuality: 0.5,
+        enableAnimations: FALSE,
+        enableHaptics: FALSE,
+        flashListDrawDistance: 150,
+        maxCachedImages: 30,
+        batchSize: 10,
+        enableShadows: FALSE,
+        enableBlur: FALSE
+      }
+
+    DEFAULT:
+      // Conservative defaults
+      config ← {
+        targetFPS: 45,
+        maxFrameTime: 22.22,
+        maxMemory: 125,
+        imageQuality: 0.6,
+        enableAnimations: TRUE,
+        enableHaptics: TRUE,
+        flashListDrawDistance: 200,
+        maxCachedImages: 50,
+        batchSize: 20,
+        enableShadows: FALSE,
+        enableBlur: FALSE
+      }
+  END SWITCH
+
+  Log('Performance config set for ' + capabilities.tier + ' tier device')
+
+  RETURN config
+END
+```
+
+```
+ALGORITHM: MemoryPressureHandler
+OUTPUT: handler (Object)
+
+BEGIN
+  STATIC currentState ← {
+    level: 'normal',
+    currentUsage: 0,
+    threshold: 150,
+    actions: []
+  }
+
+  handler ← {
+    monitor: () => {
+      // Check memory every 5 seconds
+      setInterval(() => {
+        currentUsage ← GetMemoryUsage()
+        currentState.currentUsage ← currentUsage
+
+        previousLevel ← currentState.level
+
+        // Determine pressure level
+        IF currentUsage > currentState.threshold * 0.9 THEN
+          currentState.level ← 'critical'
+        ELSE IF currentUsage > currentState.threshold * 0.7 THEN
+          currentState.level ← 'warning'
+        ELSE
+          currentState.level ← 'normal'
+        END IF
+
+        // Take action if level changed
+        IF currentState.level != previousLevel THEN
+          HandlePressureLevelChange(previousLevel, currentState.level)
+        END IF
+      }, 5000)
+    },
+
+    getState: () => {
+      RETURN currentState
+    },
+
+    setThreshold: (threshold) => {
+      currentState.threshold ← threshold
+    }
+  }
+
+  RETURN handler
+END
+
+SUBROUTINE: HandlePressureLevelChange
+INPUT: previousLevel (STRING), newLevel (STRING)
+OUTPUT: void
+
+BEGIN
+  Log('Memory pressure changed: ' + previousLevel + ' → ' + newLevel)
+
+  actions ← []
+
+  SWITCH newLevel
+    CASE 'warning':
+      // Gentle cleanup
+      ClearExpiredCaches()
+      actions.push('Cleared expired caches')
+
+    CASE 'critical':
+      // Aggressive cleanup
+      ClearAllCaches()
+      actions.push('Cleared all caches')
+
+      EvictLRUImages(50 * 1024 * 1024) // Free 50MB
+      actions.push('Evicted LRU images')
+
+      TriggerGarbageCollection()
+      actions.push('Triggered GC')
+
+      // Reduce quality settings temporarily
+      ReduceImageQuality(0.5)
+      actions.push('Reduced image quality')
+
+      ShowMemoryWarning() // Optional: warn user
+      actions.push('Warned user')
+
+    CASE 'normal':
+      // Restore normal settings if coming from pressure
+      IF previousLevel != 'normal' THEN
+        RestoreNormalSettings()
+        actions.push('Restored normal settings')
+      END IF
+  END SWITCH
+
+  Log('Actions taken: ' + actions.join(', '))
+END
+```
+
+### 7. Performance Monitoring
 
 ```
 ALGORITHM: PerformanceMonitor

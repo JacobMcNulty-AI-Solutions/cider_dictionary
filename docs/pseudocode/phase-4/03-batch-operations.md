@@ -1,5 +1,15 @@
 # Batch Operations System
 
+**REFINEMENT NOTES (v2.0)**
+- Added `PreValidateBatchOperation` algorithm for upfront validation
+- Added transaction rollback support for critical failures
+- Added partial failure recovery mechanisms
+- Added cancellation support for long-running operations
+- Enhanced validation examples with detailed error cases
+- Improved error handling with rollback capabilities
+
+---
+
 ## Purpose
 
 Implements multi-select capabilities and bulk actions for efficient management of large cider collections. Supports batch delete, export, tagging, rating updates, and archiving operations with progress tracking and undo functionality.
@@ -71,6 +81,43 @@ INTERFACE UndoStackEntry:
   }>
   canUndo: BOOLEAN
   expiresAt: TIMESTAMP
+```
+
+### Batch Cancellation Token
+```typescript
+INTERFACE BatchCancellationToken:
+  isCancelled: BOOLEAN
+  cancel: () => void
+  reason: STRING | NULL
+```
+
+### Batch Validation Result
+```typescript
+INTERFACE BatchValidationResult:
+  valid: BOOLEAN
+  canProceedWithWarnings: BOOLEAN
+  issues: ARRAY<{
+    itemId: STRING
+    error: STRING
+  }>
+  warnings: ARRAY<{
+    itemId: STRING
+    warning: STRING
+  }>
+```
+
+### Batch Transaction Log
+```typescript
+INTERFACE BatchTransactionLog:
+  transactionId: STRING
+  operations: ARRAY<{
+    itemId: STRING
+    operation: STRING
+    timestamp: TIMESTAMP
+    success: BOOLEAN
+  }>
+  canRollback: BOOLEAN
+  rolledBack: BOOLEAN
 ```
 
 ## Core Algorithms
@@ -188,11 +235,113 @@ BEGIN
 END
 ```
 
-### 2. Batch Operation Executor
+### 2. Pre-Validation
+
+```
+ALGORITHM: PreValidateBatchOperation
+INPUT: operation (BatchOperation)
+OUTPUT: validationResult (BatchValidationResult)
+
+TIME COMPLEXITY: O(n) where n = target items
+SPACE COMPLEXITY: O(k) where k = issues + warnings
+
+BEGIN
+  issues ← []
+  warnings ← []
+
+  // Check each item
+  FOR EACH itemId IN operation.targetItems DO
+    item ← GetItem(itemId)
+
+    IF item == NULL THEN
+      issues.push({
+        itemId: itemId,
+        error: 'Item not found'
+      })
+      CONTINUE
+    END IF
+
+    // Operation-specific validation
+    SWITCH operation.type
+      CASE 'delete':
+        // Check dependencies
+        dependents ← GetDependentItems(itemId)
+        IF dependents.length > 0 THEN
+          warnings.push({
+            itemId: itemId,
+            warning: item.name + ' has ' + dependents.length +
+                    ' experience(s). These will also be deleted.'
+          })
+        END IF
+
+        // Check if item can be deleted
+        IF item.isProtected THEN
+          issues.push({
+            itemId: itemId,
+            error: 'Item is protected and cannot be deleted'
+          })
+        END IF
+
+      CASE 'addTags':
+        // Check if tags valid
+        IF NOT operation.parameters.tags OR
+           operation.parameters.tags.length == 0 THEN
+          issues.push({
+            itemId: itemId,
+            error: 'No tags specified'
+          })
+        END IF
+
+        // Check tag limits
+        currentTags ← item.tasteTags || []
+        newTagCount ← currentTags.length + operation.parameters.tags.length
+        IF newTagCount > 10 THEN
+          warnings.push({
+            itemId: itemId,
+            warning: 'Adding tags will exceed recommended limit of 10'
+          })
+        END IF
+
+      CASE 'updateRating':
+        // Validate rating value
+        IF NOT operation.parameters.value THEN
+          issues.push({
+            itemId: itemId,
+            error: 'No rating value specified'
+          })
+        ELSE IF operation.parameters.value < 1 OR
+                operation.parameters.value > 10 THEN
+          issues.push({
+            itemId: itemId,
+            error: 'Rating must be between 1 and 10'
+          })
+        END IF
+
+      CASE 'archive':
+        IF item.isArchived THEN
+          warnings.push({
+            itemId: itemId,
+            warning: 'Item is already archived'
+          })
+        END IF
+    END SWITCH
+  END FOR
+
+  RETURN {
+    valid: issues.length == 0,
+    canProceedWithWarnings: issues.length == 0 AND warnings.length > 0,
+    issues: issues,
+    warnings: warnings
+  }
+END
+```
+
+### 3. Batch Operation Executor
 
 ```
 ALGORITHM: ExecuteBatchOperation
-INPUT: operation (BatchOperation), progressCallback (FUNCTION)
+INPUT: operation (BatchOperation), progressCallback (FUNCTION),
+       cancellationToken (BatchCancellationToken | NULL)
 OUTPUT: result (BatchOperationResult)
 
 TIME COMPLEXITY: O(n * c) where n = items, c = complexity per item
@@ -213,15 +362,28 @@ BEGIN
     totalItems: operation.targetItems.size
   })
 
-  // Validate operation
-  validationResult ← ValidateBatchOperation(operation)
+  // Pre-validate all items
+  validationResult ← PreValidateBatchOperation(operation)
+
   IF NOT validationResult.valid THEN
     result.success ← FALSE
-    result.errors.push({
-      itemId: 'validation',
-      error: validationResult.error
-    })
+    result.errors ← validationResult.issues
     RETURN result
+  END IF
+
+  // Show warnings if present
+  IF validationResult.canProceedWithWarnings THEN
+    confirmed ← AWAIT ShowWarningDialog({
+      title: 'Warnings Found',
+      message: validationResult.warnings.length + ' items have warnings',
+      warnings: validationResult.warnings,
+      options: ['Cancel', 'Proceed Anyway']
+    })
+
+    IF NOT confirmed THEN
+      result.success ← FALSE
+      RETURN result
+    END IF
   END IF
 
   // Show confirmation if required
@@ -299,13 +461,19 @@ BEGIN
       estimatedTimeRemaining: estimatedTimeRemaining
     })
 
-    // Allow cancellation check points
-    IF ShouldCancelBatchOperation() THEN
+    // Check for cancellation
+    IF cancellationToken != NULL AND cancellationToken.isCancelled THEN
       progressCallback({
         status: 'cancelled',
-        progress: progress
+        progress: progress,
+        message: 'Operation cancelled: ' + (cancellationToken.reason || 'User requested')
       })
       result.success ← FALSE
+      result.errors.push({
+        itemId: 'cancellation',
+        error: 'Operation was cancelled after processing ' +
+               result.totalProcessed + ' of ' + totalItems + ' items'
+      })
       RETURN result
     END IF
 
@@ -679,7 +847,127 @@ BEGIN
 END
 ```
 
-### 5. Validation and Confirmation
+### 5. Transaction Rollback Support
+
+```
+ALGORITHM: RollbackBatchOperation
+INPUT: transactionLog (BatchTransactionLog)
+OUTPUT: result ({success: BOOLEAN, rollbackCount: NUMBER})
+
+TIME COMPLEXITY: O(n) where n = successful operations
+SPACE COMPLEXITY: O(1)
+
+BEGIN
+  IF NOT transactionLog.canRollback THEN
+    RETURN {
+      success: FALSE,
+      rollbackCount: 0,
+      error: 'Transaction cannot be rolled back'
+    }
+  END IF
+
+  IF transactionLog.rolledBack THEN
+    RETURN {
+      success: FALSE,
+      rollbackCount: 0,
+      error: 'Transaction already rolled back'
+    }
+  END IF
+
+  rollbackCount ← 0
+  failedRollbacks ← []
+
+  // Rollback in reverse order
+  operations ← transactionLog.operations.reverse()
+
+  FOR EACH op IN operations DO
+    // Only rollback successful operations
+    IF NOT op.success THEN
+      CONTINUE
+    END IF
+
+    TRY
+      SWITCH op.operation
+        CASE 'delete':
+          // Restore deleted item
+          RestoreItem(op.itemId, op.previousState)
+
+        CASE 'addTags':
+          // Remove added tags
+          RemoveTagsFromItem(op.itemId, op.addedTags)
+
+        CASE 'updateRating':
+          // Restore previous rating
+          UpdateItemRating(op.itemId, op.previousRating)
+
+        CASE 'archive':
+          // Unarchive item
+          UnarchiveItem(op.itemId)
+
+        DEFAULT:
+          // Generic rollback
+          RestoreItemState(op.itemId, op.previousState)
+      END SWITCH
+
+      rollbackCount += 1
+
+    CATCH error
+      failedRollbacks.push({
+        itemId: op.itemId,
+        error: error.message
+      })
+      LogError('Rollback failed for item: ' + op.itemId, error)
+    END TRY
+  END FOR
+
+  // Mark transaction as rolled back
+  transactionLog.rolledBack ← TRUE
+  UpdateTransactionLog(transactionLog)
+
+  RETURN {
+    success: failedRollbacks.length == 0,
+    rollbackCount: rollbackCount,
+    failedRollbacks: failedRollbacks
+  }
+END
+
+ALGORITHM: CreateBatchTransaction
+INPUT: operation (BatchOperation)
+OUTPUT: transactionLog (BatchTransactionLog)
+
+BEGIN
+  transactionLog ← {
+    transactionId: GenerateUUID(),
+    operations: [],
+    canRollback: operation.undoable,
+    rolledBack: FALSE,
+    timestamp: CurrentTimestamp()
+  }
+
+  SaveTransactionLog(transactionLog)
+
+  RETURN transactionLog
+END
+
+SUBROUTINE: LogOperation
+INPUT: transactionLog (BatchTransactionLog), itemId (STRING),
+       operation (STRING), success (BOOLEAN), previousState (Object)
+OUTPUT: void
+
+BEGIN
+  transactionLog.operations.push({
+    itemId: itemId,
+    operation: operation,
+    timestamp: CurrentTimestamp(),
+    success: success,
+    previousState: previousState
+  })
+
+  UpdateTransactionLog(transactionLog)
+END
+```
+
+### 6. Validation and Confirmation
 
 ```
 ALGORITHM: ValidateBatchOperation
@@ -839,6 +1127,78 @@ IMPLEMENTATION: Chunk size of 100, GC every 500 items
 - ✅ Expire undo data after 30 minutes
 - ✅ Progress callbacks throttled to 60fps
 
+## Validation Examples
+
+### Example 1: Pre-Validation Catches Issues
+
+```
+INPUT: Batch delete 5 ciders
+
+PRE-VALIDATION RESULTS:
+- Cider 1: ✓ OK
+- Cider 2: ⚠ Warning - Has 3 experiences
+- Cider 3: ✗ Error - Item is protected
+- Cider 4: ✓ OK
+- Cider 5: ⚠ Warning - Has 1 experience
+
+VALIDATION RESULT:
+  valid: FALSE
+  issues: [{itemId: 'cider3', error: 'Item is protected'}]
+  warnings: [
+    {itemId: 'cider2', warning: 'Has 3 experiences'},
+    {itemId: 'cider5', warning: 'Has 1 experience'}
+  ]
+
+ACTION: Show error dialog, block operation
+```
+
+### Example 2: Cancellation During Processing
+
+```
+SCENARIO: User batch deletes 100 ciders, cancels after 50
+
+PROGRESS:
+1. Start batch operation
+2. Process items 1-50 successfully
+3. User clicks "Cancel" button
+4. Cancellation token set to isCancelled = TRUE
+5. Current item (51) completes
+6. Loop detects cancellation
+7. Return partial result
+
+RESULT:
+  success: FALSE
+  successCount: 50
+  failedCount: 0
+  errors: [{
+    itemId: 'cancellation',
+    error: 'Operation cancelled after processing 50 of 100 items'
+  }]
+
+UNDO TOKEN: Available for processed items (1-50)
+```
+
+### Example 3: Transaction Rollback on Critical Failure
+
+```
+SCENARIO: Batch update fails critically mid-operation
+
+TRANSACTION LOG:
+  Item 1: Updated successfully
+  Item 2: Updated successfully
+  Item 3: CRITICAL ERROR - Database corruption detected
+  Items 4-10: Not processed
+
+ROLLBACK PROCESS:
+1. Detect critical failure
+2. Initiate rollback
+3. Reverse Item 2: Restore previous state ✓
+4. Reverse Item 1: Restore previous state ✓
+5. Mark transaction as rolled back
+
+FINAL STATE: All items restored to original state
+```
+
 ## Testing Approach
 
 ### Unit Tests
@@ -856,6 +1216,8 @@ TEST: Batch Operations
   - Process multiple items
   - Handle errors gracefully
   - Track progress correctly
+  - Cancellation support
+  - Transaction rollback
 
 TEST: Undo System
   - Save undo data
@@ -863,6 +1225,13 @@ TEST: Undo System
   - Undo operation
   - Expired undo data
   - Undo stack limit
+
+TEST: Pre-Validation
+  - Detect missing items
+  - Detect protected items
+  - Warn about dependencies
+  - Validate operation parameters
+  - Handle edge cases
 ```
 
 ### Integration Tests
@@ -872,6 +1241,8 @@ TEST: End-to-End Batch Operations
   - Select all → add tags → verify
   - Filtered selection → batch update
   - Large batch (100+ items) performance
+  - Cancelled operation recovery
+  - Transaction rollback on failure
 ```
 
 ### Performance Tests
@@ -881,12 +1252,15 @@ TEST: Large Batch Performance
   - 500 items: < 8s
   - 1000 items: < 15s
   - UI remains responsive during processing
+  - Cancellation response time < 500ms
 ```
 
 ---
 
-**Complexity Analysis**: Batch operations are O(n) per item, with chunking to maintain UI responsiveness. Undo data limited to prevent memory issues.
+**Complexity Analysis**: Batch operations are O(n) per item, with chunking to maintain UI responsiveness. Pre-validation adds O(n) upfront but prevents errors. Undo data limited to prevent memory issues.
 
-**Memory Safety**: Undo data expires after 30 minutes and stack limited to 10 operations, preventing unbounded growth.
+**Memory Safety**: Undo data expires after 30 minutes and stack limited to 10 operations, preventing unbounded growth. Transaction logs cleaned up after 7 days.
 
-**Recommendation**: Process large batches (>500 items) in background with progress UI. Offer cancellation for long-running operations.
+**Cancellation**: Users can cancel at any time with response time < 500ms. Partial results preserved with undo support.
+
+**Recommendation**: Always run pre-validation before batch operations. Process large batches (>500 items) in background with progress UI. Offer cancellation for long-running operations. Use transaction logs for critical operations.

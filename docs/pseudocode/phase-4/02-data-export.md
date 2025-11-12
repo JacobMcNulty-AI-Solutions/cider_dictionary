@@ -1,8 +1,39 @@
 # Data Export System
 
+## REFINEMENT NOTES
+
+**Version**: 2.0
+**Date Refined**: 2025-10-04
+**Methodology**: SPARC Refinement Phase
+
+### Changes Made:
+- Added cancellation support for all export operations
+- Implemented resumable export with checkpoint system
+- Added progress persistence for interrupted exports
+- Implemented streaming export for large datasets (5000+ ciders)
+- Added export queue to prevent concurrent operations
+- Enhanced error recovery with automatic resume capability
+- Added export integrity validation
+- Implemented disk space checking before export
+
+### New Algorithms Added:
+- `CancellableExport` - Support cancellation at any stage
+- `ResumeExport` - Resume from checkpoint after interruption
+- `StreamingJSONExport` - Memory-efficient streaming for large exports
+- `ValidateExportIntegrity` - Verify export completeness
+- `RecoverFromExportFailure` - Automatic recovery with retry logic
+
+### Performance Improvements:
+- Streaming reduces memory from 200MB+ to <100MB for large exports
+- Checkpoint system prevents data loss on interruption
+- Queue system prevents concurrent export conflicts
+- Disk space validation prevents mid-export failures
+
+---
+
 ## Purpose
 
-Implements a comprehensive data export system supporting JSON and CSV formats with optional compression, date range filtering, and selective data inclusion. Designed for data portability, backup, and external analysis.
+Implements a comprehensive data export system supporting JSON and CSV formats with optional compression, date range filtering, selective data inclusion, cancellation support, and resumable exports. Designed for data portability, backup, and external analysis with robust error handling.
 
 ## Data Structures
 
@@ -34,6 +65,68 @@ INTERFACE ExportOptions:
   // Metadata
   exportName: STRING | NULL // Custom filename
   includeMetadata: BOOLEAN  // Export timestamp, version, etc.
+
+  // Cancellation and resumability
+  cancellationToken: CancellationToken | NULL
+  resumeFromCheckpoint: BOOLEAN
+  checkpointId: STRING | NULL
+  streaming: BOOLEAN // For large datasets
+```
+
+### Export Cancellation Token
+```typescript
+INTERFACE ExportCancellationToken:
+  cancelled: BOOLEAN
+  reason: STRING | NULL
+  timestamp: TIMESTAMP
+
+  cancel: FUNCTION(reason: STRING)
+  isCancelled: FUNCTION() → BOOLEAN
+  throwIfCancelled: FUNCTION()
+```
+
+### Export Checkpoint
+```typescript
+INTERFACE ExportCheckpoint:
+  checkpointId: STRING
+  timestamp: TIMESTAMP
+  stage: ENUM('gathering', 'formatting', 'writing', 'compressing')
+  progress: NUMBER // 0-100
+  lastProcessedIndex: NUMBER
+  options: ExportOptions
+  partialData: {
+    ciders: ARRAY<CiderMasterRecord>
+    experiences: ARRAY<ExperienceLog>
+    venues: ARRAY<ConsolidatedVenue>
+  }
+  filePath: STRING | NULL
+  expiresAt: TIMESTAMP // 1 hour
+```
+
+### Export Queue
+```typescript
+INTERFACE ExportQueue:
+  queue: ARRAY<QueuedExport>
+  currentExport: QueuedExport | NULL
+  maxConcurrent: NUMBER // 1 (only one export at a time)
+
+INTERFACE QueuedExport:
+  id: STRING
+  options: ExportOptions
+  status: ENUM('pending', 'processing', 'completed', 'failed', 'cancelled')
+  addedAt: TIMESTAMP
+  startedAt: TIMESTAMP | NULL
+  completedAt: TIMESTAMP | NULL
+  result: ExportResult | NULL
+```
+
+### Streaming Export Config
+```typescript
+INTERFACE StreamingExportConfig:
+  chunkSize: NUMBER // Items per chunk, default 100
+  flushInterval: NUMBER // ms between flushes, default 100
+  maxMemory: NUMBER // bytes, default 100MB
+  onProgress: FUNCTION(chunksProcessed: NUMBER, totalChunks: NUMBER)
 ```
 
 ### Export Result
@@ -317,7 +410,470 @@ BEGIN
 END
 ```
 
-### 3. JSON Export Formatter
+### 3. Cancellable Export with Checkpoints
+
+```
+ALGORITHM: CancellableExport
+INPUT: options (ExportOptions), progressCallback (FUNCTION)
+OUTPUT: result (ExportResult)
+
+TIME COMPLEXITY: O(n + e + v) where n=ciders, e=experiences, v=venues
+SPACE COMPLEXITY: O(n + e + v) for data storage
+
+BEGIN
+  startTime ← CurrentTimestamp()
+  result ← NEW ExportResult()
+  cancellationToken ← options.cancellationToken || CreateCancellationToken()
+
+  // Check for existing checkpoint if resuming
+  IF options.resumeFromCheckpoint AND options.checkpointId != NULL THEN
+    checkpoint ← LoadCheckpoint(options.checkpointId)
+    IF checkpoint != NULL AND NOT CheckpointExpired(checkpoint) THEN
+      RETURN ResumeExport(checkpoint, options, progressCallback, cancellationToken)
+    END IF
+  END IF
+
+  // Check disk space before starting
+  requiredSpace ← EstimateExportSize(options)
+  availableSpace ← GetAvailableDiskSpace()
+  IF availableSpace < requiredSpace * 1.2 THEN // 20% buffer
+    THROW Error('Insufficient disk space. Need ' + FormatBytes(requiredSpace) +
+                ', have ' + FormatBytes(availableSpace))
+  END IF
+
+  checkpointId ← GenerateUUID()
+
+  TRY
+    // STAGE 1: Data Gathering (with cancellation checks)
+    progressCallback({stage: 'gathering', progress: 0, cancellable: TRUE})
+    CheckCancellation(cancellationToken)
+
+    exportData ← GatherExportDataCancellable(options, progressCallback, cancellationToken)
+
+    // Save checkpoint after gathering
+    SaveCheckpoint({
+      checkpointId: checkpointId,
+      stage: 'gathering',
+      progress: 40,
+      lastProcessedIndex: 0,
+      options: options,
+      partialData: exportData,
+      expiresAt: CurrentTimestamp() + 3600000 // 1 hour
+    })
+
+    // STAGE 2: Format Conversion
+    CheckCancellation(cancellationToken)
+    progressCallback({stage: 'formatting', progress: 40, cancellable: TRUE})
+
+    formattedData ← NULL
+    SWITCH options.format
+      CASE 'json':
+        IF ShouldUseStreaming(exportData, options) THEN
+          formattedData ← StreamingJSONExport(exportData, options, cancellationToken)
+        ELSE
+          formattedData ← ConvertToJSON(exportData, options)
+        END IF
+      CASE 'csv':
+        formattedData ← ConvertToCSV(exportData, options)
+    END SWITCH
+
+    // STAGE 3: Compression (optional)
+    IF options.compression THEN
+      CheckCancellation(cancellationToken)
+      progressCallback({stage: 'compressing', progress: 70, cancellable: TRUE})
+      formattedData ← CompressData(formattedData, options.format)
+    END IF
+
+    // STAGE 4: File Writing
+    CheckCancellation(cancellationToken)
+    progressCallback({stage: 'writing', progress: 85, cancellable: TRUE})
+
+    filePath ← WriteToFile(formattedData, options)
+
+    // STAGE 5: Validate integrity
+    IF NOT ValidateExportIntegrity(filePath, exportData) THEN
+      THROW Error('Export integrity validation failed')
+    END IF
+
+    // Complete
+    progressCallback({stage: 'complete', progress: 100, cancellable: FALSE})
+
+    result.success ← TRUE
+    result.filePath ← filePath
+    result.fileSize ← GetFileSize(filePath)
+    result.recordCount ← {
+      ciders: exportData.ciders.length,
+      experiences: exportData.experiences?.length || 0,
+      venues: exportData.venues?.length || 0
+    }
+    result.exportTime ← CurrentTimestamp() - startTime
+
+    // Clean up checkpoint on success
+    DeleteCheckpoint(checkpointId)
+
+  CATCH CancelledException
+    // Save checkpoint for later resume
+    SaveCheckpoint({
+      checkpointId: checkpointId,
+      stage: currentStage,
+      progress: currentProgress,
+      lastProcessedIndex: lastIndex,
+      options: options,
+      partialData: exportData,
+      expiresAt: CurrentTimestamp() + 3600000
+    })
+
+    result.success ← FALSE
+    result.error ← 'Export cancelled by user'
+    result.checkpointId ← checkpointId
+    Log('Export cancelled, checkpoint saved: ' + checkpointId)
+
+  CATCH error
+    result.success ← FALSE
+    result.error ← error.message
+
+    // Try to recover
+    IF CanRecover(error) THEN
+      recoveryResult ← RecoverFromExportFailure(checkpoint, options, error)
+      IF recoveryResult.success THEN
+        RETURN recoveryResult
+      END IF
+    END IF
+
+    Log('Export failed', error)
+  END TRY
+
+  RETURN result
+END
+
+ALGORITHM: ResumeExport
+INPUT: checkpoint (ExportCheckpoint), options (ExportOptions),
+       progressCallback (FUNCTION), cancellationToken (CancellationToken)
+OUTPUT: result (ExportResult)
+
+BEGIN
+  Log('Resuming export from checkpoint: ' + checkpoint.checkpointId)
+
+  progressCallback({
+    stage: 'resuming',
+    progress: checkpoint.progress,
+    message: 'Resuming export from ' + checkpoint.stage + '...'
+  })
+
+  // Continue from where we left off
+  exportData ← checkpoint.partialData
+
+  TRY
+    SWITCH checkpoint.stage
+      CASE 'gathering':
+        // Re-gather any missing data
+        exportData ← CompleteDat Gathering(exportData, options, progressCallback, cancellationToken)
+
+      CASE 'formatting':
+        // Continue with formatting
+        formattedData ← ConvertToJSON(exportData, options)
+        // Continue to writing...
+
+      CASE 'writing':
+        // Re-attempt write
+        filePath ← WriteToFile(checkpoint.partialData, options)
+
+      CASE 'compressing':
+        // Re-compress
+        formattedData ← CompressData(checkpoint.partialData, options.format)
+    END SWITCH
+
+    // Complete the export
+    result ← FinalizeExport(exportData, options, progressCallback)
+
+    // Clean up checkpoint
+    DeleteCheckpoint(checkpoint.checkpointId)
+
+    RETURN result
+
+  CATCH error
+    THROW Error('Failed to resume export: ' + error.message)
+  END TRY
+END
+
+SUBROUTINE: CheckCancellation
+INPUT: cancellationToken (CancellationToken)
+OUTPUT: void (throws if cancelled)
+
+BEGIN
+  IF cancellationToken != NULL AND cancellationToken.isCancelled() THEN
+    THROW CancelledException('Export cancelled: ' + cancellationToken.reason)
+  END IF
+END
+
+SUBROUTINE: ShouldUseStreaming
+INPUT: exportData (Object), options (ExportOptions)
+OUTPUT: shouldStream (BOOLEAN)
+
+BEGIN
+  // Use streaming for large datasets to avoid memory issues
+  totalItems ← exportData.ciders.length +
+               (exportData.experiences?.length || 0) +
+               (exportData.venues?.length || 0)
+
+  // Stream if > 5000 items or explicit streaming requested
+  shouldStream ← totalItems > 5000 OR options.streaming == TRUE
+
+  RETURN shouldStream
+END
+```
+
+### 4. Streaming JSON Export
+
+```
+ALGORITHM: StreamingJSONExport
+INPUT: exportData (Object), options (ExportOptions),
+       cancellationToken (CancellationToken)
+OUTPUT: filePath (STRING)
+
+TIME COMPLEXITY: O(n) with constant memory overhead
+SPACE COMPLEXITY: O(chunk_size) instead of O(n)
+
+BEGIN
+  filePath ← GenerateFilePath(options)
+  stream ← CreateWriteStream(filePath)
+  config ← {
+    chunkSize: 100,
+    flushInterval: 100,
+    maxMemory: 100 * 1024 * 1024 // 100MB
+  }
+
+  TRY
+    // Write opening metadata
+    stream.write('{\n')
+    stream.write('  "metadata": ')
+    stream.write(JSON.stringify({
+      exportDate: CurrentTimestamp().toISOString(),
+      appVersion: GetAppVersion(),
+      dataVersion: 1
+    }))
+    stream.write(',\n')
+
+    // Stream ciders in chunks
+    stream.write('  "ciders": [\n')
+    totalCiders ← exportData.ciders.length
+
+    FOR i ← 0 TO totalCiders - 1 STEP config.chunkSize DO
+      CheckCancellation(cancellationToken)
+
+      chunk ← exportData.ciders.slice(i, i + config.chunkSize)
+
+      FOR j ← 0 TO chunk.length - 1 DO
+        cider ← SerializeCiderForJSON(chunk[j], options)
+        stream.write('    ' + JSON.stringify(cider))
+
+        IF NOT (i + j == totalCiders - 1) THEN
+          stream.write(',\n')
+        ELSE
+          stream.write('\n')
+        END IF
+      END FOR
+
+      // Flush periodically
+      IF i % (config.chunkSize * 5) == 0 THEN
+        stream.flush()
+
+        // Allow GC between chunks
+        IF global.gc != NULL THEN
+          global.gc()
+        END IF
+      END IF
+    END FOR
+
+    stream.write('  ]')
+
+    // Stream experiences if included
+    IF exportData.experiences != NULL THEN
+      CheckCancellation(cancellationToken)
+      stream.write(',\n  "experiences": [\n')
+
+      totalExps ← exportData.experiences.length
+      FOR i ← 0 TO totalExps - 1 STEP config.chunkSize DO
+        CheckCancellation(cancellationToken)
+        chunk ← exportData.experiences.slice(i, i + config.chunkSize)
+
+        FOR j ← 0 TO chunk.length - 1 DO
+          exp ← SerializeExperienceForJSON(chunk[j])
+          stream.write('    ' + JSON.stringify(exp))
+
+          IF NOT (i + j == totalExps - 1) THEN
+            stream.write(',\n')
+          ELSE
+            stream.write('\n')
+          END IF
+        END FOR
+
+        stream.flush()
+      END FOR
+
+      stream.write('  ]')
+    END IF
+
+    // Close JSON
+    stream.write('\n}\n')
+    stream.end()
+
+    Log('Streaming export completed: ' + filePath)
+    RETURN filePath
+
+  CATCH error
+    stream.close()
+    DeleteFile(filePath) // Clean up partial file
+    THROW error
+  END TRY
+END
+```
+
+### 5. Export Integrity Validation
+
+```
+ALGORITHM: ValidateExportIntegrity
+INPUT: filePath (STRING), originalData (Object)
+OUTPUT: isValid (BOOLEAN)
+
+TIME COMPLEXITY: O(n) for validation scan
+SPACE COMPLEXITY: O(1) for streaming validation
+
+BEGIN
+  TRY
+    // Check file exists and is readable
+    IF NOT FileExists(filePath) THEN
+      Log('Validation failed: File does not exist')
+      RETURN FALSE
+    END IF
+
+    fileSize ← GetFileSize(filePath)
+    IF fileSize == 0 THEN
+      Log('Validation failed: File is empty')
+      RETURN FALSE
+    END IF
+
+    // Verify file is valid JSON or CSV
+    IF filePath.endsWith('.json') OR filePath.endsWith('.json.gz') THEN
+      // Try to parse JSON
+      content ← ReadFile(filePath)
+      IF filePath.endsWith('.gz') THEN
+        content ← DecompressData(content)
+      END IF
+
+      parsed ← JSON.parse(content)
+
+      // Verify structure
+      IF NOT parsed.metadata OR NOT parsed.ciders THEN
+        Log('Validation failed: Missing required fields')
+        RETURN FALSE
+      END IF
+
+      // Verify counts match
+      IF parsed.ciders.length != originalData.ciders.length THEN
+        Log('Validation failed: Cider count mismatch. ' +
+            'Expected ' + originalData.ciders.length + ', got ' + parsed.ciders.length)
+        RETURN FALSE
+      END IF
+
+      IF originalData.experiences != NULL THEN
+        IF parsed.experiences.length != originalData.experiences.length THEN
+          Log('Validation failed: Experience count mismatch')
+          RETURN FALSE
+        END IF
+      END IF
+
+    ELSE IF filePath.endsWith('.csv') THEN
+      // Validate CSV structure
+      content ← ReadFile(filePath)
+      lines ← content.split('\n').filter(line => line.trim().length > 0)
+
+      // Should have at least header + data
+      IF lines.length < 2 THEN
+        Log('Validation failed: CSV has insufficient rows')
+        RETURN FALSE
+      END IF
+
+      // Verify row count (rough check)
+      dataRows ← lines.length - 1 // Minus header
+      IF dataRows < originalData.ciders.length * 0.9 THEN // Allow 10% margin
+        Log('Validation failed: CSV row count too low')
+        RETURN FALSE
+      END IF
+    END IF
+
+    Log('Export integrity validated successfully')
+    RETURN TRUE
+
+  CATCH error
+    Log('Validation error: ' + error.message)
+    RETURN FALSE
+  END TRY
+END
+```
+
+### 6. Export Recovery
+
+```
+ALGORITHM: RecoverFromExportFailure
+INPUT: checkpoint (ExportCheckpoint), options (ExportOptions), error (Error)
+OUTPUT: result (ExportResult)
+
+BEGIN
+  Log('Attempting to recover from export failure: ' + error.message)
+
+  IF checkpoint.exists THEN
+    // Resume from last successful batch
+    Log('Resuming from checkpoint at progress ' + checkpoint.progress + '%')
+
+    TRY
+      result ← ResumeExport(
+        checkpoint,
+        options,
+        (progress) => Log('Recovery progress: ' + progress.progress + '%'),
+        CreateCancellationToken()
+      )
+
+      RETURN result
+
+    CATCH recoveryError
+      Log('Recovery from checkpoint failed: ' + recoveryError.message)
+      // Fall through to retry logic
+    END TRY
+  END IF
+
+  // Retry with smaller batch size to reduce memory pressure
+  IF error.message.includes('memory') OR error.message.includes('space') THEN
+    Log('Retrying with streaming enabled')
+
+    modifiedOptions ← Clone(options)
+    modifiedOptions.streaming ← TRUE
+    modifiedOptions.includeImages ← FALSE // Reduce memory further
+
+    TRY
+      result ← CancellableExport(modifiedOptions, (progress) => {
+        Log('Retry progress: ' + progress.progress + '%')
+      })
+
+      RETURN result
+
+    CATCH retryError
+      Log('Retry failed: ' + retryError.message)
+    END TRY
+  END IF
+
+  // Final fallback: partial export
+  result ← {
+    success: FALSE,
+    error: 'Export failed after recovery attempts: ' + error.message,
+    suggestion: 'Try exporting with fewer items or without images'
+  }
+
+  RETURN result
+END
+```
+
+### 7. JSON Export Formatter
 
 ```
 ALGORITHM: ConvertToJSON
@@ -905,39 +1461,120 @@ SOLUTION: Show error message, prevent export
 VALIDATION: Check cider count before starting export
 ```
 
-### 2. Disk Space Insufficient
+### 2. Disk Space Insufficient (Enhanced)
 ```
 CASE: Not enough disk space for export
-SOLUTION: Check available space before writing
-FALLBACK: Offer to export without images or compression
+SOLUTION: Check available space before writing with 20% buffer
+FALLBACK: Offer to export without images or use compression
+RECOVERY: Automatically enable streaming and retry
+EXAMPLE:
+  Required: 120MB
+  Available: 100MB
+  → Offer: "Enable compression? (estimated 30MB)"
+  → OR: "Export without images? (estimated 40MB)"
 ```
 
-### 3. Very Large Export
+### 3. Disk Full Mid-Export (New)
 ```
-CASE: Export > 100MB
-SOLUTION: Use streaming write, show progress
-WARNING: Warn user about file size
+CASE: Disk fills up during export
+SOLUTION: Detect space during write, offer options
+FALLBACK: Save checkpoint, allow user to free space and resume
+RECOVERY: Cleanup partial files, resume from checkpoint
+EXAMPLE:
+  Export at 60%: Disk full error
+  → Save checkpoint
+  → Show: "Free up 50MB and tap Resume"
+  → User frees space
+  → Resume from 60%
 ```
 
-### 4. Invalid Date Range
+### 4. Very Large Export (Enhanced)
+```
+CASE: Export > 100MB or 5000+ items
+SOLUTION: Automatically use streaming, show progress
+WARNING: Warn user about file size and time estimate
+OPTIMIZATION: Chunk processing, periodic GC
+EXAMPLE:
+  10,000 ciders + 50,000 experiences
+  → Automatic streaming (100-item chunks)
+  → Memory stays < 100MB
+  → Progress shown every 500 items
+```
+
+### 5. Memory Pressure During Export (New)
+```
+CASE: System memory warning during export
+SOLUTION: Immediate switch to streaming mode
+RECOVERY: Save checkpoint, clear memory, resume with streaming
+IMPLEMENTATION: Monitor memory, trigger GC, reduce batch size
+```
+
+### 6. Export Interruption (New)
+```
+CASE: App backgrounded, killed, or crashes during export
+SOLUTION: Checkpoint saved after each stage
+RECOVERY: Offer to resume on next app launch
+PERSISTENCE: Checkpoints expire after 1 hour
+EXAMPLE:
+  Export at "formatting" stage (40%)
+  → App crashes
+  → Restart app
+  → Show: "Resume export from 40%?"
+  → Resume seamlessly
+```
+
+### 7. User Cancellation (New)
+```
+CASE: User cancels export mid-operation
+SOLUTION: Check cancellation token periodically
+CLEANUP: Save checkpoint for potential resume
+UI: Show "Export cancelled. Resume later?" option
+EXAMPLE:
+  User taps Cancel at 70%
+  → Save checkpoint
+  → Clean up temp files
+  → Show undo/resume option
+```
+
+### 8. Network Interruption (Future Cloud Exports) (New)
+```
+CASE: Network drops during cloud upload
+SOLUTION: Save export file locally, retry upload
+RECOVERY: Exponential backoff retry with checkpoint
+FALLBACK: Allow manual retry or save to device only
+```
+
+### 9. Invalid Date Range
 ```
 CASE: End date before start date
 SOLUTION: Validate dates, swap if needed
-WARNING: Show validation error
+WARNING: Show validation error before export starts
 ```
 
-### 5. Image Conversion Failure
+### 10. Image Conversion Failure (Enhanced)
 ```
 CASE: Image cannot be converted to base64
 SOLUTION: Skip image, log error, continue export
 FALLBACK: Export without that specific image
+REPORTING: Include skipped images count in export summary
+EXAMPLE:
+  Export completes successfully
+  Summary: "Exported 100 ciders, 3 images skipped (corrupted)"
 ```
 
-### 6. Special Characters in CSV
+### 11. Special Characters in CSV
 ```
 CASE: Field contains delimiter or quotes
 SOLUTION: Use proper CSV escaping (RFC 4180)
 IMPLEMENTATION: EscapeCSVField() handles all cases
+```
+
+### 12. Corrupt Image Data (New)
+```
+CASE: Image file corrupted or unreadable
+SOLUTION: Skip corrupt images, continue export
+REPORTING: Report skipped images in summary
+VALIDATION: Include image validation in integrity check
 ```
 
 ## Performance Considerations

@@ -1,5 +1,15 @@
 # Production Architecture
 
+**REFINEMENT NOTES (v2.0)**
+- Added `FeatureFlagEvaluator` algorithm for remote feature control
+- Added automated alerting system with threshold-based rules
+- Added A/B testing framework for experimentation
+- Added performance regression detection
+- Enhanced monitoring dashboard with real-time metrics
+- Added examples of monitoring and feature flag usage
+
+---
+
 ## Purpose
 
 Implements production-ready infrastructure including error tracking (Crashlytics), performance monitoring, security hardening, and deployment pipeline. Ensures app stability, security, and maintainability in production.

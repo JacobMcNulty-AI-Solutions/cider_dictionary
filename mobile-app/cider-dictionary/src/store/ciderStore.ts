@@ -7,6 +7,7 @@ import { CiderMasterRecord, ConsolidatedVenue, EnhancedAnalytics } from '../type
 import { DuplicateDetectionEngine, DuplicateDetectionResult } from '../utils/duplicateDetection';
 import { VenueConsolidationService } from '../utils/venueConsolidation';
 import { sqliteService } from '../services/database/sqlite';
+import { syncManager } from '../services/sync/SyncManager';
 
 // =============================================================================
 // STORE INTERFACES
@@ -135,6 +136,9 @@ export const useCiderStore = create<CiderStore>()(
         // Save to database
         await sqliteService.createCider(newCider);
 
+        // Queue for Firebase sync
+        await syncManager.queueOperation('CREATE_CIDER', newCider);
+
         // Update store
         set(state => {
           const newCiders = [newCider, ...state.ciders];
@@ -186,8 +190,11 @@ export const useCiderStore = create<CiderStore>()(
           syncStatus: 'pending',
         };
 
-        // TODO: Update in database
-        // await sqliteService.updateCider(id, updatedCider);
+        // Update in database
+        await sqliteService.updateCider(id, updatedCider);
+
+        // Queue for Firebase sync
+        await syncManager.queueOperation('UPDATE_CIDER', updatedCider);
 
         // Update store
         set(state => {
@@ -227,6 +234,9 @@ export const useCiderStore = create<CiderStore>()(
       try {
         // Delete from database
         await sqliteService.deleteCider(id);
+
+        // Queue for Firebase sync
+        await syncManager.queueOperation('DELETE_CIDER', { id });
 
         // Update store
         set(state => {

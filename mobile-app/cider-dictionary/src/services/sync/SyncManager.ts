@@ -1,72 +1,20 @@
 // Phase 3: Offline-First Sync Manager
 // Implements complete offline-first architecture with Firebase sync
 
-// Mock dependencies for development environment
-// import NetInfo, { NetInfoState } from '@react-native-netinfo/netinfo';
-// import { AppState, AppStateStatus } from 'react-native';
-// import firestore from '@react-native-firebase/firestore';
-// import storage from '@react-native-firebase/storage';
-
-// Mock NetInfo for development
-interface NetInfoState {
-  isConnected: boolean | null;
-  type: string | null;
-  isInternetReachable: boolean | null;
-}
-
-const mockNetInfo = {
-  addEventListener: (callback: (state: NetInfoState) => void) => {
-    // Return mock unsubscribe function
-    return () => {};
-  },
-  fetch: (): Promise<NetInfoState> => Promise.resolve({
-    isConnected: true,
-    type: 'wifi',
-    isInternetReachable: true
-  })
-};
-
-const NetInfo = mockNetInfo;
-
-// Mock AppState
-type AppStateStatus = 'active' | 'background' | 'inactive';
-
-const mockAppState = {
-  addEventListener: (event: string, callback: (state: AppStateStatus) => void) => {
-    // Return mock subscription
-    return { remove: () => {} };
-  },
-  currentState: 'active' as AppStateStatus
-};
-
-const AppState = mockAppState;
-
-// Mock Firestore
-const mockFirestoreInstance = {
-  collection: (path: string) => ({
-    doc: (id: string) => ({
-      set: (data: any) => Promise.resolve(),
-      update: (data: any) => Promise.resolve(),
-      delete: () => Promise.resolve()
-    })
-  }),
-  Timestamp: {
-    fromDate: (date: Date) => ({ toDate: () => date })
-  }
-};
-
-const firestore = () => mockFirestoreInstance;
-firestore.Timestamp = mockFirestoreInstance.Timestamp;
-
-// Mock Storage
-const mockStorage = {
-  ref: (path: string) => ({
-    putFile: (localPath: string) => Promise.resolve({ ref: { fullPath: path } }),
-    getDownloadURL: () => Promise.resolve('https://example.com/mock-url')
-  })
-};
-
-const storage = mockStorage;
+import NetInfo, { NetInfoState } from '@react-native-community/netinfo';
+import { AppState, AppStateStatus } from 'react-native';
+import {
+  doc,
+  setDoc,
+  updateDoc,
+  deleteDoc
+} from 'firebase/firestore';
+import {
+  ref,
+  uploadBytesResumable,
+  getDownloadURL
+} from 'firebase/storage';
+import { firebaseService } from '../firebase/config';
 import { SyncOperation, SyncOperationType, NetworkState } from '../../types/sync';
 import { ExperienceLog } from '../../types/experience';
 import { CiderMasterRecord } from '../../types/cider';
@@ -164,6 +112,12 @@ class SyncManager {
   async processSyncQueue(): Promise<void> {
     if (this.syncInProgress || !this.networkState.isConnected) {
       console.log('Sync already in progress or offline, skipping...');
+      return;
+    }
+
+    // Check if Firebase is initialized before syncing
+    if (!firebaseService.isInitialized()) {
+      console.log('Firebase not ready yet, deferring sync...');
       return;
     }
 
@@ -266,11 +220,53 @@ class SyncManager {
 
   private async syncCreateCider(cider: CiderMasterRecord): Promise<void> {
     try {
-      await firestore().collection('ciders').doc(cider.id).set({
-        ...cider,
-        createdAt: firestore.Timestamp.fromDate(cider.createdAt),
-        updatedAt: firestore.Timestamp.fromDate(cider.updatedAt)
-      });
+      const db = firebaseService.getFirestore();
+      const ciderRef = doc(db, 'ciders', cider.id);
+
+      // Debug: Log the incoming cider data
+      console.log('Syncing cider - createdAt type:', typeof cider.createdAt, 'value:', cider.createdAt);
+      console.log('Syncing cider - updatedAt type:', typeof cider.updatedAt, 'value:', cider.updatedAt);
+
+      // Convert all date fields to ISO strings
+      // Handle both Date objects and date strings from SQLite
+      const safeDate = (dateValue: any): string => {
+        if (!dateValue) return new Date().toISOString();
+        if (dateValue instanceof Date) return dateValue.toISOString();
+        if (typeof dateValue === 'string') return dateValue;
+        // If it's a number (timestamp), convert it
+        if (typeof dateValue === 'number') return new Date(dateValue).toISOString();
+        // Fallback
+        return new Date().toISOString();
+      };
+
+      // Build clean data object with only the fields we want
+      const ciderData = {
+        id: cider.id,
+        name: cider.name,
+        brand: cider.brand,
+        abv: cider.abv || null,
+        style: cider.style || null,
+        traditionalStyle: cider.traditionalStyle || null,
+        overallRating: cider.overallRating || null,
+        tasteTags: cider.tasteTags || null,
+        sweetness: cider.sweetness || null,
+        carbonation: cider.carbonation || null,
+        clarity: cider.clarity || null,
+        color: cider.color || null,
+        photo: cider.photo || null,
+        notes: cider.notes || null,
+        userId: cider.userId || 'default-user',
+        syncStatus: 'synced',
+        version: cider.version || 1,
+        createdAt: safeDate(cider.createdAt),
+        updatedAt: safeDate(cider.updatedAt),
+      };
+
+      console.log('Sending to Firebase:', JSON.stringify(ciderData, null, 2));
+
+      await setDoc(ciderRef, ciderData);
+
+      console.log('✅ Cider synced to Firestore successfully:', cider.id);
 
       // Update local sync status
       await sqliteService.updateCider(cider.id, {
@@ -285,10 +281,17 @@ class SyncManager {
 
   private async syncUpdateCider(cider: CiderMasterRecord): Promise<void> {
     try {
-      await firestore().collection('ciders').doc(cider.id).update({
+      const db = firebaseService.getFirestore();
+      const ciderRef = doc(db, 'ciders', cider.id);
+
+      // Convert dates to ISO strings
+      const ciderData = {
         ...cider,
-        updatedAt: firestore.Timestamp.fromDate(cider.updatedAt)
-      });
+        createdAt: cider.createdAt instanceof Date ? cider.createdAt.toISOString() : cider.createdAt,
+        updatedAt: cider.updatedAt instanceof Date ? cider.updatedAt.toISOString() : cider.updatedAt,
+      };
+
+      await updateDoc(ciderRef, ciderData);
 
       // Update local sync status
       await sqliteService.updateCider(cider.id, {
@@ -303,7 +306,10 @@ class SyncManager {
 
   private async syncDeleteCider(ciderId: string): Promise<void> {
     try {
-      await firestore().collection('ciders').doc(ciderId).delete();
+      const db = firebaseService.getFirestore();
+      const ciderRef = doc(db, 'ciders', ciderId);
+
+      await deleteDoc(ciderRef);
     } catch (error) {
       console.error('Failed to sync delete cider:', error);
       throw error;
@@ -312,12 +318,18 @@ class SyncManager {
 
   private async syncCreateExperience(experience: ExperienceLog): Promise<void> {
     try {
-      await firestore().collection('experiences').doc(experience.id).set({
+      const db = firebaseService.getFirestore();
+      const experienceRef = doc(db, 'experiences', experience.id);
+
+      // Convert dates to ISO strings
+      const experienceData = {
         ...experience,
-        date: firestore.Timestamp.fromDate(experience.date),
-        createdAt: firestore.Timestamp.fromDate(experience.createdAt),
-        updatedAt: firestore.Timestamp.fromDate(experience.updatedAt)
-      });
+        date: experience.date instanceof Date ? experience.date.toISOString() : experience.date,
+        createdAt: experience.createdAt instanceof Date ? experience.createdAt.toISOString() : experience.createdAt,
+        updatedAt: experience.updatedAt instanceof Date ? experience.updatedAt.toISOString() : experience.updatedAt,
+      };
+
+      await setDoc(experienceRef, experienceData);
 
       console.log('Experience synced to Firebase:', experience.id);
     } catch (error) {
@@ -328,11 +340,18 @@ class SyncManager {
 
   private async syncUpdateExperience(experience: ExperienceLog): Promise<void> {
     try {
-      await firestore().collection('experiences').doc(experience.id).update({
+      const db = firebaseService.getFirestore();
+      const experienceRef = doc(db, 'experiences', experience.id);
+
+      // Convert dates to ISO strings
+      const experienceData = {
         ...experience,
-        date: firestore.Timestamp.fromDate(experience.date),
-        updatedAt: firestore.Timestamp.fromDate(experience.updatedAt)
-      });
+        date: experience.date instanceof Date ? experience.date.toISOString() : experience.date,
+        createdAt: experience.createdAt instanceof Date ? experience.createdAt.toISOString() : experience.createdAt,
+        updatedAt: experience.updatedAt instanceof Date ? experience.updatedAt.toISOString() : experience.updatedAt,
+      };
+
+      await updateDoc(experienceRef, experienceData);
     } catch (error) {
       console.error('Failed to sync update experience:', error);
       throw error;
@@ -341,7 +360,10 @@ class SyncManager {
 
   private async syncDeleteExperience(experienceId: string): Promise<void> {
     try {
-      await firestore().collection('experiences').doc(experienceId).delete();
+      const db = firebaseService.getFirestore();
+      const experienceRef = doc(db, 'experiences', experienceId);
+
+      await deleteDoc(experienceRef);
     } catch (error) {
       console.error('Failed to sync delete experience:', error);
       throw error;
@@ -349,10 +371,47 @@ class SyncManager {
   }
 
   private async syncUploadImage(imageData: { localPath: string; remotePath: string; ciderId: string }): Promise<void> {
+    // Check if Storage is available (requires Blaze plan)
+    if (!firebaseService.isStorageAvailable()) {
+      console.warn('Firebase Storage not available. Skipping image upload. Upgrade to Blaze plan to enable image uploads.');
+      return; // Skip image upload silently
+    }
+
     try {
-      const reference = storage().ref(imageData.remotePath);
-      await reference.putFile(imageData.localPath);
-      const downloadURL = await reference.getDownloadURL();
+      const storage = firebaseService.getStorage();
+      if (!storage) {
+        console.warn('Storage not initialized, skipping image upload');
+        return;
+      }
+
+      const storageRef = ref(storage, imageData.remotePath);
+
+      // For React Native, we need to fetch the file as blob
+      const response = await fetch(imageData.localPath);
+      const blob = await response.blob();
+
+      const uploadTask = uploadBytesResumable(storageRef, blob);
+
+      // Wait for upload to complete
+      await new Promise((resolve, reject) => {
+        uploadTask.on(
+          'state_changed',
+          (snapshot) => {
+            const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
+            console.log(`Upload is ${progress}% done`);
+          },
+          (error) => {
+            console.error('Upload error:', error);
+            reject(error);
+          },
+          () => {
+            console.log('Upload complete');
+            resolve(uploadTask.snapshot);
+          }
+        );
+      });
+
+      const downloadURL = await getDownloadURL(storageRef);
 
       // Update cider with new image URL
       await this.queueOperation('UPDATE_CIDER', {

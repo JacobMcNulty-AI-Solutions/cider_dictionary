@@ -4,6 +4,8 @@ import React from 'react';
 import { View, Text } from 'react-native';
 
 import TabNavigator from './TabNavigator';
+import AdvancedSearchScreen from '../screens/AdvancedSearch/AdvancedSearchScreen';
+import DataExportScreen from '../screens/DataExport/DataExportScreen';
 import CiderDetailScreen from '../screens/Collection/CiderDetailScreen';
 import ExperienceLogScreen from '../screens/ExperienceLog/ExperienceLogScreen';
 import ExperienceHistoryScreen from '../screens/ExperienceHistory/ExperienceHistoryScreen';
@@ -22,6 +24,26 @@ export default function AppNavigator() {
             name="TabNavigator"
             component={TabNavigator}
             options={{ headerShown: false }}
+          />
+          <Stack.Screen
+            name="AdvancedSearch"
+            component={AdvancedSearchScreen}
+            options={{
+              title: 'Advanced Search',
+              headerStyle: { backgroundColor: '#D4A574' },
+              headerTintColor: '#fff',
+              headerTitleStyle: { fontWeight: 'bold' }
+            }}
+          />
+          <Stack.Screen
+            name="DataExport"
+            component={DataExportScreen}
+            options={{
+              title: 'Export Data',
+              headerStyle: { backgroundColor: '#32D74B' },
+              headerTintColor: '#fff',
+              headerTitleStyle: { fontWeight: 'bold' }
+            }}
           />
           <Stack.Screen
             name="CiderDetail"

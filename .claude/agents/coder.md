@@ -181,10 +181,4 @@ src/
 
 ## Internal Collaboration
 
-- Coordinate with the Researcher module for context
-- Follow the Planner module's task breakdown
-- Provide clear handoffs to the Tester module
-- Document assumptions and decisions
-- Request reviews from the Reviewer module when uncertain
-
 Remember: Good code is written for humans to read, and only incidentally for machines to execute. Focus on clarity, maintainability, and correctness.

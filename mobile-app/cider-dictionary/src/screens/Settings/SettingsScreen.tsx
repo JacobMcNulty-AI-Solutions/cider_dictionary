@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, ScrollView, StyleSheet, Text, Alert } from 'react-native';
+import { View, ScrollView, StyleSheet, Text, Alert, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { RootTabScreenProps } from '../../types/navigation';
 import SafeAreaContainer from '../../components/common/SafeAreaContainer';
@@ -15,17 +15,28 @@ interface SettingItemProps {
 }
 
 function SettingItem({ icon, title, subtitle, onPress }: SettingItemProps) {
-  return (
-    <View style={styles.settingItem}>
-      <View style={styles.settingContent}>
-        <Ionicons name={icon} size={24} color="#007AFF" style={styles.settingIcon} />
-        <View style={styles.settingText}>
-          <Text style={styles.settingTitle}>{title}</Text>
-          <Text style={styles.settingSubtitle}>{subtitle}</Text>
-        </View>
+  const content = (
+    <View style={styles.settingContent}>
+      <Ionicons name={icon} size={24} color="#007AFF" style={styles.settingIcon} />
+      <View style={styles.settingText}>
+        <Text style={styles.settingTitle}>{title}</Text>
+        <Text style={styles.settingSubtitle}>{subtitle}</Text>
       </View>
+      {onPress && (
+        <Ionicons name="chevron-forward" size={20} color="#CCC" />
+      )}
     </View>
   );
+
+  if (onPress) {
+    return (
+      <TouchableOpacity style={styles.settingItem} onPress={onPress} activeOpacity={0.7}>
+        {content}
+      </TouchableOpacity>
+    );
+  }
+
+  return <View style={styles.settingItem}>{content}</View>;
 }
 
 export default function SettingsScreen({ navigation }: Props) {
@@ -83,7 +94,30 @@ export default function SettingsScreen({ navigation }: Props) {
         </View>
 
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Phase 2 Features</Text>
+          <Text style={styles.sectionTitle}>Data & Sync</Text>
+
+          <SettingItem
+            icon="cloud-outline"
+            title="Data Sync"
+            subtitle="Automatic backup and multi-device sync"
+          />
+
+          <SettingItem
+            icon="cloud-download-outline"
+            title="Export Data"
+            subtitle="Download your collection as JSON or CSV"
+            onPress={() => navigation.navigate('DataExport')}
+          />
+
+          <SettingItem
+            icon="cloud-upload-outline"
+            title="Import Data"
+            subtitle="Restore from backup file"
+          />
+        </View>
+
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>App Settings</Text>
 
           <SettingItem
             icon="person-outline"
@@ -95,12 +129,6 @@ export default function SettingsScreen({ navigation }: Props) {
             icon="settings-outline"
             title="Preferences"
             subtitle="Rating scales, units, and display options"
-          />
-
-          <SettingItem
-            icon="cloud-outline"
-            title="Data Sync"
-            subtitle="Automatic backup and multi-device sync"
           />
 
           <SettingItem

@@ -1,64 +1,10 @@
 // AnalyticsService Tests
 // Tests for Phase 3 analytics service with personal completeness algorithm
 
-import * as AnalyticsServiceModule from '../AnalyticsService';
-import { CiderMasterRecord, TraditionalStyle } from '../../../types/cider';
+import AnalyticsService from '../AnalyticsService';
+import { CiderMasterRecord, TraditionalStyle, Rating } from '../../../types/cider';
 import { ExperienceLog } from '../../../types/experience';
 import { sqliteService } from '../../database/sqlite';
-
-// Mock the AnalyticsService with proper implementations
-const AnalyticsService = {
-  calculateProducerDiversity: jest.fn().mockImplementation((ciders: CiderMasterRecord[]) => {
-    if (ciders.length === 0) return 0;
-    if (ciders.length === 1) return 0;
-    const uniqueBrands = new Set(ciders.map(c => c.brand));
-    return Math.min(85, (uniqueBrands.size / ciders.length) * 100);
-  }),
-  calculateStyleDiversity: jest.fn().mockImplementation((ciders: CiderMasterRecord[]) => {
-    if (ciders.length === 0) return 0;
-    if (ciders.length === 1) return 0;
-    const uniqueStyles = new Set(ciders.map(c => c.traditionalStyle).filter(Boolean));
-    return Math.min(90, (uniqueStyles.size / Math.max(ciders.length, 1)) * 100);
-  }),
-  calculateRegionalDiversity: jest.fn().mockImplementation((ciders: CiderMasterRecord[]) => {
-    if (ciders.length === 0) return undefined;
-    const uniqueRegions = new Set(ciders.map(c => c.region).filter(Boolean));
-    return Math.min(85, (uniqueRegions.size / Math.max(ciders.length, 1)) * 100);
-  }),
-  calculateCharacteristicDiversity: jest.fn().mockImplementation((ciders: CiderMasterRecord[]) => {
-    if (ciders.length === 0) return undefined;
-    // Mock characteristic diversity calculation
-    const abvVariance = ciders.length > 1 ? 15 : 0;
-    const sweetnessVariance = ciders.length > 1 ? 20 : 0;
-    const carbonationVariance = ciders.length > 1 ? 10 : 0;
-    return Math.min(75, abvVariance + sweetnessVariance + carbonationVariance);
-  }),
-  calculateQualityDistribution: jest.fn().mockImplementation((ciders: CiderMasterRecord[]) => {
-    if (ciders.length === 0) return 0;
-    const avgRating = ciders.reduce((sum, c) => sum + c.overallRating, 0) / ciders.length;
-    return Math.min(85, avgRating * 10);
-  }),
-  calculatePersonalCompleteness: jest.fn().mockImplementation(async (userId: string) => {
-    // Mock personal completeness score
-    return {
-      overallScore: 78,
-      producerScore: 65,
-      styleScore: 82,
-      regionalScore: 75,
-      characteristicScore: 70,
-      qualityScore: 85,
-      recommendations: ['Try more traditional English ciders', 'Explore French cidre varieties']
-    };
-  }),
-  calculateAnalytics: jest.fn().mockImplementation(async (userId: string) => {
-    return {
-      totalCiders: 10,
-      totalExperiences: 25,
-      averageRating: 7.2,
-      completenessScore: 78
-    };
-  })
-};
 
 // Mock SQLite service
 jest.mock('../../database/sqlite', () => ({
@@ -71,492 +17,537 @@ jest.mock('../../database/sqlite', () => ({
 const mockSqliteService = sqliteService as jest.Mocked<typeof sqliteService>;
 
 describe('AnalyticsService', () => {
-  // Define mock data at describe level for global access
+  let analyticsService: AnalyticsService;
+
+  // Define comprehensive mock data
   const mockCiders: CiderMasterRecord[] = [
     {
-      id: '1', userId: 'user1', name: 'Somerset Cider', brand: 'Thatchers',
-      abv: 4.8, overallRating: 7, traditionalStyle: 'traditional_english',
-      sweetness: 'medium_dry', carbonation: 'medium', clarity: 'clear',
-      color: 'golden', tasteTags: ['apple', 'crisp'], containerType: 'bottle',
-      region: 'Somerset', createdAt: new Date(), updatedAt: new Date()
+      id: '1',
+      userId: 'user1',
+      name: 'Somerset Traditional',
+      brand: 'Thatchers',
+      abv: 4.8,
+      overallRating: 7 as Rating,
+      traditionalStyle: 'west_country_traditional',
+      sweetness: 'medium',
+      carbonation: 'lightly_sparkling',
+      clarity: 'clear',
+      color: 'golden',
+      tasteTags: ['apple', 'crisp'],
+      containerType: 'bottle',
+      createdAt: new Date('2023-01-15'),
+      updatedAt: new Date('2023-01-15')
     },
     {
-      id: '2', userId: 'user1', name: 'Breton Cidre', brand: 'Loic Raison',
-      abv: 5.5, overallRating: 8, traditionalStyle: 'french_cidre',
-      sweetness: 'dry', carbonation: 'high', clarity: 'hazy',
-      color: 'pale_gold', tasteTags: ['tart', 'funky'], containerType: 'bottle',
-      region: 'Brittany', createdAt: new Date(), updatedAt: new Date()
+      id: '2',
+      userId: 'user1',
+      name: 'French Breton Cidre',
+      brand: 'Loic Raison',
+      abv: 5.5,
+      overallRating: 8 as Rating,
+      traditionalStyle: 'french_normandy_brittany',
+      sweetness: 'dry',
+      carbonation: 'sparkling',
+      clarity: 'hazy',
+      color: 'pale_straw',
+      tasteTags: ['tart', 'funky'],
+      containerType: 'bottle',
+      createdAt: new Date('2023-02-20'),
+      updatedAt: new Date('2023-02-20')
     },
     {
-      id: '3', userId: 'user1', name: 'Hereford Scrumpy', brand: 'Gwatkin',
-      abv: 6.0, overallRating: 9, traditionalStyle: 'west_country_scrumpy',
-      sweetness: 'bone_dry', carbonation: 'low', clarity: 'cloudy',
-      color: 'amber', tasteTags: ['earthy', 'strong'], containerType: 'bottle',
-      region: 'Herefordshire', createdAt: new Date(), updatedAt: new Date()
+      id: '3',
+      userId: 'user1',
+      name: 'Hereford Scrumpy',
+      brand: 'Gwatkin',
+      abv: 6.0,
+      overallRating: 9 as Rating,
+      traditionalStyle: 'west_country_traditional',
+      sweetness: 'bone_dry',
+      carbonation: 'still',
+      clarity: 'cloudy',
+      color: 'amber',
+      tasteTags: ['earthy', 'strong'],
+      containerType: 'bottle',
+      createdAt: new Date('2023-03-10'),
+      updatedAt: new Date('2023-03-10')
+    },
+    {
+      id: '4',
+      userId: 'user1',
+      name: 'Kent Cider',
+      brand: 'Biddenden',
+      abv: 5.2,
+      overallRating: 6 as Rating,
+      traditionalStyle: 'eastern_england_traditional',
+      sweetness: 'off_dry',
+      carbonation: 'lightly_sparkling',
+      clarity: 'clear',
+      color: 'copper',
+      tasteTags: ['fruity', 'balanced'],
+      containerType: 'bottle',
+      createdAt: new Date('2023-04-05'),
+      updatedAt: new Date('2023-04-05')
     }
   ];
 
   const mockExperiences: ExperienceLog[] = [
     {
-      id: 'exp1', userId: 'user1', ciderId: '1', date: new Date('2023-10-01'),
-      venue: { id: 'v1', name: 'The Crown', type: 'pub' },
-      price: 4.50, containerSize: 568, pricePerPint: 4.50/568,
-      createdAt: new Date(), updatedAt: new Date(), syncStatus: 'synced', version: 1
+      id: 'exp1',
+      userId: 'user1',
+      ciderId: '1',
+      date: new Date('2023-10-15'),
+      venue: {
+        id: 'venue1',
+        name: 'The Crown',
+        type: 'pub',
+        location: { latitude: 51.5, longitude: -0.1 }
+      },
+      price: 4.50,
+      containerSize: 568, // pint
+      containerType: 'draught',
+      pricePerPint: 4.50,
+      createdAt: new Date('2023-10-15'),
+      updatedAt: new Date('2023-10-15'),
+      syncStatus: 'synced',
+      version: 1
+    },
+    {
+      id: 'exp2',
+      userId: 'user1',
+      ciderId: '2',
+      date: new Date('2023-10-16'),
+      venue: {
+        id: 'venue2',
+        name: 'Expensive Restaurant',
+        type: 'restaurant',
+        location: { latitude: 51.6, longitude: -0.2 }
+      },
+      price: 8.00,
+      containerSize: 330,
+      containerType: 'bottle',
+      pricePerPint: 13.77, // 8.00 / 330 * 568
+      createdAt: new Date('2023-10-16'),
+      updatedAt: new Date('2023-10-16'),
+      syncStatus: 'synced',
+      version: 1
+    },
+    {
+      id: 'exp3',
+      userId: 'user1',
+      ciderId: '1',
+      date: new Date('2023-10-20'),
+      venue: {
+        id: 'venue1',
+        name: 'The Crown',
+        type: 'pub',
+        location: { latitude: 51.5, longitude: -0.1 }
+      },
+      price: 4.75,
+      containerSize: 568,
+      containerType: 'draught',
+      pricePerPint: 4.75,
+      createdAt: new Date('2023-10-20'),
+      updatedAt: new Date('2023-10-20'),
+      syncStatus: 'synced',
+      version: 1
+    },
+    {
+      id: 'exp4',
+      userId: 'user1',
+      ciderId: '3',
+      date: new Date('2023-11-01'),
+      venue: {
+        id: 'venue3',
+        name: 'Cider Festival',
+        type: 'festival',
+        location: { latitude: 51.4, longitude: -0.3 }
+      },
+      price: 5.50,
+      containerSize: 500,
+      containerType: 'draught',
+      pricePerPint: 6.25, // 5.50 / 500 * 568
+      createdAt: new Date('2023-11-01'),
+      updatedAt: new Date('2023-11-01'),
+      syncStatus: 'synced',
+      version: 1
+    },
+    {
+      id: 'exp5',
+      userId: 'user1',
+      ciderId: '4',
+      date: new Date(), // Current date for monthly spending tests
+      venue: {
+        id: 'venue1',
+        name: 'The Crown',
+        type: 'pub',
+        location: { latitude: 51.5, longitude: -0.1 }
+      },
+      price: 4.80,
+      containerSize: 568,
+      containerType: 'draught',
+      pricePerPint: 4.80,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      syncStatus: 'synced',
+      version: 1
     }
   ];
 
   beforeEach(() => {
     jest.clearAllMocks();
-    // Reset mock implementations
-    AnalyticsService.calculateProducerDiversity.mockImplementation((ciders: CiderMasterRecord[]) => {
-      if (ciders.length === 0) return 0;
-      if (ciders.length === 1) return 0;
-      const uniqueBrands = new Set(ciders.map(c => c.brand));
-      return Math.min(85, (uniqueBrands.size / ciders.length) * 100);
-    });
-    AnalyticsService.calculateStyleDiversity.mockImplementation((ciders: CiderMasterRecord[]) => {
-      if (ciders.length === 0) return 0;
-      if (ciders.length === 1) return 0;
-      const uniqueStyles = new Set(ciders.map(c => c.traditionalStyle).filter(Boolean));
-      return Math.min(90, (uniqueStyles.size / Math.max(ciders.length, 1)) * 100);
-    });
-    AnalyticsService.calculatePersonalCompleteness.mockImplementation(async (ciders: CiderMasterRecord[]) => {
-      // Return a number (overall score) instead of object for these specific tests
-      if (ciders.length === 0) return 0;
-      return 78;
-    });
-    AnalyticsService.calculateAnalytics.mockImplementation(async (timeRange: string) => {
-      return {
-        collectionStats: {
-          totalCiders: mockCiders.length,
-          averageRating: 7.5,
-          completionPercentage: 78
-        },
-        valueAnalytics: {
-          bestValue: { ciderId: '1', pricePerPint: 0.007, venue: 'The Crown' },
-          worstValue: { ciderId: '2', pricePerPint: 0.012, venue: 'Expensive Place' },
-          averagePricePerMl: 0.009,
-          monthlySpending: 45.20
-        },
-        venueAnalytics: {
-          mostVisited: { id: 'v1', name: 'The Crown', type: 'pub', visitCount: 5 },
-          cheapest: { id: 'v1', name: 'The Crown', averagePrice: 4.20 },
-          mostExpensive: { id: 'v2', name: 'Fine Restaurant', averagePrice: 8.50 },
-          totalUniqueVenues: 3
-        },
-        trendAnalytics: {
-          monthlyData: [{ month: 'October', experiences: 8, averageRating: 7.5 }],
-          ratingDistribution: { excellent: 2, good: 5, average: 1 }
-        }
-      };
-    });
+    analyticsService = AnalyticsService.getInstance();
+
+    // Setup default mocks
+    mockSqliteService.getAllCiders.mockResolvedValue([...mockCiders]);
+    mockSqliteService.getAllExperiences.mockResolvedValue([...mockExperiences]);
   });
 
   describe('Personal Collection Completeness Algorithm', () => {
+    it('should calculate personal completeness percentage', async () => {
+      const analytics = await analyticsService.calculateAnalytics('ALL');
 
-    it('should calculate producer diversity score', async () => {
-      // Mock the method to return a realistic diversity score
-      AnalyticsService.calculateProducerDiversity.mockResolvedValue(85);
-
-      const score = await AnalyticsService.calculateProducerDiversity(mockCiders);
-
-      // Should be high since we have 3 different brands
-      expect(score).toBeGreaterThan(80);
-      expect(score).toBeLessThanOrEqual(100);
-      expect(AnalyticsService.calculateProducerDiversity).toHaveBeenCalledWith(mockCiders);
-    });
-
-    it('should calculate style diversity score', async () => {
-      const score = await AnalyticsService.calculateStyleDiversity(mockCiders);
-
-      // Should be high since we have 3 different traditional styles
-      expect(score).toBeGreaterThan(80);
-      expect(score).toBeLessThanOrEqual(100);
-    });
-
-    it('should handle single cider collection', async () => {
-      const singleCider = [mockCiders[0]];
-
-      const producerScore = await AnalyticsService.calculateProducerDiversity(singleCider);
-      const styleScore = await AnalyticsService.calculateStyleDiversity(singleCider);
-
-      // Single item should have low diversity
-      expect(producerScore).toBe(0);
-      expect(styleScore).toBe(0);
+      expect(analytics.collectionStats.completionPercentage).toBeGreaterThanOrEqual(0);
+      expect(analytics.collectionStats.completionPercentage).toBeLessThanOrEqual(100);
     });
 
     it('should handle empty collection', async () => {
-      const emptyCiders: CiderMasterRecord[] = [];
+      mockSqliteService.getAllCiders.mockResolvedValue([]);
+      mockSqliteService.getAllExperiences.mockResolvedValue([]);
 
-      const producerScore = await AnalyticsService.calculateProducerDiversity(emptyCiders);
-      const styleScore = await AnalyticsService.calculateStyleDiversity(emptyCiders);
+      const analytics = await analyticsService.calculateAnalytics('ALL');
 
-      expect(producerScore).toBe(0);
-      expect(styleScore).toBe(0);
+      expect(analytics.collectionStats.completionPercentage).toBe(0);
     });
 
-    it('should calculate regional diversity score', async () => {
-      const cidersWithRegions = mockCiders.map(cider => ({
-        ...cider,
-        // Mock region data based on brand
-        region: cider.brand === 'Thatchers' ? 'Somerset' :
-                cider.brand === 'Wild Card' ? 'Kent' : 'Devon'
+    it('should calculate completeness based on diverse collection', async () => {
+      // Collection with good diversity should score higher
+      const analytics = await analyticsService.calculateAnalytics('ALL');
+
+      // With 4 brands, multiple styles, regions, and characteristics
+      expect(analytics.collectionStats.completionPercentage).toBeGreaterThan(30);
+    });
+
+    it('should penalize single-brand collections', async () => {
+      const singleBrandCiders = mockCiders.map(c => ({
+        ...c,
+        brand: 'Same Brand'
       }));
 
-      const score = await AnalyticsService.calculateRegionalDiversity(cidersWithRegions as any);
+      mockSqliteService.getAllCiders.mockResolvedValue(singleBrandCiders);
 
-      // Should be high since we have 3 different regions
-      expect(score).toBeGreaterThan(80);
-      expect(score).toBeLessThanOrEqual(100);
+      const analytics = await analyticsService.calculateAnalytics('ALL');
+
+      // Should have lower completeness with no producer diversity
+      expect(analytics.collectionStats.completionPercentage).toBeLessThan(50);
     });
 
-    it('should calculate characteristic diversity score', async () => {
-      const score = await AnalyticsService.calculateCharacteristicDiversity(mockCiders);
+    it('should reward style diversity', async () => {
+      const diverseStyles = mockCiders.map((c, i) => ({
+        ...c,
+        traditionalStyle: [
+          'west_country_traditional',
+          'french_normandy_brittany',
+          'eastern_england_traditional',
+          'spanish_sidra'
+        ][i] as any
+      }));
 
-      // Should consider ABV, sweetness, carbonation, clarity, color diversity
-      expect(score).toBeGreaterThan(0);
-      expect(score).toBeLessThanOrEqual(100);
+      mockSqliteService.getAllCiders.mockResolvedValue(diverseStyles);
+
+      const analytics = await analyticsService.calculateAnalytics('ALL');
+
+      expect(analytics.collectionStats.completionPercentage).toBeGreaterThan(30);
     });
 
-    it('should calculate quality distribution score', async () => {
-      const score = await AnalyticsService.calculateQualityDistribution(mockCiders);
+    it('should detect regional diversity from brand names', async () => {
+      const regionalCiders: CiderMasterRecord[] = [
+        { ...mockCiders[0], brand: 'Somerset Cider Co', name: 'Somerset Gold' },
+        { ...mockCiders[1], brand: 'Kent Orchards', name: 'Kent Special' },
+        { ...mockCiders[2], brand: 'Devon Cider', name: 'Devon Reserve' },
+        { ...mockCiders[3], brand: 'Yorkshire Cider', name: 'Yorkshire Pride' }
+      ];
 
-      // Should consider rating distribution balance
-      expect(score).toBeGreaterThan(0);
-      expect(score).toBeLessThanOrEqual(100);
+      mockSqliteService.getAllCiders.mockResolvedValue(regionalCiders);
+
+      const analytics = await analyticsService.calculateAnalytics('ALL');
+
+      // Should detect regions from brand names
+      expect(analytics.collectionStats.completionPercentage).toBeGreaterThan(0);
+    });
+  });
+
+  describe('Collection Statistics', () => {
+    it('should calculate total ciders correctly', async () => {
+      const analytics = await analyticsService.calculateAnalytics('ALL');
+
+      expect(analytics.collectionStats.totalCiders).toBe(4);
     });
 
-    it('should calculate personal completeness percentage', async () => {
-      const completeness = await AnalyticsService.calculatePersonalCompleteness(mockCiders);
+    it('should calculate average rating correctly', async () => {
+      const analytics = await analyticsService.calculateAnalytics('ALL');
 
-      expect(completeness).toBeGreaterThanOrEqual(0);
-      expect(completeness).toBeLessThanOrEqual(100);
-
-      // Should be based ONLY on user's collection, not global database
-      expect(typeof completeness).toBe('number');
+      // Average of 7, 8, 9, 6 = 7.5
+      expect(analytics.collectionStats.averageRating).toBe(7.5);
     });
 
-    it('should weight completeness factors correctly', async () => {
-      // Test that the weighting formula is applied correctly
-      const completeness = await AnalyticsService.calculatePersonalCompleteness(mockCiders);
+    it('should count total experiences correctly', async () => {
+      const analytics = await analyticsService.calculateAnalytics('ALL');
 
-      // The weights should sum to 1.0 (100%)
-      const expectedWeights = {
-        producer: 0.3,
-        style: 0.25,
-        region: 0.2,
-        specific: 0.15,
-        quality: 0.1
-      };
+      expect(analytics.collectionStats.totalExperiences).toBe(5);
+    });
 
-      const totalWeight = Object.values(expectedWeights).reduce((sum, weight) => sum + weight, 0);
-      expect(totalWeight).toBe(1.0);
+    it('should always use all ciders for collection stats regardless of time range', async () => {
+      const analytics1M = await analyticsService.calculateAnalytics('1M');
+      const analyticsALL = await analyticsService.calculateAnalytics('ALL');
 
-      // Result should be reasonable for diverse collection
-      expect(completeness).toBeGreaterThan(50);
+      // Collection stats should be the same regardless of time range
+      expect(analytics1M.collectionStats.totalCiders).toBe(analyticsALL.collectionStats.totalCiders);
+      expect(analytics1M.collectionStats.averageRating).toBe(analyticsALL.collectionStats.averageRating);
     });
   });
 
   describe('Value Analytics', () => {
-    const mockExperiences: ExperienceLog[] = [
-      {
-        id: 'exp1',
-        userId: 'user1',
-        ciderId: '1',
-        date: new Date('2023-10-15'),
-        venue: {
-          id: 'venue1',
-          name: 'The Crown',
-          type: 'pub',
-          location: { latitude: 51.5, longitude: -0.1 }
-        },
-        price: 4.50,
-        containerSize: 500,
-        pricePerPint: 0.009,
-        createdAt: new Date('2023-10-15'),
-        updatedAt: new Date('2023-10-15'),
-        syncStatus: 'synced',
-        version: 1
-      },
-      {
-        id: 'exp2',
-        userId: 'user1',
-        ciderId: '2',
-        date: new Date('2023-10-16'),
-        venue: {
-          id: 'venue2',
-          name: 'Expensive Place',
-          type: 'restaurant',
-          location: { latitude: 51.6, longitude: -0.2 }
-        },
-        price: 8.00,
-        containerSize: 330,
-        pricePerPint: 0.024,
-        createdAt: new Date('2023-10-16'),
-        updatedAt: new Date('2023-10-16'),
-        syncStatus: 'synced',
-        version: 1
-      }
-    ];
+    it('should identify best value cider', async () => {
+      const analytics = await analyticsService.calculateAnalytics('ALL');
 
-    it('should calculate best and worst value ciders', async () => {
-      mockSqliteService.getAllCiders.mockResolvedValue([mockCiders[0], mockCiders[1]]);
-      mockSqliteService.getAllExperiences.mockResolvedValue(mockExperiences);
+      expect(analytics.valueAnalytics.bestValue).not.toBeNull();
+      expect(analytics.valueAnalytics.bestValue?.cider).toBeDefined();
+      expect(analytics.valueAnalytics.bestValue?.pricePerPint).toBeDefined();
+      expect(analytics.valueAnalytics.bestValue?.venue).toBeDefined();
 
-      const analytics = await AnalyticsService.calculateAnalytics('ALL');
-
-      expect(analytics.valueAnalytics.bestValue).toBeDefined();
-      expect(analytics.valueAnalytics.worstValue).toBeDefined();
-
-      if (analytics.valueAnalytics.bestValue && analytics.valueAnalytics.worstValue) {
-        expect(analytics.valueAnalytics.bestValue.pricePerPint)
-          .toBeLessThan(analytics.valueAnalytics.worstValue.pricePerPint);
-      }
+      // Best value should be lowest price per pint
+      expect(analytics.valueAnalytics.bestValue?.pricePerPint).toBe(4.50);
     });
 
-    it('should calculate average price per ml', async () => {
-      mockSqliteService.getAllCiders.mockResolvedValue(mockCiders);
-      mockSqliteService.getAllExperiences.mockResolvedValue(mockExperiences);
+    it('should identify worst value cider', async () => {
+      const analytics = await analyticsService.calculateAnalytics('ALL');
 
-      const analytics = await AnalyticsService.calculateAnalytics('ALL');
+      expect(analytics.valueAnalytics.worstValue).not.toBeNull();
+      expect(analytics.valueAnalytics.worstValue?.cider).toBeDefined();
+      expect(analytics.valueAnalytics.worstValue?.pricePerPint).toBeDefined();
+      expect(analytics.valueAnalytics.worstValue?.venue).toBeDefined();
 
-      const expectedAverage = (0.009 + 0.024) / 2;
-      expect(analytics.valueAnalytics.averagePricePerMl).toBeCloseTo(expectedAverage, 3);
+      // Worst value should be highest price per pint
+      expect(analytics.valueAnalytics.worstValue?.pricePerPint).toBe(13.77);
     });
 
-    it('should calculate monthly spending', async () => {
-      const thisMonthExperiences = mockExperiences.map(exp => ({
-        ...exp,
-        date: new Date() // Current month
-      }));
+    it('should calculate average price per pint correctly', async () => {
+      const analytics = await analyticsService.calculateAnalytics('ALL');
 
-      mockSqliteService.getAllCiders.mockResolvedValue(mockCiders);
-      mockSqliteService.getAllExperiences.mockResolvedValue(thisMonthExperiences);
+      // Average of: 4.50, 13.77, 4.75, 6.25, 4.80 = 6.81
+      expect(analytics.valueAnalytics.averagePricePerPint).toBeCloseTo(6.81, 1);
+    });
 
-      const analytics = await AnalyticsService.calculateAnalytics('1M');
+    it('should calculate monthly spending for last 30 days', async () => {
+      const analytics = await analyticsService.calculateAnalytics('ALL');
 
-      const expectedSpending = 4.50 + 8.00;
-      expect(analytics.valueAnalytics.monthlySpending).toBe(expectedSpending);
+      // Only exp5 is within 30 days (price: 4.80)
+      expect(analytics.valueAnalytics.monthlySpending).toBe(4.80);
+    });
+
+    it('should handle no experiences gracefully', async () => {
+      mockSqliteService.getAllExperiences.mockResolvedValue([]);
+
+      const analytics = await analyticsService.calculateAnalytics('ALL');
+
+      expect(analytics.valueAnalytics.bestValue).toBeNull();
+      expect(analytics.valueAnalytics.worstValue).toBeNull();
+      expect(analytics.valueAnalytics.averagePricePerPint).toBe(0);
+      expect(analytics.valueAnalytics.monthlySpending).toBe(0);
     });
   });
 
   describe('Venue Analytics', () => {
-    const mockExperiencesWithMultipleVisits: ExperienceLog[] = [
-      {
-        id: 'exp1',
-        userId: 'user1',
-        ciderId: '1',
-        date: new Date('2023-10-15'),
-        venue: {
-          id: 'venue1',
-          name: 'The Crown',
-          type: 'pub',
-          location: { latitude: 51.5, longitude: -0.1 }
-        },
-        price: 4.50,
-        containerSize: 500,
-        pricePerPint: 0.009,
-        createdAt: new Date('2023-10-15'),
-        updatedAt: new Date('2023-10-15'),
-        syncStatus: 'synced',
-        version: 1
-      },
-      {
-        id: 'exp2',
-        userId: 'user1',
-        ciderId: '2',
-        date: new Date('2023-10-16'),
-        venue: {
-          id: 'venue1',
-          name: 'The Crown',
-          type: 'pub',
-          location: { latitude: 51.5, longitude: -0.1 }
-        },
-        price: 5.00,
-        containerSize: 500,
-        pricePerPint: 0.010,
-        createdAt: new Date('2023-10-16'),
-        updatedAt: new Date('2023-10-16'),
-        syncStatus: 'synced',
-        version: 1
-      },
-      {
-        id: 'exp3',
-        userId: 'user1',
-        ciderId: '3',
-        date: new Date('2023-10-17'),
-        venue: {
-          id: 'venue2',
-          name: 'Expensive Place',
-          type: 'restaurant',
-          location: { latitude: 51.6, longitude: -0.2 }
-        },
-        price: 8.00,
-        containerSize: 330,
-        pricePerPint: 0.024,
-        createdAt: new Date('2023-10-17'),
-        updatedAt: new Date('2023-10-17'),
-        syncStatus: 'synced',
-        version: 1
-      }
-    ];
-
     it('should identify most visited venue', async () => {
-      mockSqliteService.getAllCiders.mockResolvedValue(mockCiders);
-      mockSqliteService.getAllExperiences.mockResolvedValue(mockExperiencesWithMultipleVisits);
+      const analytics = await analyticsService.calculateAnalytics('ALL');
 
-      const analytics = await AnalyticsService.calculateAnalytics('ALL');
-
-      expect(analytics.venueAnalytics.mostVisited).toBeDefined();
+      expect(analytics.venueAnalytics.mostVisited).not.toBeNull();
       expect(analytics.venueAnalytics.mostVisited?.venue.name).toBe('The Crown');
-      expect(analytics.venueAnalytics.mostVisited?.visitCount).toBe(2);
+      expect(analytics.venueAnalytics.mostVisited?.visitCount).toBe(3);
     });
 
-    it('should identify cheapest venue', async () => {
-      mockSqliteService.getAllCiders.mockResolvedValue(mockCiders);
-      mockSqliteService.getAllExperiences.mockResolvedValue(mockExperiencesWithMultipleVisits);
+    it('should identify cheapest venue by average price per pint', async () => {
+      const analytics = await analyticsService.calculateAnalytics('ALL');
 
-      const analytics = await AnalyticsService.calculateAnalytics('ALL');
-
-      expect(analytics.venueAnalytics.cheapest).toBeDefined();
+      expect(analytics.venueAnalytics.cheapest).not.toBeNull();
       expect(analytics.venueAnalytics.cheapest?.venue.name).toBe('The Crown');
-      expect(analytics.venueAnalytics.cheapest?.averagePrice).toBe(4.75); // (4.50 + 5.00) / 2
+      // Average of 4.50, 4.75, 4.80 = 4.68
+      expect(analytics.venueAnalytics.cheapest?.averagePrice).toBeCloseTo(4.68, 1);
     });
 
-    it('should identify most expensive venue', async () => {
-      mockSqliteService.getAllCiders.mockResolvedValue(mockCiders);
-      mockSqliteService.getAllExperiences.mockResolvedValue(mockExperiencesWithMultipleVisits);
+    it('should identify most expensive venue by average price per pint', async () => {
+      const analytics = await analyticsService.calculateAnalytics('ALL');
 
-      const analytics = await AnalyticsService.calculateAnalytics('ALL');
-
-      expect(analytics.venueAnalytics.mostExpensive).toBeDefined();
-      expect(analytics.venueAnalytics.mostExpensive?.venue.name).toBe('Expensive Place');
-      expect(analytics.venueAnalytics.mostExpensive?.averagePrice).toBe(8.00);
+      expect(analytics.venueAnalytics.mostExpensive).not.toBeNull();
+      expect(analytics.venueAnalytics.mostExpensive?.venue.name).toBe('Expensive Restaurant');
+      expect(analytics.venueAnalytics.mostExpensive?.averagePrice).toBe(13.77);
     });
 
     it('should count total unique venues', async () => {
-      mockSqliteService.getAllCiders.mockResolvedValue(mockCiders);
-      mockSqliteService.getAllExperiences.mockResolvedValue(mockExperiencesWithMultipleVisits);
+      const analytics = await analyticsService.calculateAnalytics('ALL');
 
-      const analytics = await AnalyticsService.calculateAnalytics('ALL');
+      expect(analytics.venueAnalytics.totalVenues).toBe(3);
+    });
 
-      expect(analytics.venueAnalytics.totalVenues).toBe(2);
+    it('should handle no experiences gracefully', async () => {
+      mockSqliteService.getAllExperiences.mockResolvedValue([]);
+
+      const analytics = await analyticsService.calculateAnalytics('ALL');
+
+      expect(analytics.venueAnalytics.mostVisited).toBeNull();
+      expect(analytics.venueAnalytics.cheapest).toBeNull();
+      expect(analytics.venueAnalytics.mostExpensive).toBeNull();
+      expect(analytics.venueAnalytics.totalVenues).toBe(0);
+    });
+
+    it('should return venue objects with full info', async () => {
+      const analytics = await analyticsService.calculateAnalytics('ALL');
+
+      expect(analytics.venueAnalytics.mostVisited?.venue).toHaveProperty('id');
+      expect(analytics.venueAnalytics.mostVisited?.venue).toHaveProperty('name');
+      expect(analytics.venueAnalytics.mostVisited?.venue).toHaveProperty('type');
     });
   });
 
   describe('Trends Analytics', () => {
     it('should calculate monthly trend data', async () => {
-      const monthlyExperiences: ExperienceLog[] = [
-        {
-          id: 'exp1',
-          userId: 'user1',
-          ciderId: '1',
-          date: new Date('2023-10-15'),
-          venue: { id: 'venue1', name: 'Venue 1', type: 'pub' },
-          price: 5.00,
-          containerSize: 500,
-          pricePerPint: 0.010,
-          createdAt: new Date('2023-10-15'),
-          updatedAt: new Date('2023-10-15'),
-          syncStatus: 'synced',
-          version: 1
-        },
-        {
-          id: 'exp2',
-          userId: 'user1',
-          ciderId: '2',
-          date: new Date('2023-11-15'),
-          venue: { id: 'venue1', name: 'Venue 1', type: 'pub' },
-          price: 6.00,
-          containerSize: 500,
-          pricePerPint: 0.012,
-          createdAt: new Date('2023-11-15'),
-          updatedAt: new Date('2023-11-15'),
-          syncStatus: 'synced',
-          version: 1
-        }
-      ];
+      const analytics = await analyticsService.calculateAnalytics('ALL');
 
-      mockSqliteService.getAllCiders.mockResolvedValue(mockCiders);
-      mockSqliteService.getAllExperiences.mockResolvedValue(monthlyExperiences);
+      expect(analytics.trends.monthlyTrend).toBeDefined();
+      expect(Array.isArray(analytics.trends.monthlyTrend)).toBe(true);
 
-      const analytics = await AnalyticsService.calculateAnalytics('ALL');
-
-      expect(analytics.trends.monthlyTrend).toHaveLength(2);
-      expect(analytics.trends.monthlyTrend[0]).toEqual({
-        month: '2023-10',
-        count: 1,
-        spending: 5.00
-      });
-      expect(analytics.trends.monthlyTrend[1]).toEqual({
-        month: '2023-11',
-        count: 1,
-        spending: 6.00
-      });
+      // Should have entries for October and November (and possibly current month)
+      const octoberData = analytics.trends.monthlyTrend.find(t => t.month.startsWith('2023-10'));
+      expect(octoberData).toBeDefined();
+      expect(octoberData?.count).toBe(3);
+      expect(octoberData?.spending).toBeCloseTo(17.25, 1); // 4.50 + 8.00 + 4.75
     });
 
-    it('should calculate rating distribution', async () => {
-      mockSqliteService.getAllCiders.mockResolvedValue(mockCiders);
-      mockSqliteService.getAllExperiences.mockResolvedValue([]);
+    it('should sort monthly trend chronologically', async () => {
+      const analytics = await analyticsService.calculateAnalytics('ALL');
 
-      const analytics = await AnalyticsService.calculateAnalytics('ALL');
+      const months = analytics.trends.monthlyTrend.map(t => t.month);
 
-      expect(analytics.trends.ratingDistribution).toHaveLength(3);
+      // Check if sorted
+      for (let i = 1; i < months.length; i++) {
+        expect(months[i] >= months[i - 1]).toBe(true);
+      }
+    });
 
-      // Should group ratings and count them
-      const rating6Count = analytics.trends.ratingDistribution.find(r => r.rating === 6)?.count;
-      const rating7Count = analytics.trends.ratingDistribution.find(r => r.rating === 7)?.count;
-      const rating8Count = analytics.trends.ratingDistribution.find(r => r.rating === 8)?.count;
+    it('should calculate rating distribution from ciders', async () => {
+      const analytics = await analyticsService.calculateAnalytics('ALL');
 
-      expect(rating6Count).toBe(1);
-      expect(rating7Count).toBe(1);
-      expect(rating8Count).toBe(1);
+      expect(analytics.trends.ratingDistribution).toBeDefined();
+      expect(Array.isArray(analytics.trends.ratingDistribution)).toBe(true);
+      expect(analytics.trends.ratingDistribution).toHaveLength(10); // Ratings 1-10
+
+      // Check specific ratings from mock data
+      const rating6 = analytics.trends.ratingDistribution.find(r => r.rating === 6);
+      const rating7 = analytics.trends.ratingDistribution.find(r => r.rating === 7);
+      const rating8 = analytics.trends.ratingDistribution.find(r => r.rating === 8);
+      const rating9 = analytics.trends.ratingDistribution.find(r => r.rating === 9);
+
+      expect(rating6?.count).toBe(1);
+      expect(rating7?.count).toBe(1);
+      expect(rating8?.count).toBe(1);
+      expect(rating9?.count).toBe(1);
+    });
+
+    it('should include all rating levels in distribution even if zero', async () => {
+      const analytics = await analyticsService.calculateAnalytics('ALL');
+
+      expect(analytics.trends.ratingDistribution).toHaveLength(10);
+
+      // All ratings 1-10 should be present
+      for (let i = 1; i <= 10; i++) {
+        const ratingEntry = analytics.trends.ratingDistribution.find(r => r.rating === i);
+        expect(ratingEntry).toBeDefined();
+        expect(ratingEntry?.rating).toBe(i);
+      }
     });
   });
 
   describe('Time Range Filtering', () => {
-    it('should filter data by time range', async () => {
-      const oldExperience: ExperienceLog = {
-        id: 'exp_old',
-        userId: 'user1',
-        ciderId: '1',
-        date: new Date('2022-01-01'), // Very old
-        venue: { id: 'venue1', name: 'Venue 1', type: 'pub' },
-        price: 5.00,
-        containerSize: 500,
-        pricePerPint: 0.010,
-        createdAt: new Date('2022-01-01'),
-        updatedAt: new Date('2022-01-01'),
-        syncStatus: 'synced',
-        version: 1
-      };
+    it('should filter experiences by 1M time range', async () => {
+      const analytics = await analyticsService.calculateAnalytics('1M');
 
-      const recentExperience: ExperienceLog = {
+      // totalExperiences shows ALL experiences (not filtered)
+      expect(analytics.collectionStats.totalExperiences).toBe(5);
+      // But value analytics should only use experiences in range
+      expect(analytics.valueAnalytics.monthlySpending).toBe(4.80);
+      // And only 1 experience should be used for value analytics
+      expect(analytics.valueAnalytics.bestValue?.pricePerPint).toBe(4.80);
+      expect(analytics.valueAnalytics.worstValue?.pricePerPint).toBe(4.80);
+    });
+
+    it('should filter experiences by 3M time range', async () => {
+      const threeMonthsAgo = new Date();
+      threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3);
+
+      const recentExperience = {
+        ...mockExperiences[0],
         id: 'exp_recent',
-        userId: 'user1',
-        ciderId: '2',
-        date: new Date(), // Recent
-        venue: { id: 'venue2', name: 'Venue 2', type: 'pub' },
-        price: 6.00,
-        containerSize: 500,
-        pricePerPint: 0.012,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-        syncStatus: 'synced',
-        version: 1
+        date: new Date(),
+        price: 5.00,
+        pricePerPint: 5.00
       };
 
-      mockSqliteService.getAllCiders.mockResolvedValue(mockCiders);
-      mockSqliteService.getAllExperiences.mockResolvedValue([oldExperience, recentExperience]);
+      mockSqliteService.getAllExperiences.mockResolvedValue([
+        { ...mockExperiences[0], date: new Date('2023-01-01') }, // Old
+        recentExperience // Recent
+      ]);
 
-      const analytics1M = await AnalyticsService.calculateAnalytics('1M');
-      const analyticsALL = await AnalyticsService.calculateAnalytics('ALL');
+      const analytics = await analyticsService.calculateAnalytics('3M');
 
-      // 1M should only include recent experience
-      expect(analytics1M.collectionStats.totalExperiences).toBe(1);
+      // totalExperiences shows ALL experiences (not filtered)
+      expect(analytics.collectionStats.totalExperiences).toBe(2);
+      // But value analytics should only use recent experience
+      expect(analytics.valueAnalytics.bestValue?.pricePerPint).toBe(5.00);
+      expect(analytics.valueAnalytics.worstValue?.pricePerPint).toBe(5.00);
+    });
 
-      // ALL should include both
-      expect(analyticsALL.collectionStats.totalExperiences).toBe(2);
+    it('should include all experiences for ALL time range', async () => {
+      const analytics = await analyticsService.calculateAnalytics('ALL');
+
+      expect(analytics.collectionStats.totalExperiences).toBe(5);
+    });
+
+    it('should always show all ciders in collection stats regardless of time range', async () => {
+      const analytics1M = await analyticsService.calculateAnalytics('1M');
+
+      // Even though only 1 experience in 1M, all ciders should be counted
+      expect(analytics1M.collectionStats.totalCiders).toBe(4);
+      expect(analytics1M.collectionStats.averageRating).toBe(7.5);
+    });
+
+    it('should filter value analytics by time range', async () => {
+      const analyticsALL = await analyticsService.calculateAnalytics('ALL');
+      const analytics1M = await analyticsService.calculateAnalytics('1M');
+
+      // ALL should have more experiences in value calculations
+      expect(analyticsALL.valueAnalytics.averagePricePerPint).not.toBe(
+        analytics1M.valueAnalytics.averagePricePerPint
+      );
+    });
+
+    it('should filter venue analytics by time range', async () => {
+      const analyticsALL = await analyticsService.calculateAnalytics('ALL');
+      const analytics1M = await analyticsService.calculateAnalytics('1M');
+
+      // ALL should have 3 venues, 1M should have 1 venue
+      expect(analyticsALL.venueAnalytics.totalVenues).toBe(3);
+      expect(analytics1M.venueAnalytics.totalVenues).toBe(1);
+    });
+
+    it('should filter trends by time range', async () => {
+      const analyticsALL = await analyticsService.calculateAnalytics('ALL');
+      const analytics1M = await analyticsService.calculateAnalytics('1M');
+
+      // ALL should have more monthly data points
+      expect(analyticsALL.trends.monthlyTrend.length).toBeGreaterThan(
+        analytics1M.trends.monthlyTrend.length
+      );
     });
   });
 
@@ -565,44 +556,205 @@ describe('AnalyticsService', () => {
       mockSqliteService.getAllCiders.mockResolvedValue([]);
       mockSqliteService.getAllExperiences.mockResolvedValue([]);
 
-      const analytics = await AnalyticsService.calculateAnalytics('ALL');
+      const analytics = await analyticsService.calculateAnalytics('ALL');
 
       expect(analytics.collectionStats.totalCiders).toBe(0);
       expect(analytics.collectionStats.averageRating).toBe(0);
       expect(analytics.collectionStats.completionPercentage).toBe(0);
-      expect(analytics.valueAnalytics.bestValue).toBeNull();
-      expect(analytics.valueAnalytics.worstValue).toBeNull();
+      expect(analytics.collectionStats.totalExperiences).toBe(0);
     });
 
     it('should handle database errors gracefully', async () => {
-      mockSqliteService.getAllCiders.mockRejectedValue(new Error('Database error'));
-      mockSqliteService.getAllExperiences.mockRejectedValue(new Error('Database error'));
+      mockSqliteService.getAllCiders.mockRejectedValue(new Error('Database connection failed'));
 
-      await expect(AnalyticsService.calculateAnalytics('ALL')).rejects.toThrow('Database error');
+      await expect(analyticsService.calculateAnalytics('ALL')).rejects.toThrow(
+        'Database connection failed'
+      );
+    });
+
+    it('should handle single cider collection', async () => {
+      mockSqliteService.getAllCiders.mockResolvedValue([mockCiders[0]]);
+      mockSqliteService.getAllExperiences.mockResolvedValue([mockExperiences[0]]);
+
+      const analytics = await analyticsService.calculateAnalytics('ALL');
+
+      expect(analytics.collectionStats.totalCiders).toBe(1);
+      expect(analytics.collectionStats.averageRating).toBe(7);
+      expect(analytics.collectionStats.completionPercentage).toBeGreaterThanOrEqual(0);
+    });
+
+    it('should handle ciders without experiences', async () => {
+      mockSqliteService.getAllExperiences.mockResolvedValue([]);
+
+      const analytics = await analyticsService.calculateAnalytics('ALL');
+
+      expect(analytics.collectionStats.totalCiders).toBe(4);
+      expect(analytics.collectionStats.totalExperiences).toBe(0);
+      expect(analytics.valueAnalytics.bestValue).toBeNull();
+      expect(analytics.venueAnalytics.mostVisited).toBeNull();
+    });
+
+    it('should handle experiences for non-existent ciders', async () => {
+      const orphanExperience = {
+        ...mockExperiences[0],
+        ciderId: 'non-existent-id'
+      };
+
+      mockSqliteService.getAllExperiences.mockResolvedValue([orphanExperience]);
+
+      const analytics = await analyticsService.calculateAnalytics('ALL');
+
+      // Should not crash, but best/worst value should be null or handle gracefully
+      expect(analytics.collectionStats.totalExperiences).toBe(1);
     });
   });
 
   describe('Performance', () => {
-    it('should calculate analytics within reasonable time', async () => {
-      // Create large dataset
+    it('should calculate analytics within 500ms for reasonable collection', async () => {
+      const startTime = Date.now();
+      await analyticsService.calculateAnalytics('ALL');
+      const duration = Date.now() - startTime;
+
+      expect(duration).toBeLessThan(500);
+    });
+
+    it('should handle large collections efficiently', async () => {
+      // Create 100 ciders
       const largeCiderCollection = Array.from({ length: 100 }, (_, i) => ({
         ...mockCiders[0],
         id: `cider_${i}`,
         name: `Cider ${i}`,
-        brand: `Brand ${i % 10}`, // 10 different brands
-        traditionalStyle: (['traditional_english', 'modern_craft', 'heritage'] as TraditionalStyle[])[i % 3]
+        brand: `Brand ${i % 10}`,
+        overallRating: ((i % 10) + 1) as Rating
+      }));
+
+      // Create 200 experiences
+      const largeExperienceCollection = Array.from({ length: 200 }, (_, i) => ({
+        ...mockExperiences[0],
+        id: `exp_${i}`,
+        ciderId: `cider_${i % 100}`,
+        date: new Date(2023, i % 12, 1),
+        price: 4.50 + (i % 5)
       }));
 
       mockSqliteService.getAllCiders.mockResolvedValue(largeCiderCollection);
-      mockSqliteService.getAllExperiences.mockResolvedValue([]);
+      mockSqliteService.getAllExperiences.mockResolvedValue(largeExperienceCollection);
 
       const startTime = Date.now();
-      const analytics = await AnalyticsService.calculateAnalytics('ALL');
+      const analytics = await analyticsService.calculateAnalytics('ALL');
       const duration = Date.now() - startTime;
 
-      // Should complete within 500ms as per requirements
       expect(duration).toBeLessThan(500);
       expect(analytics.collectionStats.totalCiders).toBe(100);
+      expect(analytics.collectionStats.totalExperiences).toBe(200);
+    });
+
+    it('should use parallel data fetching', async () => {
+      const cidersPromise = new Promise(resolve =>
+        setTimeout(() => resolve(mockCiders), 50)
+      );
+      const experiencesPromise = new Promise(resolve =>
+        setTimeout(() => resolve(mockExperiences), 50)
+      );
+
+      mockSqliteService.getAllCiders.mockImplementation(() => cidersPromise as any);
+      mockSqliteService.getAllExperiences.mockImplementation(() => experiencesPromise as any);
+
+      const startTime = Date.now();
+      await analyticsService.calculateAnalytics('ALL');
+      const duration = Date.now() - startTime;
+
+      // Should be ~50ms (parallel) not ~100ms (sequential)
+      expect(duration).toBeLessThan(100);
+    });
+  });
+
+  describe('Edge Cases', () => {
+    it('should handle ciders with missing optional fields', async () => {
+      const minimalCiders: CiderMasterRecord[] = [
+        {
+          id: '1',
+          userId: 'user1',
+          name: 'Basic Cider',
+          brand: 'Basic Brand',
+          abv: 5.0,
+          overallRating: 7 as Rating,
+          createdAt: new Date(),
+          updatedAt: new Date()
+        }
+      ];
+
+      mockSqliteService.getAllCiders.mockResolvedValue(minimalCiders);
+      mockSqliteService.getAllExperiences.mockResolvedValue([]);
+
+      const analytics = await analyticsService.calculateAnalytics('ALL');
+
+      expect(analytics.collectionStats.totalCiders).toBe(1);
+      expect(analytics.collectionStats.completionPercentage).toBeGreaterThanOrEqual(0);
+    });
+
+    it('should handle experiences with same venue name different IDs', async () => {
+      const duplicateVenueExperiences: ExperienceLog[] = [
+        {
+          ...mockExperiences[0],
+          venue: { id: 'venue1', name: 'The Crown', type: 'pub' }
+        },
+        {
+          ...mockExperiences[1],
+          id: 'exp2',
+          venue: { id: 'venue2', name: 'The Crown', type: 'pub' }
+        }
+      ];
+
+      mockSqliteService.getAllExperiences.mockResolvedValue(duplicateVenueExperiences);
+
+      const analytics = await analyticsService.calculateAnalytics('ALL');
+
+      // Should group by venue name (lowercase)
+      expect(analytics.venueAnalytics.totalVenues).toBe(1);
+      expect(analytics.venueAnalytics.mostVisited?.visitCount).toBe(2);
+    });
+
+    it('should handle very high and very low ratings', async () => {
+      const extremeRatingCiders: CiderMasterRecord[] = [
+        { ...mockCiders[0], overallRating: 1 as Rating },
+        { ...mockCiders[1], overallRating: 10 as Rating }
+      ];
+
+      mockSqliteService.getAllCiders.mockResolvedValue(extremeRatingCiders);
+
+      const analytics = await analyticsService.calculateAnalytics('ALL');
+
+      expect(analytics.collectionStats.averageRating).toBe(5.5);
+
+      const rating1 = analytics.trends.ratingDistribution.find(r => r.rating === 1);
+      const rating10 = analytics.trends.ratingDistribution.find(r => r.rating === 10);
+
+      expect(rating1?.count).toBe(1);
+      expect(rating10?.count).toBe(1);
+    });
+
+    it('should handle zero price experiences', async () => {
+      const freeExperience: ExperienceLog = {
+        ...mockExperiences[0],
+        price: 0,
+        pricePerPint: 0
+      };
+
+      mockSqliteService.getAllExperiences.mockResolvedValue([freeExperience]);
+
+      const analytics = await analyticsService.calculateAnalytics('ALL');
+
+      expect(analytics.valueAnalytics.averagePricePerPint).toBe(0);
+      expect(analytics.valueAnalytics.bestValue?.pricePerPint).toBe(0);
+    });
+
+    it('should round monetary values to 2 decimal places', async () => {
+      const analytics = await analyticsService.calculateAnalytics('ALL');
+
+      // Check that all price values are properly rounded
+      expect(analytics.valueAnalytics.averagePricePerPint.toString().split('.')[1]?.length || 0).toBeLessThanOrEqual(2);
+      expect(analytics.valueAnalytics.monthlySpending.toString().split('.')[1]?.length || 0).toBeLessThanOrEqual(2);
     });
   });
 });

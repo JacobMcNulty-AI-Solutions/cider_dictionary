@@ -14,7 +14,8 @@
       "Bash(xargs cat:*)",
       "mcp__ide__getDiagnostics",
       "Bash(npm test:*)",
-      "Bash(xargs npm test:*)"
+      "Bash(xargs npm test:*)",
+      "Bash(dir:*)"
     ],
     "deny": [],
     "ask": []

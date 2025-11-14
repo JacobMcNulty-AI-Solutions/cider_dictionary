@@ -71,11 +71,12 @@ class AnalyticsService {
         sqliteService.getAllExperiences()
       ]);
 
-      // Filter by time range
+      // Filter experiences by time range (but keep all ciders for collection stats)
       const experiencesInRange = allExperiences.filter(exp =>
         exp.date >= cutoffDate
       );
 
+      // Only filter ciders by time range for trends/value analytics, not collection stats
       const cidersInRange = timeRange === 'ALL'
         ? allCiders
         : allCiders.filter(cider =>
@@ -86,9 +87,10 @@ class AnalyticsService {
       const completionPercentage = await this.calculatePersonalCompleteness(allCiders);
 
       // Build analytics data
+      // NOTE: Collection stats use ALL ciders, not time-filtered ciders
       const analyticsData: AnalyticsData = {
         collectionStats: {
-          ...this.calculateCollectionStats(cidersInRange, experiencesInRange),
+          ...this.calculateCollectionStats(allCiders, allExperiences), // Always show all ciders
           completionPercentage
         },
         valueAnalytics: this.calculateValueAnalytics(cidersInRange, experiencesInRange),

@@ -15,6 +15,19 @@ dist/
 android/
 ios/
 
+# Test coverage
+coverage/
+
+# Build output
+lib/
+
+# Documentation (not needed for builds)
+docs/
+critical_analysis/
+
+# Claude Code config
+.claude/
+
 # macOS
 .DS_Store
 

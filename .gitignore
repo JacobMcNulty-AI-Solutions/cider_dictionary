@@ -11,6 +11,10 @@ npm-debug.*
 web-build/
 dist/
 
+# Native folders (EAS generates these)
+android/
+ios/
+
 # macOS
 .DS_Store
 

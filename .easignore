@@ -1,0 +1,63 @@
+# Dependencies
+node_modules/
+
+# Expo
+.expo/
+.expo-shared/
+
+# Native folders (EAS generates these)
+android/
+ios/
+
+# Build artifacts
+web-build/
+dist/
+lib/
+coverage/
+
+# Documentation (not needed for builds)
+docs/
+critical_analysis/
+PHASE_*.md
+*.bak
+
+# IDE/Editor
+.claude/
+.vscode/
+.idea/
+
+# Debug
+npm-debug.*
+*.log
+
+# Credentials (EAS handles these)
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+*.orig.*
+
+# macOS
+.DS_Store
+
+# Metro
+.metro-health-check*
+
+# Environment (use EAS secrets instead)
+.env.local
+.env.production
+
+# Git
+.git/
+
+# Test files (not needed for production builds)
+**/__tests__/
+**/*.test.ts
+**/*.test.tsx
+**/*.spec.ts
+**/*.spec.tsx
+src/__mocks__/
+
+# Prompt file
+prompt.md

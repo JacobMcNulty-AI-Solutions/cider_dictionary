@@ -13,6 +13,7 @@ export type RootStackParamList = {
   AdvancedSearch: undefined;
   DataExport: undefined;
   CiderDetail: { ciderId: string };
+  CiderEdit: { ciderId: string };
   ExperienceLog: { ciderId: string };
   ExperienceHistory: { ciderId: string };
   ExperienceDetail: { experienceId: string };

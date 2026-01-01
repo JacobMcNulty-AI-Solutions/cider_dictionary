@@ -1,7 +1,7 @@
 // Cider Detail Screen - Shows detailed view of a single cider
 // Displays all cider information with edit/delete options
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback, useLayoutEffect } from 'react';
 import {
   View,
   Text,
@@ -12,6 +12,7 @@ import {
   Image
 } from 'react-native';
 import { StackScreenProps } from '@react-navigation/stack';
+import { useFocusEffect } from '@react-navigation/native';
 import { CiderMasterRecord } from '../../types/cider';
 import { ExperienceLog } from '../../types/experience';
 import { useCiderStore } from '../../store/ciderStore';
@@ -30,26 +31,52 @@ export default function CiderDetailScreen({ route, navigation }: Props) {
   const [experiences, setExperiences] = useState<ExperienceLog[]>([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    const loadCiderAndExperiences = async () => {
-      try {
-        const ciderData = getCiderById(ciderId);
-        setCider(ciderData);
+  // Set up header with edit button
+  useLayoutEffect(() => {
+    navigation.setOptions({
+      headerRight: () => (
+        <TouchableOpacity
+          onPress={() => navigation.navigate('CiderEdit', { ciderId })}
+          style={styles.headerButton}
+        >
+          <Ionicons name="pencil" size={24} color="#fff" />
+        </TouchableOpacity>
+      ),
+    });
+  }, [navigation, ciderId]);
 
-        // Load experiences for this cider
-        const ciderExperiences = await sqliteService.getExperiencesByCiderId(ciderId);
-        setExperiences(ciderExperiences);
-      } catch (error) {
-        console.error('Failed to load cider:', error);
-        Alert.alert('Error', 'Failed to load cider details');
-        navigation.goBack();
-      } finally {
-        setLoading(false);
-      }
-    };
+  // Load cider data and experiences
+  const loadCiderAndExperiences = useCallback(async () => {
+    try {
+      const ciderData = getCiderById(ciderId);
+      setCider(ciderData);
 
-    loadCiderAndExperiences();
+      // Load experiences for this cider
+      const ciderExperiences = await sqliteService.getExperiencesByCiderId(ciderId);
+      setExperiences(ciderExperiences);
+    } catch (error) {
+      console.error('Failed to load cider:', error);
+      Alert.alert('Error', 'Failed to load cider details');
+      navigation.goBack();
+    } finally {
+      setLoading(false);
+    }
   }, [ciderId, getCiderById, navigation]);
+
+  // Initial load
+  useEffect(() => {
+    loadCiderAndExperiences();
+  }, [loadCiderAndExperiences]);
+
+  // Refresh cider data when screen comes into focus (after edit)
+  useFocusEffect(
+    useCallback(() => {
+      const ciderData = getCiderById(ciderId);
+      if (ciderData) {
+        setCider(ciderData);
+      }
+    }, [ciderId, getCiderById])
+  );
 
   const handleDelete = () => {
     if (!cider) return;
@@ -423,6 +450,10 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#f5f5f5',
+  },
+  headerButton: {
+    marginRight: 16,
+    padding: 4,
   },
   contentContainer: {
     padding: 16,

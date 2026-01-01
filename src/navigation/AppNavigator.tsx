@@ -7,6 +7,7 @@ import TabNavigator from './TabNavigator';
 import AdvancedSearchScreen from '../screens/AdvancedSearch/AdvancedSearchScreen';
 import DataExportScreen from '../screens/DataExport/DataExportScreen';
 import CiderDetailScreen from '../screens/Collection/CiderDetailScreen';
+import CiderEditScreen from '../screens/Collection/CiderEditScreen';
 import ExperienceLogScreen from '../screens/ExperienceLog/ExperienceLogScreen';
 import ExperienceHistoryScreen from '../screens/ExperienceHistory/ExperienceHistoryScreen';
 import ExperienceDetailScreen from '../screens/ExperienceDetail/ExperienceDetailScreen';
@@ -50,6 +51,16 @@ export default function AppNavigator() {
             component={CiderDetailScreen}
             options={{
               title: 'Cider Details',
+              headerStyle: { backgroundColor: '#007AFF' },
+              headerTintColor: '#fff',
+              headerTitleStyle: { fontWeight: 'bold' }
+            }}
+          />
+          <Stack.Screen
+            name="CiderEdit"
+            component={CiderEditScreen}
+            options={{
+              title: 'Edit Cider',
               headerStyle: { backgroundColor: '#007AFF' },
               headerTintColor: '#fff',
               headerTitleStyle: { fontWeight: 'bold' }

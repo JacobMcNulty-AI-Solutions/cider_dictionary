@@ -540,11 +540,62 @@ export class BasicSQLiteService implements CiderDatabase {
     }
   }
 
-  async updateCider(id: string, updates: Partial<Omit<BasicCiderRecord, 'id' | 'createdAt'>>): Promise<void> {
+  async updateCider(id: string, updates: Partial<Omit<CiderMasterRecord, 'id' | 'createdAt'>>): Promise<void> {
     try {
       const db = await this.connectionManager.getDatabase();
-      const setClause = Object.keys(updates).map(key => `${key} = ?`).join(', ');
-      const values = Object.values(updates);
+
+      // ALL fields that need JSON serialization (complete list from cider.ts)
+      const jsonFields = [
+        'tasteTags',           // string[]
+        'appleClassification', // object with categories, varieties, longAshtonClassification
+        'productionMethods',   // object with fermentation, specialProcesses
+        'detailedRatings',     // object with appearance, aroma, taste, mouthfeel
+        'venue',               // object with id, name, type, location
+        'fruitAdditions',      // string[]
+        'hops',                // object with varieties, character
+        'spicesBotanicals',    // string[]
+        'woodAging'            // object with oakTypes, barrelHistory, alternativeWoods
+      ];
+
+      const processedUpdates: Record<string, any> = {};
+
+      for (const [key, value] of Object.entries(updates)) {
+        if (jsonFields.includes(key)) {
+          // Serialize objects and arrays to JSON strings
+          processedUpdates[key] = value !== null && value !== undefined
+            ? JSON.stringify(value)
+            : null;
+        } else if (key === 'updatedAt' && value instanceof Date) {
+          processedUpdates[key] = value.toISOString();
+        } else if (key === 'createdAt' && value instanceof Date) {
+          processedUpdates[key] = value.toISOString();
+        } else {
+          processedUpdates[key] = value;
+        }
+      }
+
+      // Always update the updatedAt timestamp
+      if (!processedUpdates.updatedAt) {
+        processedUpdates.updatedAt = new Date().toISOString();
+      }
+
+      // Increment version for sync conflict detection
+      if (!processedUpdates.version) {
+        // Get current version and increment
+        const current = await db.getFirstAsync<{ version: number }>(
+          'SELECT version FROM ciders WHERE id = ?',
+          [id]
+        );
+        processedUpdates.version = (current?.version || 0) + 1;
+      }
+
+      // Mark as pending sync
+      if (!processedUpdates.syncStatus) {
+        processedUpdates.syncStatus = 'pending';
+      }
+
+      const setClause = Object.keys(processedUpdates).map(key => `${key} = ?`).join(', ');
+      const values = Object.values(processedUpdates);
 
       await db.runAsync(
         `UPDATE ciders SET ${setClause} WHERE id = ?`,

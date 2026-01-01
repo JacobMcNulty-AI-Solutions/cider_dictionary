@@ -10,6 +10,42 @@ import { sqliteService } from '../services/database/sqlite';
 import { syncManager } from '../services/sync/SyncManager';
 
 // =============================================================================
+// HELPER FUNCTIONS
+// =============================================================================
+
+/**
+ * Check if a photo path is a local file that needs uploading to Firebase Storage
+ * Local files start with file:// or contain the app's document directory
+ * Firebase URLs start with https://firebasestorage.googleapis.com
+ */
+const isLocalPhoto = (photoPath: string | undefined): boolean => {
+  if (!photoPath) return false;
+  // Local file paths
+  if (photoPath.startsWith('file://')) return true;
+  if (photoPath.startsWith('/data/')) return true;
+  if (photoPath.includes('ExponentExperienceData')) return true;
+  if (photoPath.includes('DocumentDirectory')) return true;
+  // Already a Firebase URL - no upload needed
+  if (photoPath.startsWith('https://firebasestorage.googleapis.com')) return false;
+  if (photoPath.startsWith('https://storage.googleapis.com')) return false;
+  // Assume other paths are local
+  return !photoPath.startsWith('http');
+};
+
+/**
+ * Queue an image upload operation for a cider's photo
+ */
+const queueImageUpload = async (ciderId: string, localPhotoPath: string): Promise<void> => {
+  const remotePath = `images/${ciderId}/photo_${Date.now()}.jpg`;
+  await syncManager.queueOperation('UPLOAD_IMAGE', {
+    localPath: localPhotoPath,
+    remotePath,
+    ciderId,
+  });
+  console.log(`Queued image upload for cider ${ciderId}: ${localPhotoPath} -> ${remotePath}`);
+};
+
+// =============================================================================
 // STORE INTERFACES
 // =============================================================================
 
@@ -139,6 +175,11 @@ export const useCiderStore = create<CiderStore>()(
         // Queue for Firebase sync
         await syncManager.queueOperation('CREATE_CIDER', newCider);
 
+        // Queue image upload if there's a local photo
+        if (isLocalPhoto(newCider.photo)) {
+          await queueImageUpload(newCider.id, newCider.photo!);
+        }
+
         // Update store
         set(state => {
           const newCiders = [newCider, ...state.ciders];
@@ -195,6 +236,13 @@ export const useCiderStore = create<CiderStore>()(
 
         // Queue for Firebase sync
         await syncManager.queueOperation('UPDATE_CIDER', updatedCider);
+
+        // Queue image upload if there's a new local photo
+        // Only upload if the photo changed and is a local file
+        const photoChanged = updates.photo && updates.photo !== existingCider.photo;
+        if (photoChanged && isLocalPhoto(updates.photo)) {
+          await queueImageUpload(id, updates.photo!);
+        }
 
         // Update store
         set(state => {

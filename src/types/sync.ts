@@ -64,3 +64,38 @@ export interface SyncConflict {
   createdAt: Date;
   resolution?: ConflictResolution;
 }
+
+// Download from Cloud Types
+
+// Download progress tracking
+export interface DownloadProgress {
+  phase: 'preparing' | 'backing_up' | 'fetching_ciders' | 'fetching_experiences' |
+         'validating' | 'inserting' | 'downloading_images' | 'complete' | 'error' | 'rolled_back';
+  totalCiders: number;
+  downloadedCiders: number;
+  totalExperiences: number;
+  downloadedExperiences: number;
+  totalImages: number;
+  downloadedImages: number;
+  currentItem?: string;
+  errorMessage?: string;
+  backupId?: string;
+}
+
+export type DownloadConflictStrategy = 'replace_all' | 'keep_local' | 'merge_by_date';
+
+export interface DownloadResult {
+  success: boolean;
+  cidersDownloaded: number;
+  experiencesDownloaded: number;
+  imagesDownloaded: number;
+  skippedOrphans: number;
+  backupId?: string;
+  error?: string;
+}
+
+export interface CloudDataStats {
+  ciderCount: number;
+  experienceCount: number;
+  lastUpdated: Date | null;
+}

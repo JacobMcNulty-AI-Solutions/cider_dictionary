@@ -323,6 +323,41 @@ class DatabaseConnectionManager {
 export class BasicSQLiteService implements CiderDatabase {
   private connectionManager = DatabaseConnectionManager.getInstance();
 
+  /**
+   * Get database connection manager (for advanced operations like transactions)
+   */
+  getConnectionManager(): DatabaseConnectionManager {
+    return this.connectionManager;
+  }
+
+  /**
+   * Get count of local ciders
+   */
+  async getCiderCount(): Promise<number> {
+    try {
+      const db = await this.connectionManager.getDatabase();
+      const result = await db.getFirstAsync<{ count: number }>('SELECT COUNT(*) as count FROM ciders');
+      return result?.count || 0;
+    } catch (error) {
+      console.error('Failed to get cider count:', error);
+      return 0;
+    }
+  }
+
+  /**
+   * Get count of local experiences
+   */
+  async getExperienceCount(): Promise<number> {
+    try {
+      const db = await this.connectionManager.getDatabase();
+      const result = await db.getFirstAsync<{ count: number }>('SELECT COUNT(*) as count FROM experiences');
+      return result?.count || 0;
+    } catch (error) {
+      console.error('Failed to get experience count:', error);
+      return 0;
+    }
+  }
+
   async initializeDatabase(): Promise<void> {
     // Use the connection manager - it handles initialization internally
     await this.connectionManager.getDatabase();

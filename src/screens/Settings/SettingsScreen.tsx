@@ -1,9 +1,13 @@
-import React from 'react';
+import React, { useState, useCallback } from 'react';
 import { View, ScrollView, StyleSheet, Text, Alert, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useFocusEffect } from '@react-navigation/native';
 import { RootTabScreenProps } from '../../types/navigation';
 import SafeAreaContainer from '../../components/common/SafeAreaContainer';
 import Button from '../../components/common/Button';
+import DownloadFromCloudModal from '../../components/sync/DownloadFromCloudModal';
+import { syncManager } from '../../services/sync/SyncManager';
+import { useCiderStore } from '../../store/ciderStore';
 
 type Props = RootTabScreenProps<'Settings'>;
 
@@ -40,6 +44,39 @@ function SettingItem({ icon, title, subtitle, onPress }: SettingItemProps) {
 }
 
 export default function SettingsScreen({ navigation }: Props) {
+  const [showDownloadModal, setShowDownloadModal] = useState(false);
+  const [isOnline, setIsOnline] = useState(syncManager.isOnline());
+  const loadCiders = useCiderStore((state) => state.loadCiders);
+
+  // Check network status when screen is focused
+  useFocusEffect(
+    useCallback(() => {
+      setIsOnline(syncManager.isOnline());
+    }, [])
+  );
+
+  const handleDownloadFromCloud = () => {
+    if (!isOnline) {
+      Alert.alert(
+        'No Internet Connection',
+        'Please connect to the internet to download your data from the cloud.',
+        [{ text: 'OK' }]
+      );
+      return;
+    }
+    setShowDownloadModal(true);
+  };
+
+  const handleDownloadComplete = async () => {
+    // Refresh the store to show downloaded data
+    await loadCiders();
+    Alert.alert(
+      'Download Complete',
+      'Your data has been restored. The app will now refresh.',
+      [{ text: 'OK' }]
+    );
+  };
+
   const handleAbout = () => {
     Alert.alert(
       'About Cider Dictionary',
@@ -98,19 +135,26 @@ export default function SettingsScreen({ navigation }: Props) {
 
           <SettingItem
             icon="cloud-outline"
-            title="Data Sync"
-            subtitle="Automatic backup and multi-device sync"
+            title="Sync Status"
+            subtitle={isOnline ? "Connected - Automatic backup enabled" : "Offline - Changes will sync when online"}
           />
 
           <SettingItem
             icon="cloud-download-outline"
+            title="Download from Cloud"
+            subtitle="Restore your collection from Firebase backup"
+            onPress={handleDownloadFromCloud}
+          />
+
+          <SettingItem
+            icon="download-outline"
             title="Export Data"
             subtitle="Download your collection as JSON or CSV"
             onPress={() => navigation.navigate('DataExport')}
           />
 
           <SettingItem
-            icon="cloud-upload-outline"
+            icon="push-outline"
             title="Import Data"
             subtitle="Restore from backup file"
           />
@@ -150,6 +194,12 @@ export default function SettingsScreen({ navigation }: Props) {
         </View>
 
       </ScrollView>
+
+      <DownloadFromCloudModal
+        visible={showDownloadModal}
+        onClose={() => setShowDownloadModal(false)}
+        onDownloadComplete={handleDownloadComplete}
+      />
     </SafeAreaContainer>
   );
 }

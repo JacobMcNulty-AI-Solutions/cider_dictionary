@@ -161,6 +161,17 @@ export default function SettingsScreen({ navigation }: Props) {
         </View>
 
         <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Content Management</Text>
+
+          <SettingItem
+            icon="location-outline"
+            title="My Venues"
+            subtitle="View and manage your saved venues"
+            onPress={() => navigation.navigate('VenueList')}
+          />
+        </View>
+
+        <View style={styles.section}>
           <Text style={styles.sectionTitle}>App Settings</Text>
 
           <SettingItem

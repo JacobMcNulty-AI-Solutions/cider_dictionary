@@ -1,7 +1,7 @@
 // CiderForm - Reusable form component for adding and editing ciders
 // Used by both EnhancedQuickEntryScreen (add) and CiderEditScreen (edit)
 
-import React, { useState, useCallback, useMemo, useEffect } from 'react';
+import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import {
   View,
   ScrollView,
@@ -9,7 +9,8 @@ import {
   KeyboardAvoidingView,
   Platform,
   Text,
-  TouchableOpacity
+  TouchableOpacity,
+  Alert
 } from 'react-native';
 import { CiderMasterRecord, Rating } from '../../types/cider';
 import { useCiderStore } from '../../store/ciderStore';
@@ -132,7 +133,6 @@ const FORM_SECTIONS = [
         'Kingston Black', 'Dabinett', 'Yarlington Mill', 'Harry Masters Jersey', 'Tremlett\'s Bitter', 'Court Royal', 'Foxwhelp', 'Somerset Redstreak',
         'Bramley\'s Seedling', 'Cox\'s Orange Pippin', 'Braeburn', 'Pink Lady', 'Gala', 'Discovery'
       ] },
-      { key: 'longAshtonClassification', label: 'Long Ashton Classification', type: 'text', required: false, placeholder: 'Long Ashton classification (optional)' },
     ],
     collapsible: true,
     defaultExpanded: false,
@@ -226,11 +226,16 @@ const FORM_SECTIONS = [
         { label: 'Chai Spices', value: 'chai_spices' },
         { label: 'Other', value: 'other' }
       ]},
-      { key: 'oakTypes', label: 'Oak Types', type: 'multiselect', required: false, placeholder: 'Select oak types (optional)', options: [
+      { key: 'woodType', label: 'Wood Type', type: 'multiselect', required: false, placeholder: 'Select wood types (optional)', options: [
         { label: 'No Wood Aging', value: 'no_wood_aging' },
         { label: 'American Oak', value: 'american_oak' },
         { label: 'French Oak', value: 'french_oak' },
-        { label: 'English Oak', value: 'english_oak' }
+        { label: 'English Oak', value: 'english_oak' },
+        { label: 'Cherry Wood', value: 'cherry' },
+        { label: 'Apple Wood', value: 'apple' },
+        { label: 'Chestnut Wood', value: 'chestnut' },
+        { label: 'Acacia Wood', value: 'acacia' },
+        { label: 'Other Wood', value: 'other' }
       ]},
       { key: 'barrelHistory', label: 'Barrel History', type: 'multiselect', required: false, placeholder: 'Select barrel history (optional)', options: [
         { label: 'Virgin Oak', value: 'virgin_oak' },
@@ -239,13 +244,6 @@ const FORM_SECTIONS = [
         { label: 'Sherry Barrel', value: 'sherry_barrel' },
         { label: 'Rum Barrel', value: 'rum_barrel' },
         { label: 'Gin Barrel', value: 'gin_barrel' }
-      ]},
-      { key: 'alternativeWoods', label: 'Alternative Woods', type: 'multiselect', required: false, placeholder: 'Select alternative woods (optional)', options: [
-        { label: 'Cherry', value: 'cherry' },
-        { label: 'Apple', value: 'apple' },
-        { label: 'Chestnut', value: 'chestnut' },
-        { label: 'Acacia', value: 'acacia' },
-        { label: 'Other', value: 'other' }
       ]},
     ],
     collapsible: true,
@@ -286,7 +284,6 @@ export default function CiderForm({
     if (data.appleClassification) {
       flatData.appleCategories = data.appleClassification.categories || [];
       flatData.appleVarieties = data.appleClassification.varieties || [];
-      flatData.longAshtonClassification = data.appleClassification.longAshtonClassification || '';
     }
 
     // Flatten production methods
@@ -303,9 +300,8 @@ export default function CiderForm({
 
     // Flatten wood aging
     if (data.woodAging) {
-      flatData.oakTypes = data.woodAging.oakTypes || [];
+      flatData.woodType = data.woodAging.woodType || [];
       flatData.barrelHistory = data.woodAging.barrelHistory || [];
-      flatData.alternativeWoods = data.woodAging.alternativeWoods || [];
     }
 
     // Flatten detailed ratings
@@ -319,8 +315,15 @@ export default function CiderForm({
     return flatData;
   }, []);
 
-  // Form state
-  const [formData, setFormData] = useState<Record<string, any>>(() => transformInitialData(initialData));
+  // Form state - set default values for required fields
+  const [formData, setFormData] = useState<Record<string, any>>(() => {
+    const transformed = transformInitialData(initialData);
+    // Set default rating of 5 if not provided (so user can submit without changing it)
+    if (transformed.overallRating === undefined) {
+      transformed.overallRating = 5;
+    }
+    return transformed;
+  });
   const [errors, setErrors] = useState<FormValidationErrors>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isDirty, setIsDirty] = useState(false);
@@ -357,23 +360,21 @@ export default function CiderForm({
       formData.photo,
       formData.appleCategories && formData.appleCategories.length > 0,
       formData.appleVarieties && formData.appleVarieties.length > 0,
-      formData.longAshtonClassification,
       formData.fermentation,
       formData.specialProcesses && formData.specialProcesses.length > 0,
       formData.fruitAdditions && formData.fruitAdditions.length > 0,
       formData.hopVarieties && formData.hopVarieties.length > 0,
       formData.hopCharacter && formData.hopCharacter.length > 0,
       formData.spicesBotanicals && formData.spicesBotanicals.length > 0,
-      formData.oakTypes && formData.oakTypes.length > 0,
+      formData.woodType && formData.woodType.length > 0,
       formData.barrelHistory && formData.barrelHistory.length > 0,
-      formData.alternativeWoods && formData.alternativeWoods.length > 0,
       formData.appearanceRating,
       formData.aromaRating,
       formData.tasteRating,
       formData.mouthfeelRating
     ].filter(Boolean).length;
 
-    const totalFields = 27;
+    const totalFields = 25;
     const completedFields = requiredFieldsCount + optionalFieldsCount;
     const percentage = Math.round((completedFields / totalFields) * 100);
 
@@ -475,11 +476,10 @@ export default function CiderForm({
     };
 
     // Build apple classification object
-    if (formData.appleCategories?.length || formData.appleVarieties?.length || formData.longAshtonClassification) {
+    if (formData.appleCategories?.length || formData.appleVarieties?.length) {
       result.appleClassification = {
         categories: formData.appleCategories || [],
         varieties: formData.appleVarieties || [],
-        longAshtonClassification: formData.longAshtonClassification || undefined
       };
     }
 
@@ -500,11 +500,10 @@ export default function CiderForm({
     }
 
     // Build wood aging object
-    if (formData.oakTypes?.length || formData.barrelHistory?.length || formData.alternativeWoods?.length) {
+    if (formData.woodType?.length || formData.barrelHistory?.length) {
       result.woodAging = {
-        oakTypes: formData.oakTypes || [],
-        barrelHistory: formData.barrelHistory || [],
-        alternativeWoods: formData.alternativeWoods || []
+        woodType: formData.woodType || [],
+        barrelHistory: formData.barrelHistory || []
       };
     }
 
@@ -532,8 +531,45 @@ export default function CiderForm({
 
   // Handle form submission
   const handleSubmit = useCallback(async () => {
-    if (!validateForm()) {
+    // Validate and get errors directly (don't rely on state which may be stale)
+    const validationErrors: FormValidationErrors = {};
+
+    if (!formData.name?.trim()) {
+      validationErrors.name = 'Name is required';
+    } else if (formData.name.length < 2) {
+      validationErrors.name = 'Name must be at least 2 characters';
+    }
+
+    if (!formData.brand?.trim()) {
+      validationErrors.brand = 'Brand is required';
+    } else if (formData.brand.length < 2) {
+      validationErrors.brand = 'Brand must be at least 2 characters';
+    }
+
+    if (formData.abv === undefined || formData.abv === null || formData.abv === 0) {
+      validationErrors.abv = 'ABV is required';
+    } else if (formData.abv < 0.1 || formData.abv > 20) {
+      validationErrors.abv = 'ABV must be between 0.1% and 20%';
+    }
+
+    if (!formData.overallRating) {
+      validationErrors.overallRating = 'Rating is required';
+    }
+
+    // If there are errors, show them and update state
+    if (Object.keys(validationErrors).length > 0) {
+      setErrors(validationErrors);
+      const errorMessages = Object.values(validationErrors).join('\n');
+      Alert.alert('Please fix the following:', errorMessages);
       return;
+    }
+
+    // Clear any previous errors
+    setErrors({});
+
+    // Check for duplicate warning - allow submission but log it
+    if (duplicateWarning) {
+      console.log('Submitting despite duplicate warning:', duplicateWarning);
     }
 
     setIsSubmitting(true);
@@ -542,10 +578,11 @@ export default function CiderForm({
       await onSubmit(transformedData);
     } catch (error) {
       console.error('Form submission failed:', error);
+      Alert.alert('Error', 'Failed to save cider. Please try again.');
     } finally {
       setIsSubmitting(false);
     }
-  }, [validateForm, transformFormData, onSubmit]);
+  }, [formData, transformFormData, onSubmit, duplicateWarning]);
 
   // Render individual form field
   const renderFormField = (field: any) => {
@@ -637,6 +674,7 @@ export default function CiderForm({
             label={field.label}
             selectedTags={(value as string[]) || []}
             onTagsChange={(tags) => handleFieldChange(field.key, tags)}
+            availableTags={field.options}
             validation={validation}
             required={field.required}
             maxTags={10}
@@ -717,9 +755,9 @@ export default function CiderForm({
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={[styles.submitButton, (!formCompleteness.canSubmit || isSubmitting) && styles.submitButtonDisabled]}
+            style={[styles.submitButton, isSubmitting && styles.submitButtonDisabled]}
             onPress={handleSubmit}
-            disabled={!formCompleteness.canSubmit || isSubmitting}
+            disabled={isSubmitting}
           >
             <Text style={styles.submitButtonText}>
               {isSubmitting ? 'Saving...' : submitButtonText}

@@ -20,12 +20,14 @@ import {
   ref,
   uploadBytesResumable,
   getDownloadURL,
-  getBlob
+  getBlob,
+  deleteObject
 } from 'firebase/storage';
 import * as FileSystem from 'expo-file-system/legacy';
 import { firebaseService } from '../firebase/config';
 import { SyncOperation, SyncOperationType, NetworkState } from '../../types/sync';
 import { ExperienceLog } from '../../types/experience';
+import { Venue } from '../../types/venue';
 import { CiderMasterRecord, VALIDATION_CONSTANTS } from '../../types/cider';
 import { sqliteService } from '../database/sqlite';
 import { backupService } from '../backup/BackupService';
@@ -151,6 +153,9 @@ class SyncManager {
   }
 
   async queueOperation(type: SyncOperationType, data: any): Promise<void> {
+    console.log(`[queueOperation] Queueing: ${type}`);
+    console.log(`[queueOperation] Data:`, JSON.stringify(data, null, 2).substring(0, 500));
+
     try {
       const operation: SyncOperation = {
         id: this.generateUUID(),
@@ -164,14 +169,18 @@ class SyncManager {
 
       // Add to SQLite queue table
       await sqliteService.insertSyncOperation(operation);
-      console.log(`Queued sync operation: ${type}`);
+      console.log(`[queueOperation] Inserted into SQLite: ${type} (id: ${operation.id})`);
 
       // Process immediately if online
+      console.log(`[queueOperation] Network connected: ${this.networkState.isConnected}, Sync in progress: ${this.syncInProgress}`);
       if (this.networkState.isConnected && !this.syncInProgress) {
+        console.log(`[queueOperation] Triggering processSyncQueue...`);
         this.processSyncQueue();
+      } else {
+        console.log(`[queueOperation] Operation ${type} queued - will be processed when current sync completes`);
       }
     } catch (error) {
-      console.error('Failed to queue sync operation:', error);
+      console.error('[queueOperation] Failed to queue sync operation:', error);
       throw error;
     }
   }
@@ -247,6 +256,19 @@ class SyncManager {
       console.error('Sync queue processing failed:', error);
     } finally {
       this.syncInProgress = false;
+
+      // Re-check for new operations that were queued during sync
+      // This ensures DELETE_IMAGE, UPLOAD_IMAGE, etc. queued during active sync are processed
+      const remainingOps = await sqliteService.getPendingSyncOperations();
+      if (remainingOps.length > 0 && this.networkState.isConnected) {
+        const opTypes = remainingOps.map(op => op.type).join(', ');
+        console.log(`[processSyncQueue] Found ${remainingOps.length} operations queued during sync: [${opTypes}]`);
+        console.log(`[processSyncQueue] Re-triggering sync queue in 100ms...`);
+        // Use setTimeout to avoid stack overflow from recursive calls
+        setTimeout(() => this.processSyncQueue(), 100);
+      } else {
+        console.log(`[processSyncQueue] No pending operations after sync completed`);
+      }
     }
   }
 
@@ -278,6 +300,22 @@ class SyncManager {
 
       case 'UPLOAD_IMAGE':
         await this.syncUploadImage(operation.data);
+        break;
+
+      case 'DELETE_IMAGE':
+        await this.syncDeleteImage(operation.data);
+        break;
+
+      case 'CREATE_VENUE':
+        await this.syncCreateVenue(operation.data);
+        break;
+
+      case 'UPDATE_VENUE':
+        await this.syncUpdateVenue(operation.data);
+        break;
+
+      case 'DELETE_VENUE':
+        await this.syncDeleteVenue(operation.data.id);
         break;
 
       default:
@@ -346,17 +384,27 @@ class SyncManager {
     }
   }
 
-  private async syncUpdateCider(cider: CiderMasterRecord): Promise<void> {
+  private async syncUpdateCider(cider: Partial<CiderMasterRecord> & { id: string }): Promise<void> {
     try {
       const db = firebaseService.getFirestore();
       const ciderRef = doc(db, 'ciders', cider.id);
 
-      // Convert dates to ISO strings
-      const ciderData = {
-        ...cider,
-        createdAt: cider.createdAt instanceof Date ? cider.createdAt.toISOString() : cider.createdAt,
-        updatedAt: cider.updatedAt instanceof Date ? cider.updatedAt.toISOString() : cider.updatedAt,
-      };
+      // Build update object with only defined fields
+      const ciderData: Record<string, any> = {};
+
+      // Copy all fields except undefined ones
+      for (const [key, value] of Object.entries(cider)) {
+        if (value !== undefined) {
+          // Convert dates to ISO strings
+          if (key === 'createdAt' || key === 'updatedAt') {
+            ciderData[key] = value instanceof Date ? value.toISOString() : value;
+          } else {
+            ciderData[key] = value;
+          }
+        }
+      }
+
+      console.log('[syncUpdateCider] Updating fields:', Object.keys(ciderData));
 
       await updateDoc(ciderRef, ciderData);
 
@@ -365,6 +413,8 @@ class SyncManager {
         syncStatus: 'synced',
         updatedAt: new Date()
       });
+
+      console.log('[syncUpdateCider] Successfully updated cider:', cider.id);
     } catch (error) {
       console.error('Failed to sync update cider:', error);
       throw error;
@@ -438,24 +488,36 @@ class SyncManager {
   }
 
   private async syncUploadImage(imageData: { localPath: string; remotePath: string; ciderId: string }): Promise<void> {
+    console.log('[syncUploadImage] Starting upload...');
+    console.log('[syncUploadImage] imageData:', JSON.stringify(imageData, null, 2));
+
     // Check if Storage is available (requires Blaze plan)
-    if (!firebaseService.isStorageAvailable()) {
-      console.warn('Firebase Storage not available. Skipping image upload. Upgrade to Blaze plan to enable image uploads.');
+    const storageAvailable = firebaseService.isStorageAvailable();
+    console.log('[syncUploadImage] Storage available:', storageAvailable);
+
+    if (!storageAvailable) {
+      console.warn('[syncUploadImage] Firebase Storage not available. Skipping image upload. Upgrade to Blaze plan to enable image uploads.');
       return; // Skip image upload silently
     }
 
     try {
       const storage = firebaseService.getStorage();
+      console.log('[syncUploadImage] Got storage instance:', !!storage);
+
       if (!storage) {
-        console.warn('Storage not initialized, skipping image upload');
+        console.warn('[syncUploadImage] Storage not initialized, skipping image upload');
         return;
       }
 
+      console.log('[syncUploadImage] Creating storage ref for:', imageData.remotePath);
       const storageRef = ref(storage, imageData.remotePath);
 
       // For React Native, we need to fetch the file as blob
+      console.log('[syncUploadImage] Fetching local file:', imageData.localPath);
       const response = await fetch(imageData.localPath);
+      console.log('[syncUploadImage] Fetch response status:', response.status);
       const blob = await response.blob();
+      console.log('[syncUploadImage] Blob size:', blob.size, 'type:', blob.type);
 
       const uploadTask = uploadBytesResumable(storageRef, blob);
 
@@ -479,17 +541,155 @@ class SyncManager {
       });
 
       const downloadURL = await getDownloadURL(storageRef);
+      console.log('[syncUploadImage] Got download URL:', downloadURL);
 
-      // Update cider with new image URL
+      // Update LOCAL SQLite with the Firebase URL so it's available for deletion later
+      console.log('[syncUploadImage] Updating local SQLite with Firebase URL...');
+      await sqliteService.updateCider(imageData.ciderId, {
+        photo: downloadURL,
+        updatedAt: new Date()
+      });
+      console.log('[syncUploadImage] Local SQLite updated successfully');
+
+      // Update cider in Firestore with new image URL
       await this.queueOperation('UPDATE_CIDER', {
         id: imageData.ciderId,
         photo: downloadURL,
         updatedAt: new Date()
       });
 
-      console.log('Image uploaded successfully:', downloadURL);
+      console.log('[syncUploadImage] Image uploaded successfully:', downloadURL);
     } catch (error) {
       console.error('Failed to upload image:', error);
+      throw error;
+    }
+  }
+
+  private async syncDeleteImage(imageData: { remotePath: string; ciderId: string }): Promise<void> {
+    console.log('[syncDeleteImage] Starting delete...');
+    console.log('[syncDeleteImage] imageData:', JSON.stringify(imageData, null, 2));
+
+    // Check if Storage is available
+    const storageAvailable = firebaseService.isStorageAvailable();
+    console.log('[syncDeleteImage] Storage available:', storageAvailable);
+
+    if (!storageAvailable) {
+      console.warn('[syncDeleteImage] Firebase Storage not available. Skipping image delete.');
+      return;
+    }
+
+    try {
+      const storage = firebaseService.getStorage();
+      console.log('[syncDeleteImage] Got storage instance:', !!storage);
+
+      if (!storage) {
+        console.warn('[syncDeleteImage] Storage not initialized, skipping image delete');
+        return;
+      }
+
+      console.log('[syncDeleteImage] Creating storage ref for:', imageData.remotePath);
+      const storageRef = ref(storage, imageData.remotePath);
+
+      await deleteObject(storageRef);
+      console.log('[syncDeleteImage] Image deleted successfully:', imageData.remotePath);
+    } catch (error: any) {
+      // If the image doesn't exist, that's fine - it may have been deleted already
+      if (error?.code === 'storage/object-not-found') {
+        console.log('[syncDeleteImage] Image already deleted or not found:', imageData.remotePath);
+        return;
+      }
+      console.error('Failed to delete image:', error);
+      throw error;
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // VENUE SYNC OPERATIONS
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  private async syncCreateVenue(venue: Venue): Promise<void> {
+    try {
+      const db = firebaseService.getFirestore();
+      const venueRef = doc(db, 'venues', venue.id);
+
+      // Convert dates to ISO strings for Firestore
+      const venueData = {
+        id: venue.id,
+        userId: venue.userId,
+        name: venue.name,
+        type: venue.type,
+        location: venue.location ? {
+          latitude: venue.location.latitude,
+          longitude: venue.location.longitude
+        } : null,
+        address: venue.address || null,
+        visitCount: venue.visitCount || 0,
+        lastVisited: venue.lastVisited instanceof Date ? venue.lastVisited.toISOString() : venue.lastVisited || null,
+        createdAt: venue.createdAt instanceof Date ? venue.createdAt.toISOString() : venue.createdAt,
+        updatedAt: venue.updatedAt instanceof Date ? venue.updatedAt.toISOString() : venue.updatedAt,
+        syncStatus: 'synced',
+        version: venue.version || 1
+      };
+
+      await setDoc(venueRef, venueData);
+
+      // Update local sync status
+      await sqliteService.updateVenue(venue.id, { syncStatus: 'synced' });
+
+      console.log('Venue synced to Firebase:', venue.name);
+    } catch (error) {
+      console.error('Failed to sync create venue:', error);
+      throw error;
+    }
+  }
+
+  private async syncUpdateVenue(venue: Partial<Venue> & { id: string }): Promise<void> {
+    try {
+      const db = firebaseService.getFirestore();
+      const venueRef = doc(db, 'venues', venue.id);
+
+      // Build update object with only defined fields
+      const venueData: Record<string, any> = {};
+
+      for (const [key, value] of Object.entries(venue)) {
+        if (value !== undefined) {
+          if (key === 'createdAt' || key === 'updatedAt' || key === 'lastVisited') {
+            venueData[key] = value instanceof Date ? value.toISOString() : value;
+          } else if (key === 'location' && value) {
+            venueData[key] = {
+              latitude: (value as any).latitude,
+              longitude: (value as any).longitude
+            };
+          } else {
+            venueData[key] = value;
+          }
+        }
+      }
+
+      venueData.syncStatus = 'synced';
+
+      await updateDoc(venueRef, venueData);
+
+      // Update local sync status
+      await sqliteService.updateVenue(venue.id, { syncStatus: 'synced' });
+
+      console.log('Venue updated in Firebase:', venue.id);
+    } catch (error) {
+      console.error('Failed to sync update venue:', error);
+      throw error;
+    }
+  }
+
+  private async syncDeleteVenue(venueId: string): Promise<void> {
+    try {
+      const db = firebaseService.getFirestore();
+      const venueRef = doc(db, 'venues', venueId);
+
+      await deleteDoc(venueRef);
+
+      console.log('Venue deleted from Firebase:', venueId);
+    } catch (error) {
+      console.error('Failed to sync delete venue:', error);
       throw error;
     }
   }

@@ -1,24 +1,11 @@
 // Phase 3: Experience Logging Types
 // Comprehensive experience tracking for cider tasting sessions
 
-import { VenueType, Rating, ContainerType } from './cider';
+import { Rating, ContainerType } from './cider';
+import { VenueInfo, VenueSuggestion, Location } from './venue';
 
-export interface Location {
-  latitude: number;
-  longitude: number;
-  accuracy?: number;
-  altitude?: number;
-  timestamp?: number;
-}
-
-export interface VenueInfo {
-  id: string;
-  name: string;
-  type: VenueType;
-  location?: Location;
-  address?: string;
-  priceCategory?: 'budget' | 'mid_range' | 'premium' | 'luxury';
-}
+// Re-export venue types for backward compatibility
+export { VenueInfo, VenueSuggestion, Location } from './venue';
 
 export interface ExperienceLog {
   id: string;
@@ -27,7 +14,8 @@ export interface ExperienceLog {
 
   // Experience details
   date: Date;
-  venue: VenueInfo;
+  venueId?: string;    // Reference to venues table (for persistent venues)
+  venue: VenueInfo;    // Embedded venue data (for offline/historical resilience)
 
   // Price and value analysis
   price: number; // Total price paid
@@ -67,17 +55,8 @@ export interface ExperienceFormState {
   rating?: Rating;
 }
 
-// Venue suggestions and detection
-export interface VenueSuggestion {
-  id: string;
-  name: string;
-  type: VenueType;
-  distance?: number; // meters
-  confidence: number; // 0-1
-  location?: Location;
-  address?: string;
-  isExisting: boolean;
-}
+// VenueSuggestion is now imported from './venue'
+// Kept for backward compatibility via re-export above
 
 // Experience analytics
 export interface ExperienceAnalytics {

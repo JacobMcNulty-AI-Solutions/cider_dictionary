@@ -8,7 +8,11 @@ export type SyncOperationType =
   | 'CREATE_EXPERIENCE'
   | 'UPDATE_EXPERIENCE'
   | 'DELETE_EXPERIENCE'
-  | 'UPLOAD_IMAGE';
+  | 'CREATE_VENUE'
+  | 'UPDATE_VENUE'
+  | 'DELETE_VENUE'
+  | 'UPLOAD_IMAGE'
+  | 'DELETE_IMAGE';
 
 export type SyncStatus = 'pending' | 'syncing' | 'synced' | 'conflict' | 'error';
 
@@ -57,7 +61,7 @@ export interface ConflictResolution {
 export interface SyncConflict {
   id: string;
   entityId: string;
-  entityType: 'cider' | 'experience';
+  entityType: 'cider' | 'experience' | 'venue';
   localVersion: any;
   remoteVersion: any;
   conflictFields: string[];
@@ -69,12 +73,14 @@ export interface SyncConflict {
 
 // Download progress tracking
 export interface DownloadProgress {
-  phase: 'preparing' | 'backing_up' | 'fetching_ciders' | 'fetching_experiences' |
+  phase: 'preparing' | 'backing_up' | 'fetching_ciders' | 'fetching_experiences' | 'fetching_venues' |
          'validating' | 'inserting' | 'downloading_images' | 'complete' | 'error' | 'rolled_back';
   totalCiders: number;
   downloadedCiders: number;
   totalExperiences: number;
   downloadedExperiences: number;
+  totalVenues: number;
+  downloadedVenues: number;
   totalImages: number;
   downloadedImages: number;
   currentItem?: string;
@@ -88,6 +94,7 @@ export interface DownloadResult {
   success: boolean;
   cidersDownloaded: number;
   experiencesDownloaded: number;
+  venuesDownloaded: number;
   imagesDownloaded: number;
   skippedOrphans: number;
   backupId?: string;
@@ -97,5 +104,6 @@ export interface DownloadResult {
 export interface CloudDataStats {
   ciderCount: number;
   experienceCount: number;
+  venueCount: number;
   lastUpdated: Date | null;
 }

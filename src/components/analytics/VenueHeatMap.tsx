@@ -130,9 +130,26 @@ export const VenueHeatMap: React.FC<VenueHeatMapProps> = ({
   }
 
   /**
+   * Log heat map data for debugging
+   */
+  useEffect(() => {
+    if (heatMapData) {
+      console.log('[VenueHeatMap] Received data:', {
+        points: heatMapData.points.length,
+        bounds: heatMapData.bounds,
+        metadata: heatMapData.metadata,
+        firstPoint: heatMapData.points[0] || 'none'
+      });
+    } else {
+      console.log('[VenueHeatMap] No heatMapData received');
+    }
+  }, [heatMapData]);
+
+  /**
    * Render empty state
    */
   if (!heatMapData || heatMapData.points.length === 0) {
+    console.log('[VenueHeatMap] Showing empty state');
     return (
       <View style={styles.container}>
         <View style={styles.emptyContainer}>

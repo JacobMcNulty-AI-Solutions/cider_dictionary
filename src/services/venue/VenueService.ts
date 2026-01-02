@@ -1,17 +1,14 @@
 // Venue Management Service
 // Handles venue storage, retrieval, and selection with location data
+// REFACTORED: Now uses dedicated SQLite venues table instead of extracting from experiences
 
 import { VenueInfo, Location } from '../../types/experience';
-import { VenueType, ConsolidatedVenue } from '../../types/cider';
+import { Venue, VenueCreationData } from '../../types/venue';
+import { VenueType } from '../../types/cider';
 import { sqliteService } from '../database/sqlite';
+import { syncManager } from '../sync/SyncManager';
 import { VenueConsolidationService } from '../../utils/venueConsolidation';
-
-export interface VenueCreationData {
-  name: string;
-  type: VenueType;
-  location: Location;
-  address?: string;
-}
+import { getCurrentUserId } from '../../utils/auth';
 
 export interface VenueSearchResult extends VenueInfo {
   distance?: number;
@@ -21,7 +18,7 @@ export interface VenueSearchResult extends VenueInfo {
 
 class VenueService {
   private static instance: VenueService;
-  private venueCache: Map<string, VenueInfo> = new Map();
+  private venueCache: Map<string, Venue> = new Map();
 
   static getInstance(): VenueService {
     if (!VenueService.instance) {
@@ -31,33 +28,15 @@ class VenueService {
   }
 
   /**
-   * Get all stored venues
+   * Get all stored venues from the venues table
    */
-  async getAllVenues(): Promise<VenueInfo[]> {
+  async getAllVenues(): Promise<Venue[]> {
     try {
-      const venues: VenueInfo[] = [];
+      const venues = await sqliteService.getAllVenues();
 
-      // Get venues from experiences
-      const experiences = await sqliteService.getAllExperiences();
-      const seenVenueIds = new Set<string>();
-
-      for (const experience of experiences) {
-        if (experience.venue && experience.venue.id && !seenVenueIds.has(experience.venue.id)) {
-          venues.push(experience.venue);
-          seenVenueIds.add(experience.venue.id);
-        }
-      }
-
-      // Get venues from ciders (where they might have been logged)
-      const ciders = await sqliteService.getAllCiders();
-      for (const cider of ciders) {
-        if (cider.venue && typeof cider.venue === 'object' && 'id' in cider.venue) {
-          const venue = cider.venue as VenueInfo;
-          if (venue.id && !seenVenueIds.has(venue.id)) {
-            venues.push(venue);
-            seenVenueIds.add(venue.id);
-          }
-        }
+      // Update cache
+      for (const venue of venues) {
+        this.venueCache.set(venue.id, venue);
       }
 
       return venues;
@@ -65,6 +44,14 @@ class VenueService {
       console.error('Failed to load venues:', error);
       return [];
     }
+  }
+
+  /**
+   * Get all venues as VenueInfo (backward compatible)
+   */
+  async getAllVenuesAsVenueInfo(): Promise<VenueInfo[]> {
+    const venues = await this.getAllVenues();
+    return venues.map(v => this.toVenueInfo(v));
   }
 
   /**
@@ -76,28 +63,27 @@ class VenueService {
     maxResults: number = 10
   ): Promise<VenueSearchResult[]> {
     try {
-      const allVenues = await this.getAllVenues();
-      let results: VenueSearchResult[] = [];
+      let venues: Venue[];
 
       if (query.trim()) {
-        // Filter by name similarity
-        results = allVenues
-          .filter(venue =>
-            venue.name.toLowerCase().includes(query.toLowerCase()) ||
-            query.toLowerCase().includes(venue.name.toLowerCase())
-          )
-          .map(venue => this.enrichVenueResult(venue, currentLocation));
+        // Use SQLite search
+        venues = await sqliteService.searchVenues(query, maxResults * 2);
       } else {
         // Return all venues if no query
-        results = allVenues.map(venue => this.enrichVenueResult(venue, currentLocation));
+        venues = await this.getAllVenues();
       }
 
-      // Sort by relevance (distance if location available, then alphabetically)
+      let results: VenueSearchResult[] = venues.map(venue =>
+        this.enrichVenueResult(this.toVenueInfo(venue), currentLocation, venue)
+      );
+
+      // Sort by relevance (distance if location available, then by visit count)
       results.sort((a, b) => {
         if (currentLocation && a.distance !== undefined && b.distance !== undefined) {
           return a.distance - b.distance;
         }
-        return a.name.localeCompare(b.name);
+        // Sort by visit count if no location
+        return (b.visitCount || 0) - (a.visitCount || 0);
       });
 
       return results.slice(0, maxResults);
@@ -124,7 +110,8 @@ class VenueService {
 
         const distance = this.calculateDistance(location, venue.location);
         if (distance <= radiusKm * 1000) { // Convert km to meters
-          const enrichedVenue = this.enrichVenueResult(venue, location);
+          const venueInfo = this.toVenueInfo(venue);
+          const enrichedVenue = this.enrichVenueResult(venueInfo, location, venue);
 
           if (!venueTypes || venueTypes.includes(venue.type)) {
             nearbyVenues.push(enrichedVenue);
@@ -143,9 +130,34 @@ class VenueService {
   }
 
   /**
-   * Create or consolidate a new venue
+   * Get recent venues (for quick selection)
    */
-  async createVenue(venueData: VenueCreationData): Promise<VenueInfo> {
+  async getRecentVenues(limit: number = 5): Promise<Venue[]> {
+    try {
+      return await sqliteService.getRecentVenues(limit);
+    } catch (error) {
+      console.error('Failed to get recent venues:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Get most visited venues
+   */
+  async getMostVisitedVenues(limit: number = 5): Promise<Venue[]> {
+    try {
+      return await sqliteService.getMostVisitedVenues(limit);
+    } catch (error) {
+      console.error('Failed to get most visited venues:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Create or consolidate a new venue
+   * Now persists to SQLite and queues for Firebase sync
+   */
+  async createVenue(venueData: VenueCreationData): Promise<Venue> {
     try {
       // Use venue consolidation to check for existing matches
       const consolidatedVenue = await VenueConsolidationService.consolidateVenueName(
@@ -153,29 +165,51 @@ class VenueService {
         venueData.location
       );
 
-      // If it's an existing venue, return it
-      if (consolidatedVenue.isExisting) {
-        const existingVenue: VenueInfo = {
-          id: consolidatedVenue.id,
-          name: consolidatedVenue.name,
-          type: consolidatedVenue.type,
-          location: consolidatedVenue.location || venueData.location,
-          address: venueData.address
-        };
+      // Check if venue already exists in SQLite by name
+      const existingVenue = await sqliteService.getVenueByName(consolidatedVenue.name);
 
-        // Cache the venue
-        this.venueCache.set(existingVenue.id, existingVenue);
+      if (existingVenue) {
+        // Increment visit count for existing venue
+        await sqliteService.incrementVenueVisitCount(existingVenue.id);
+
+        // Queue update for sync
+        await syncManager.queueOperation('UPDATE_VENUE', {
+          id: existingVenue.id,
+          visitCount: existingVenue.visitCount + 1,
+          lastVisited: new Date()
+        });
+
+        // Update cache
+        const updatedVenue = await sqliteService.getVenueById(existingVenue.id);
+        if (updatedVenue) {
+          this.venueCache.set(updatedVenue.id, updatedVenue);
+          return updatedVenue;
+        }
         return existingVenue;
       }
 
       // Create new venue
-      const newVenue: VenueInfo = {
+      const now = new Date();
+      const newVenue: Venue = {
         id: this.generateVenueId(venueData.name, venueData.location),
+        userId: getCurrentUserId(),
         name: venueData.name.trim(),
         type: venueData.type,
         location: venueData.location,
-        address: venueData.address
+        address: venueData.address,
+        visitCount: 1,
+        lastVisited: now,
+        createdAt: now,
+        updatedAt: now,
+        syncStatus: 'pending',
+        version: 1
       };
+
+      // Save to SQLite
+      await sqliteService.createVenue(newVenue);
+
+      // Queue for sync
+      await syncManager.queueOperation('CREATE_VENUE', newVenue);
 
       // Cache the venue
       this.venueCache.set(newVenue.id, newVenue);
@@ -191,16 +225,15 @@ class VenueService {
   /**
    * Get venue by ID
    */
-  async getVenueById(venueId: string): Promise<VenueInfo | null> {
+  async getVenueById(venueId: string): Promise<Venue | null> {
     try {
       // Check cache first
       if (this.venueCache.has(venueId)) {
         return this.venueCache.get(venueId)!;
       }
 
-      // Search in stored venues
-      const allVenues = await this.getAllVenues();
-      const venue = allVenues.find(v => v.id === venueId);
+      // Get from SQLite
+      const venue = await sqliteService.getVenueById(venueId);
 
       if (venue) {
         this.venueCache.set(venueId, venue);
@@ -217,29 +250,98 @@ class VenueService {
   /**
    * Update venue information
    */
-  async updateVenue(venueId: string, updates: Partial<VenueCreationData>): Promise<VenueInfo | null> {
+  async updateVenue(venueId: string, updates: Partial<VenueCreationData>): Promise<Venue | null> {
     try {
       const existingVenue = await this.getVenueById(venueId);
       if (!existingVenue) {
         throw new Error('Venue not found');
       }
 
-      const updatedVenue: VenueInfo = {
-        ...existingVenue,
-        ...updates
+      const updateData: Partial<Venue> = {
+        ...updates,
+        updatedAt: new Date(),
+        syncStatus: 'pending'
       };
 
-      // Update cache
-      this.venueCache.set(venueId, updatedVenue);
+      // Update in SQLite
+      await sqliteService.updateVenue(venueId, updateData);
 
-      // Note: In a real implementation, you would update all experiences
-      // that reference this venue. For now, the update only affects new experiences.
+      // Cascade updates to experiences that reference this venue
+      // This ensures venue name/type/location changes are reflected in experience records
+      // Pass the OLD venue name so we can find experiences before the name was changed
+      const shouldCascade = updates.name || updates.type || updates.address !== undefined || updates.location;
+      console.log('[VenueService] Should cascade?', shouldCascade, 'updates:', updates);
 
-      console.log('Updated venue:', updatedVenue.name);
-      return updatedVenue;
+      if (shouldCascade) {
+        console.log('[VenueService] Calling cascade with oldName:', existingVenue.name);
+        const cascadedCount = await sqliteService.cascadeVenueUpdateToExperiences(venueId, updateData, existingVenue.name);
+        console.log('[VenueService] Cascade completed, updated', cascadedCount, 'experiences');
+      }
+
+      // Queue for sync
+      await syncManager.queueOperation('UPDATE_VENUE', {
+        id: venueId,
+        ...updateData
+      });
+
+      // Update cache and return
+      const updatedVenue = await sqliteService.getVenueById(venueId);
+      if (updatedVenue) {
+        this.venueCache.set(venueId, updatedVenue);
+        console.log('Updated venue:', updatedVenue.name);
+        return updatedVenue;
+      }
+
+      return null;
     } catch (error) {
       console.error('Failed to update venue:', error);
       return null;
+    }
+  }
+
+  /**
+   * Delete a venue
+   */
+  async deleteVenue(venueId: string): Promise<boolean> {
+    try {
+      // Delete from SQLite
+      await sqliteService.deleteVenue(venueId);
+
+      // Queue for sync
+      await syncManager.queueOperation('DELETE_VENUE', { id: venueId });
+
+      // Remove from cache
+      this.venueCache.delete(venueId);
+
+      console.log('Deleted venue:', venueId);
+      return true;
+    } catch (error) {
+      console.error('Failed to delete venue:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Increment venue visit count (called when logging an experience)
+   */
+  async incrementVisitCount(venueId: string): Promise<void> {
+    try {
+      await sqliteService.incrementVenueVisitCount(venueId);
+
+      // Queue sync
+      const venue = await sqliteService.getVenueById(venueId);
+      if (venue) {
+        await syncManager.queueOperation('UPDATE_VENUE', {
+          id: venueId,
+          visitCount: venue.visitCount,
+          lastVisited: venue.lastVisited
+        });
+
+        // Update cache
+        this.venueCache.set(venueId, venue);
+      }
+    } catch (error) {
+      console.error('Failed to increment visit count:', error);
     }
   }
 
@@ -254,10 +356,16 @@ class VenueService {
     averageRating: number;
   }> {
     try {
-      const experiences = await sqliteService.getAllExperiences();
-      const venueExperiences = experiences.filter(exp => exp.venue.id === venueId);
+      // Get venue from venues table
+      const venue = await sqliteService.getVenueById(venueId);
 
-      if (venueExperiences.length === 0) {
+      // Get experiences for detailed stats
+      const experiences = await sqliteService.getAllExperiences();
+      const venueExperiences = experiences.filter(exp =>
+        exp.venueId === venueId || exp.venue.id === venueId
+      );
+
+      if (venueExperiences.length === 0 && !venue) {
         return {
           visitCount: 0,
           lastVisited: null,
@@ -275,9 +383,9 @@ class VenueService {
         : 0;
 
       return {
-        visitCount: venueExperiences.length,
-        lastVisited: sortedByDate[sortedByDate.length - 1].date,
-        firstVisited: sortedByDate[0].date,
+        visitCount: venue?.visitCount || venueExperiences.length,
+        lastVisited: venue?.lastVisited || (sortedByDate.length > 0 ? sortedByDate[sortedByDate.length - 1].date : null),
+        firstVisited: sortedByDate.length > 0 ? sortedByDate[0].date : null,
         totalSpent,
         averageRating
       };
@@ -300,13 +408,39 @@ class VenueService {
     return VenueConsolidationService.getVenueSuggestions(query);
   }
 
+  /**
+   * Get venue count
+   */
+  async getVenueCount(): Promise<number> {
+    return await sqliteService.getVenueCount();
+  }
+
   // Private helper methods
 
-  private enrichVenueResult(venue: VenueInfo, currentLocation?: Location): VenueSearchResult {
-    const result: VenueSearchResult = { ...venue };
+  private toVenueInfo(venue: Venue): VenueInfo {
+    return {
+      id: venue.id,
+      name: venue.name,
+      type: venue.type,
+      location: venue.location,
+      address: venue.address
+    };
+  }
 
-    if (currentLocation && venue.location) {
-      result.distance = this.calculateDistance(currentLocation, venue.location);
+  private enrichVenueResult(
+    venueInfo: VenueInfo,
+    currentLocation?: Location,
+    fullVenue?: Venue
+  ): VenueSearchResult {
+    const result: VenueSearchResult = { ...venueInfo };
+
+    if (currentLocation && venueInfo.location) {
+      result.distance = this.calculateDistance(currentLocation, venueInfo.location);
+    }
+
+    if (fullVenue) {
+      result.lastVisited = fullVenue.lastVisited;
+      result.visitCount = fullVenue.visitCount;
     }
 
     return result;
@@ -342,6 +476,9 @@ class VenueService {
     this.venueCache.clear();
   }
 }
+
+// Re-export VenueCreationData from venue types for backward compatibility
+export { VenueCreationData } from '../../types/venue';
 
 // Export singleton instance
 export const venueService = VenueService.getInstance();

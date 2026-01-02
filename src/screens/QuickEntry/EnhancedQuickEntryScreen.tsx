@@ -1,13 +1,14 @@
 // Enhanced QuickEntry Screen with Progressive Disclosure
 // Now uses the shared CiderForm component for consistency with edit screen
 
-import React, { useCallback, useEffect } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   View,
   StyleSheet,
   Alert,
   BackHandler
 } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import { RootTabScreenProps } from '../../types/navigation';
 import { CiderMasterRecord } from '../../types/cider';
 import { useCiderStore } from '../../store/ciderStore';
@@ -18,7 +19,18 @@ type Props = RootTabScreenProps<'QuickEntry'>;
 
 export default function EnhancedQuickEntryScreen({ navigation }: Props) {
   const { addCider } = useCiderStore();
-  const [isDirty, setIsDirty] = React.useState(false);
+  const [isDirty, setIsDirty] = useState(false);
+  // Key to force form reset - changes after each successful save or when screen focuses
+  const [formKey, setFormKey] = useState(0);
+
+  // Reset form when screen comes into focus (e.g., navigating back from another tab)
+  useFocusEffect(
+    useCallback(() => {
+      // Reset form key to force fresh form state
+      setFormKey(prev => prev + 1);
+      setIsDirty(false);
+    }, [])
+  );
 
   // Handle Android back button
   useEffect(() => {
@@ -63,6 +75,11 @@ export default function EnhancedQuickEntryScreen({ navigation }: Props) {
           {
             text: 'Add Another',
             style: 'default',
+            onPress: () => {
+              // Reset form for new entry
+              setFormKey(prev => prev + 1);
+              setIsDirty(false);
+            },
           },
           {
             text: 'View Collection',
@@ -103,6 +120,7 @@ export default function EnhancedQuickEntryScreen({ navigation }: Props) {
     <SafeAreaContainer>
       <View testID="enhanced-quick-entry-screen" style={styles.container}>
         <CiderForm
+          key={formKey}
           onSubmit={handleSubmit}
           onCancel={handleCancel}
           submitButtonText="Save Cider"

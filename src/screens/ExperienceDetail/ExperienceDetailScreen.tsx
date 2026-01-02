@@ -111,7 +111,9 @@ export default function ExperienceDetailScreen() {
 
   const handleViewCider = () => {
     if (cider) {
-      navigation.navigate('CiderDetail', { ciderId: cider.id });
+      // Use push instead of navigate to always add a new screen to the stack
+      // This ensures back button returns to ExperienceDetail, not a previous CiderDetail
+      navigation.push('CiderDetail', { ciderId: cider.id });
     }
   };
 

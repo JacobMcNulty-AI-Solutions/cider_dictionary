@@ -19,30 +19,119 @@ import { syncManager } from '../services/sync/SyncManager';
  * Firebase URLs start with https://firebasestorage.googleapis.com
  */
 const isLocalPhoto = (photoPath: string | undefined): boolean => {
-  if (!photoPath) return false;
+  if (!photoPath) {
+    console.log('[isLocalPhoto] No photo path provided');
+    return false;
+  }
+
+  console.log('[isLocalPhoto] Checking path:', photoPath);
+
   // Local file paths
-  if (photoPath.startsWith('file://')) return true;
-  if (photoPath.startsWith('/data/')) return true;
-  if (photoPath.includes('ExponentExperienceData')) return true;
-  if (photoPath.includes('DocumentDirectory')) return true;
+  if (photoPath.startsWith('file://')) {
+    console.log('[isLocalPhoto] Detected as local (file://)');
+    return true;
+  }
+  if (photoPath.startsWith('/data/')) {
+    console.log('[isLocalPhoto] Detected as local (/data/)');
+    return true;
+  }
+  if (photoPath.includes('ExponentExperienceData')) {
+    console.log('[isLocalPhoto] Detected as local (ExponentExperienceData)');
+    return true;
+  }
+  if (photoPath.includes('DocumentDirectory')) {
+    console.log('[isLocalPhoto] Detected as local (DocumentDirectory)');
+    return true;
+  }
   // Already a Firebase URL - no upload needed
-  if (photoPath.startsWith('https://firebasestorage.googleapis.com')) return false;
-  if (photoPath.startsWith('https://storage.googleapis.com')) return false;
+  if (photoPath.startsWith('https://firebasestorage.googleapis.com')) {
+    console.log('[isLocalPhoto] Already Firebase URL');
+    return false;
+  }
+  if (photoPath.startsWith('https://storage.googleapis.com')) {
+    console.log('[isLocalPhoto] Already Firebase URL');
+    return false;
+  }
   // Assume other paths are local
-  return !photoPath.startsWith('http');
+  const isLocal = !photoPath.startsWith('http');
+  console.log('[isLocalPhoto] Other path, isLocal:', isLocal);
+  return isLocal;
+};
+
+/**
+ * Check if a photo URL is a Firebase Storage URL
+ */
+const isFirebaseStorageUrl = (photoUrl: string | undefined): boolean => {
+  if (!photoUrl) return false;
+  return photoUrl.startsWith('https://firebasestorage.googleapis.com') ||
+         photoUrl.startsWith('https://storage.googleapis.com');
+};
+
+/**
+ * Extract the storage path from a Firebase Storage URL
+ * URL format: https://firebasestorage.googleapis.com/v0/b/{bucket}/o/{encodedPath}?alt=media&token=xxx
+ */
+const extractStoragePathFromUrl = (firebaseUrl: string): string | null => {
+  try {
+    // Extract the path after /o/ and before ?
+    const match = firebaseUrl.match(/\/o\/([^?]+)/);
+    if (match && match[1]) {
+      // URL decode the path (e.g., images%2Fcider_xxx%2Fphoto.jpg -> images/cider_xxx/photo.jpg)
+      return decodeURIComponent(match[1]);
+    }
+    return null;
+  } catch (error) {
+    console.error('[extractStoragePathFromUrl] Failed to extract path:', error);
+    return null;
+  }
+};
+
+/**
+ * Queue an image deletion operation for a cider's photo
+ */
+const queueImageDeletion = async (ciderId: string, firebasePhotoUrl: string): Promise<void> => {
+  console.log('[queueImageDeletion] Starting for cider:', ciderId);
+  console.log('[queueImageDeletion] Firebase URL:', firebasePhotoUrl);
+
+  const remotePath = extractStoragePathFromUrl(firebasePhotoUrl);
+  if (!remotePath) {
+    console.warn('[queueImageDeletion] Could not extract storage path from URL');
+    return;
+  }
+
+  console.log('[queueImageDeletion] Remote path:', remotePath);
+
+  try {
+    await syncManager.queueOperation('DELETE_IMAGE', {
+      remotePath,
+      ciderId,
+    });
+    console.log(`[queueImageDeletion] SUCCESS - Queued image deletion for cider ${ciderId}`);
+  } catch (error) {
+    console.error('[queueImageDeletion] FAILED to queue:', error);
+  }
 };
 
 /**
  * Queue an image upload operation for a cider's photo
  */
 const queueImageUpload = async (ciderId: string, localPhotoPath: string): Promise<void> => {
+  console.log('[queueImageUpload] Starting for cider:', ciderId);
+  console.log('[queueImageUpload] Local path:', localPhotoPath);
+
   const remotePath = `images/${ciderId}/photo_${Date.now()}.jpg`;
-  await syncManager.queueOperation('UPLOAD_IMAGE', {
-    localPath: localPhotoPath,
-    remotePath,
-    ciderId,
-  });
-  console.log(`Queued image upload for cider ${ciderId}: ${localPhotoPath} -> ${remotePath}`);
+  console.log('[queueImageUpload] Remote path:', remotePath);
+
+  try {
+    await syncManager.queueOperation('UPLOAD_IMAGE', {
+      localPath: localPhotoPath,
+      remotePath,
+      ciderId,
+    });
+    console.log(`[queueImageUpload] SUCCESS - Queued image upload for cider ${ciderId}`);
+  } catch (error) {
+    console.error('[queueImageUpload] FAILED to queue:', error);
+  }
 };
 
 // =============================================================================
@@ -176,8 +265,13 @@ export const useCiderStore = create<CiderStore>()(
         await syncManager.queueOperation('CREATE_CIDER', newCider);
 
         // Queue image upload if there's a local photo
-        if (isLocalPhoto(newCider.photo)) {
+        console.log('[addCider] Checking if photo needs upload. Photo:', newCider.photo);
+        const needsUpload = isLocalPhoto(newCider.photo);
+        console.log('[addCider] Needs upload:', needsUpload);
+        if (needsUpload) {
+          console.log('[addCider] Calling queueImageUpload...');
           await queueImageUpload(newCider.id, newCider.photo!);
+          console.log('[addCider] queueImageUpload completed');
         }
 
         // Update store
@@ -280,7 +374,28 @@ export const useCiderStore = create<CiderStore>()(
       set({ isLoading: true, error: null });
 
       try {
-        // Delete from database
+        // Get cider from SQLite (not in-memory store) to check for photo
+        // SQLite has the updated Firebase URL after image upload, in-memory store might have local path
+        const cider = await sqliteService.getCiderById(id);
+        console.log('[deleteCider] Cider photo from SQLite:', cider?.photo);
+
+        // Queue image deletion if cider has a Firebase Storage photo
+        if (cider?.photo && isFirebaseStorageUrl(cider.photo)) {
+          console.log('[deleteCider] Cider has Firebase Storage photo, queueing deletion');
+          await queueImageDeletion(id, cider.photo);
+        } else {
+          console.log('[deleteCider] No Firebase Storage photo to delete');
+        }
+
+        // Get and queue deletion for all experiences associated with this cider
+        // (SQLite will cascade delete locally, but we need to sync to Firestore)
+        const experiences = await sqliteService.getExperiencesByCiderId(id);
+        console.log(`[deleteCider] Found ${experiences.length} experiences to delete`);
+        for (const experience of experiences) {
+          await syncManager.queueOperation('DELETE_EXPERIENCE', { id: experience.id });
+        }
+
+        // Delete from database (CASCADE will delete experiences locally)
         await sqliteService.deleteCider(id);
 
         // Queue for Firebase sync
@@ -363,14 +478,39 @@ export const useCiderStore = create<CiderStore>()(
       set({ isLoading: true, error: null });
 
       try {
-        // TODO: Batch delete from database
-        // await sqliteService.deleteMultipleCiders(ids);
+        // Process each cider: get photos and experiences before deleting
+        for (const id of ids) {
+          const cider = await sqliteService.getCiderById(id);
+          console.log('[deleteMutlipleCiders] Cider photo from SQLite:', id, cider?.photo);
+
+          // Queue image deletion if cider has a Firebase Storage photo
+          if (cider?.photo && isFirebaseStorageUrl(cider.photo)) {
+            console.log('[deleteMutlipleCiders] Queueing image deletion for cider:', id);
+            await queueImageDeletion(id, cider.photo);
+          }
+
+          // Get and queue deletion for all experiences associated with this cider
+          const experiences = await sqliteService.getExperiencesByCiderId(id);
+          console.log(`[deleteMutlipleCiders] Found ${experiences.length} experiences to delete for cider ${id}`);
+          for (const experience of experiences) {
+            await syncManager.queueOperation('DELETE_EXPERIENCE', { id: experience.id });
+          }
+        }
+
+        // Delete from database and queue sync operations
+        for (const id of ids) {
+          await sqliteService.deleteCider(id);
+          await syncManager.queueOperation('DELETE_CIDER', { id });
+        }
 
         set(state => ({
           ciders: state.ciders.filter(c => !ids.includes(c.id)),
           isDirty: true,
           isLoading: false,
         }));
+
+        // Trigger analytics refresh
+        get().refreshAnalytics();
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : 'Failed to delete ciders';
         set({ error: errorMessage, isLoading: false });

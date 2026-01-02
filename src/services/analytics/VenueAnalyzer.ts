@@ -23,6 +23,7 @@ import {
   GeoBounds,
 } from '../../types/analytics';
 import AnalyticsCacheManager from './AnalyticsCacheManager';
+import { sqliteService } from '../database/sqlite';
 
 // ============================================================================
 // Constants
@@ -110,11 +111,12 @@ export class VenueAnalyzer {
 
       console.log(`[VenueAnalyzer] Generating heat map for ${experiences.length} experiences`);
 
-      // Extract venue points from experiences
-      const venuePoints = this.extractVenuePoints(experiences);
+      // Get venue points directly from the venues table
+      const venuePoints = await this.getVenuePointsFromTable();
 
       // Handle empty case
       if (venuePoints.length === 0) {
+        console.log('[VenueAnalyzer] No venues with location data found');
         const emptyData: HeatMapData = {
           points: [],
           bounds: this.getDefaultBounds(),
@@ -137,13 +139,16 @@ export class VenueAnalyzer {
       // Calculate intensity scale
       const intensity = this.calculateIntensityScale(clusters);
 
+      // Calculate total experiences from venue visit counts
+      const totalExperiences = venuePoints.reduce((sum, p) => sum + p.weight, 0);
+
       const heatMapData: HeatMapData = {
         points: clusters,
         bounds,
         intensity,
         metadata: {
           totalVenues: clusters.length,
-          totalExperiences: experiences.length,
+          totalExperiences: totalExperiences,
           clusterRadius: radiusMeters,
         },
       };
@@ -339,20 +344,145 @@ export class VenueAnalyzer {
   // ==========================================================================
 
   /**
+   * Get venue points directly from the venues table
+   * This is the primary data source for heat map visualization
+   *
+   * @returns Array of venue points with valid coordinates
+   */
+  private async getVenuePointsFromTable(): Promise<VenuePoint[]> {
+    const points: VenuePoint[] = [];
+
+    try {
+      const allVenues = await sqliteService.getAllVenues();
+      console.log(`[VenueAnalyzer] getVenuePointsFromTable: Found ${allVenues.length} total venues`);
+
+      // Debug: Log first 3 venues to see their structure
+      if (allVenues.length > 0) {
+        console.log('[VenueAnalyzer] Sample venues:', allVenues.slice(0, 3).map(v => ({
+          name: v.name,
+          type: v.type,
+          location: v.location,
+          visitCount: v.visitCount
+        })));
+      }
+
+      let withLocation = 0;
+      let withoutLocation = 0;
+      let invalidCoords = 0;
+
+      for (const venue of allVenues) {
+        if (!venue.location) {
+          withoutLocation++;
+          console.log(`[VenueAnalyzer] Venue "${venue.name}" has no location data`);
+          continue;
+        }
+
+        const { latitude, longitude } = venue.location;
+
+        if (!this.isValidCoordinate(latitude, longitude)) {
+          invalidCoords++;
+          console.log(`[VenueAnalyzer] Invalid coords for venue ${venue.name}: lat=${latitude}, lng=${longitude}`);
+          continue;
+        }
+
+        withLocation++;
+        points.push({
+          latitude,
+          longitude,
+          weight: venue.visitCount || 1,
+          venueName: venue.name,
+          venueType: venue.type,
+        });
+      }
+
+      console.log(`[VenueAnalyzer] getVenuePointsFromTable: ${withLocation} venues with valid location, ${withoutLocation} without location, ${invalidCoords} invalid coords`);
+      console.log(`[VenueAnalyzer] Returning ${points.length} venue points for heat map`);
+
+      return points;
+    } catch (error) {
+      console.error('[VenueAnalyzer] Error getting venues from table:', error);
+      return [];
+    }
+  }
+
+  /**
    * Extract venue points from experiences with valid coordinates
+   * Falls back to venues table if experience doesn't have location data
    *
    * @param experiences - Array of experience logs
    * @returns Array of venue points
+   * @deprecated Use getVenuePointsFromTable instead
+   */
+  private async extractVenuePointsAsync(experiences: ExperienceLog[]): Promise<VenuePoint[]> {
+    const points: VenuePoint[] = [];
+    let withLocation = 0;
+    let withoutLocation = 0;
+    let fromVenuesTable = 0;
+    let invalidCoords = 0;
+
+    // Build a cache of venues from the venues table for fallback
+    let venuesCache: Map<string, { latitude: number; longitude: number }> = new Map();
+    try {
+      const allVenues = await sqliteService.getAllVenues();
+      for (const venue of allVenues) {
+        if (venue.location) {
+          venuesCache.set(venue.name.toLowerCase(), {
+            latitude: venue.location.latitude,
+            longitude: venue.location.longitude
+          });
+        }
+      }
+      console.log(`[VenueAnalyzer] Loaded ${venuesCache.size} venues with locations from venues table`);
+    } catch (error) {
+      console.warn('[VenueAnalyzer] Could not load venues table for fallback:', error);
+    }
+
+    for (const exp of experiences) {
+      let location = exp.venue.location;
+
+      // If no location in experience, try to get it from venues table
+      if (!location && venuesCache.has(exp.venue.name.toLowerCase())) {
+        location = venuesCache.get(exp.venue.name.toLowerCase());
+        if (location) {
+          fromVenuesTable++;
+        }
+      }
+
+      if (!location) {
+        withoutLocation++;
+        continue;
+      }
+
+      if (!this.isValidCoordinate(location.latitude, location.longitude)) {
+        invalidCoords++;
+        console.log(`[VenueAnalyzer] Invalid coords for ${exp.venue.name}: lat=${location.latitude}, lng=${location.longitude}`);
+        continue;
+      }
+
+      withLocation++;
+      points.push({
+        latitude: location.latitude,
+        longitude: location.longitude,
+        weight: 1,
+        venueName: exp.venue.name,
+        venueType: exp.venue.type,
+      });
+    }
+
+    console.log(`[VenueAnalyzer] extractVenuePoints: ${experiences.length} experiences, ${withLocation} with valid location (${fromVenuesTable} from venues table), ${withoutLocation} without location, ${invalidCoords} invalid coords`);
+
+    return points;
+  }
+
+  /**
+   * Synchronous version for backward compatibility (deprecated)
    */
   private extractVenuePoints(experiences: ExperienceLog[]): VenuePoint[] {
     const points: VenuePoint[] = [];
 
     for (const exp of experiences) {
       const location = exp.venue.location;
-      if (
-        location &&
-        this.isValidCoordinate(location.latitude, location.longitude)
-      ) {
+      if (location && this.isValidCoordinate(location.latitude, location.longitude)) {
         points.push({
           latitude: location.latitude,
           longitude: location.longitude,
@@ -413,12 +543,13 @@ export class VenueAnalyzer {
       }
 
       // Start new cluster with current point
+      // Use the venue's weight (visitCount) for experiences
       const cluster: ClusteredPoint = {
         latitude: points[i].latitude,
         longitude: points[i].longitude,
-        weight: 1,
+        weight: 1, // Number of venues in cluster
         venueNames: [points[i].venueName],
-        experiences: 1,
+        experiences: points[i].weight, // Total visits from all venues in cluster
       };
 
       visited.add(i);
@@ -438,17 +569,18 @@ export class VenueAnalyzer {
 
         if (distance <= radiusMeters) {
           // Add to cluster
-          cluster.weight += 1;
-          cluster.experiences += 1;
+          const oldWeight = cluster.weight;
+          cluster.weight += 1; // Increment venue count
+          cluster.experiences += points[j].weight; // Add this venue's visits
           cluster.venueNames.push(points[j].venueName);
           visited.add(j);
 
           // Update cluster center as weighted average
           cluster.latitude =
-            (cluster.latitude * (cluster.weight - 1) + points[j].latitude) /
+            (cluster.latitude * oldWeight + points[j].latitude) /
             cluster.weight;
           cluster.longitude =
-            (cluster.longitude * (cluster.weight - 1) + points[j].longitude) /
+            (cluster.longitude * oldWeight + points[j].longitude) /
             cluster.weight;
         }
       }

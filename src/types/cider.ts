@@ -103,9 +103,8 @@ export interface CiderMasterRecord {
   spicesBotanicals?: ('no_spices_botanicals' | 'cinnamon' | 'nutmeg' | 'cloves' | 'ginger' | 'allspice' | 'elderflower' | 'chamomile' | 'lavender' | 'hibiscus' | 'juniper' | 'lemongrass' | 'rosehips' | 'pumpkin_spice' | 'mulling_spices' | 'chai_spices' | 'other')[];
 
   woodAging?: {
-    oakTypes?: ('no_wood_aging' | 'american_oak' | 'french_oak' | 'english_oak')[];
+    woodType?: ('no_wood_aging' | 'american_oak' | 'french_oak' | 'english_oak' | 'cherry' | 'apple' | 'chestnut' | 'acacia' | 'other')[];
     barrelHistory?: ('virgin_oak' | 'bourbon_barrel' | 'wine_barrel' | 'sherry_barrel' | 'rum_barrel' | 'gin_barrel')[];
-    alternativeWoods?: ('cherry' | 'apple' | 'chestnut' | 'acacia' | 'other')[];
   };
 
   detailedRatings?: {
@@ -266,6 +265,11 @@ export interface FormValidationErrors {
 // VENUE SYSTEM
 // =============================================================================
 
+/**
+ * @deprecated Use Venue from './venue' instead for persisted venues
+ * or VenueSuggestion for venue selector results.
+ * Kept for backward compatibility during migration.
+ */
 export interface ConsolidatedVenue {
   id: string;
   name: string;

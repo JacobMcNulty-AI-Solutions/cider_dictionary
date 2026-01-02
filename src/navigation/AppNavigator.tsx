@@ -11,6 +11,8 @@ import CiderEditScreen from '../screens/Collection/CiderEditScreen';
 import ExperienceLogScreen from '../screens/ExperienceLog/ExperienceLogScreen';
 import ExperienceHistoryScreen from '../screens/ExperienceHistory/ExperienceHistoryScreen';
 import ExperienceDetailScreen from '../screens/ExperienceDetail/ExperienceDetailScreen';
+import VenueListScreen from '../screens/Venues/VenueListScreen';
+import VenueDetailScreen from '../screens/Venues/VenueDetailScreen';
 import { RootStackParamList } from '../types/navigation';
 import { ErrorBoundary } from '../services/error/ErrorBoundary';
 
@@ -92,6 +94,26 @@ export default function AppNavigator() {
             options={{
               title: 'Experience Details',
               headerStyle: { backgroundColor: '#5856D6' },
+              headerTintColor: '#fff',
+              headerTitleStyle: { fontWeight: 'bold' }
+            }}
+          />
+          <Stack.Screen
+            name="VenueList"
+            component={VenueListScreen}
+            options={{
+              title: 'My Venues',
+              headerStyle: { backgroundColor: '#FF6B6B' },
+              headerTintColor: '#fff',
+              headerTitleStyle: { fontWeight: 'bold' }
+            }}
+          />
+          <Stack.Screen
+            name="VenueDetail"
+            component={VenueDetailScreen}
+            options={{
+              title: 'Venue Details',
+              headerStyle: { backgroundColor: '#FF6B6B' },
               headerTintColor: '#fff',
               headerTitleStyle: { fontWeight: 'bold' }
             }}

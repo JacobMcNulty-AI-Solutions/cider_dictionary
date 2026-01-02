@@ -68,14 +68,11 @@ export default function CiderDetailScreen({ route, navigation }: Props) {
     loadCiderAndExperiences();
   }, [loadCiderAndExperiences]);
 
-  // Refresh cider data when screen comes into focus (after edit)
+  // Refresh cider data AND experiences when screen comes into focus (after edit or logging experience)
   useFocusEffect(
     useCallback(() => {
-      const ciderData = getCiderById(ciderId);
-      if (ciderData) {
-        setCider(ciderData);
-      }
-    }, [ciderId, getCiderById])
+      loadCiderAndExperiences();
+    }, [loadCiderAndExperiences])
   );
 
   const handleDelete = () => {

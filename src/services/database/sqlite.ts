@@ -1,8 +1,10 @@
 import * as SQLite from 'expo-sqlite';
 import { BasicCiderRecord, CiderMasterRecord, CiderDatabase, Rating } from '../../types/cider';
 import { ExperienceLog } from '../../types/experience';
+import { Venue, VenueRow, VenueFormData } from '../../types/venue';
 import { SyncOperation, SyncOperationType, SyncStatus } from '../../types/sync';
 import { DatabaseError, ErrorHandler, withRetry } from '../../utils/errors';
+import { getCurrentUserId } from '../../utils/auth';
 
 // Database connection pool for better performance
 class DatabaseConnectionManager {
@@ -73,6 +75,9 @@ class DatabaseConnectionManager {
 
     // Check if we need to migrate ciders table for comprehensive characteristics
     await this.migrateCidersTable(database);
+
+    // Run venues migration (creates table and extracts from experiences)
+    await this.migrateVenuesTable(database);
 
     // Create ciders table
     await database.execAsync(`
@@ -178,13 +183,45 @@ class DatabaseConnectionManager {
       );
     `);
 
+    // Create venues table
+    await database.execAsync(`
+      CREATE TABLE IF NOT EXISTS venues (
+        id TEXT PRIMARY KEY,
+        userId TEXT NOT NULL,
+        name TEXT NOT NULL,
+        type TEXT NOT NULL,
+        latitude REAL,
+        longitude REAL,
+        address TEXT,
+        visitCount INTEGER DEFAULT 0,
+        lastVisited TEXT,
+        createdAt TEXT NOT NULL,
+        updatedAt TEXT NOT NULL,
+        syncStatus TEXT DEFAULT 'pending',
+        version INTEGER DEFAULT 1
+      );
+    `);
+
+    // Create migrations tracking table
+    await database.execAsync(`
+      CREATE TABLE IF NOT EXISTS migrations (
+        name TEXT PRIMARY KEY,
+        version INTEGER,
+        applied_at TEXT
+      );
+    `);
+
     // Create indexes for better query performance
     await database.execAsync(`
       CREATE INDEX IF NOT EXISTS idx_experiences_cider_id ON experiences(ciderId);
       CREATE INDEX IF NOT EXISTS idx_experiences_date ON experiences(date DESC);
       CREATE INDEX IF NOT EXISTS idx_experiences_price_per_pint ON experiences(pricePerPint);
+      CREATE INDEX IF NOT EXISTS idx_experiences_venue_id ON experiences(venueId);
       CREATE INDEX IF NOT EXISTS idx_sync_operations_status ON sync_operations(status);
       CREATE INDEX IF NOT EXISTS idx_sync_operations_timestamp ON sync_operations(timestamp);
+      CREATE INDEX IF NOT EXISTS idx_venues_user_id ON venues(userId);
+      CREATE INDEX IF NOT EXISTS idx_venues_name ON venues(name);
+      CREATE INDEX IF NOT EXISTS idx_venues_visit_count ON venues(visitCount DESC);
     `);
   }
 
@@ -313,6 +350,188 @@ class DatabaseConnectionManager {
       console.warn('Ciders migration attempt failed, table may not exist yet:', error);
       // This is expected if the table doesn't exist yet
     }
+  }
+
+  // Migration version tracking helpers
+  private async getMigrationVersion(database: SQLite.SQLiteDatabase, name: string): Promise<number> {
+    try {
+      const result = await database.getFirstAsync<{ version: number }>(
+        "SELECT version FROM migrations WHERE name = ?",
+        [name]
+      );
+      return result?.version || 0;
+    } catch {
+      // migrations table doesn't exist yet
+      return 0;
+    }
+  }
+
+  private async setMigrationVersion(database: SQLite.SQLiteDatabase, name: string, version: number): Promise<void> {
+    await database.runAsync(
+      `INSERT OR REPLACE INTO migrations (name, version, applied_at) VALUES (?, ?, ?)`,
+      [name, version, new Date().toISOString()]
+    );
+  }
+
+  private async migrateVenuesTable(database: SQLite.SQLiteDatabase): Promise<void> {
+    const currentVersion = await this.getMigrationVersion(database, 'venues');
+
+    // Skip if already migrated
+    if (currentVersion >= 1) {
+      console.log('Venues migration already applied (version', currentVersion, ')');
+      return;
+    }
+
+    console.log('Starting venues migration...');
+
+    try {
+      // TRANSACTION: All or nothing
+      await database.execAsync('BEGIN TRANSACTION');
+
+      // 1. Check if experiences table exists and has data
+      let hasExperiences = false;
+      try {
+        const expCount = await database.getFirstAsync<{ count: number }>(
+          'SELECT COUNT(*) as count FROM experiences'
+        );
+        hasExperiences = (expCount?.count || 0) > 0;
+      } catch {
+        // experiences table doesn't exist yet
+      }
+
+      // 2. Add venueId column to experiences if not exists
+      try {
+        const columns = await database.getAllAsync(`PRAGMA table_info(experiences)`);
+        const hasVenueId = (columns as any[]).some(col => col.name === 'venueId');
+        if (!hasVenueId) {
+          console.log('Adding venueId column to experiences table...');
+          await database.execAsync('ALTER TABLE experiences ADD COLUMN venueId TEXT');
+        }
+      } catch {
+        // experiences table doesn't exist yet
+      }
+
+      // 3. Extract unique venues from experiences (if any exist)
+      if (hasExperiences) {
+        await this.extractVenuesFromExperiences(database);
+        await this.linkExperiencesToVenues(database);
+      }
+
+      // 4. Record migration version
+      await this.setMigrationVersion(database, 'venues', 1);
+
+      // COMMIT: All succeeded
+      await database.execAsync('COMMIT');
+      console.log('Venues migration completed successfully');
+
+    } catch (error) {
+      // ROLLBACK: Something failed
+      console.error('Venues migration failed, rolling back:', error);
+      try {
+        await database.execAsync('ROLLBACK');
+      } catch (rollbackError) {
+        console.error('Rollback failed:', rollbackError);
+      }
+      // Don't throw - allow app to continue without migration
+      console.warn('Continuing without venues migration - will retry on next launch');
+    }
+  }
+
+  private async extractVenuesFromExperiences(database: SQLite.SQLiteDatabase): Promise<void> {
+    console.log('Extracting venues from experiences...');
+
+    const experiences = await database.getAllAsync('SELECT * FROM experiences');
+    const venueMap = new Map<string, any>(); // key: name+type (dedup)
+
+    for (const exp of experiences as any[]) {
+      try {
+        const venue = JSON.parse(exp.venue);
+        if (!venue?.name) continue; // Skip invalid venues
+
+        const key = `${venue.name.toLowerCase().trim()}_${venue.type || 'other'}`;
+
+        if (!venueMap.has(key)) {
+          venueMap.set(key, {
+            id: venue.id || `venue_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+            userId: exp.userId,
+            name: venue.name.trim(),
+            type: venue.type || 'other',
+            latitude: venue.location?.latitude || null,
+            longitude: venue.location?.longitude || null,
+            address: venue.address || null,
+            visitCount: 1,
+            lastVisited: exp.date,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+            syncStatus: 'pending',
+            version: 1
+          });
+        } else {
+          const existing = venueMap.get(key);
+          existing.visitCount++;
+          // Update lastVisited if this experience is more recent
+          if (exp.date > existing.lastVisited) {
+            existing.lastVisited = exp.date;
+          }
+          // Update location if missing
+          if (!existing.latitude && venue.location?.latitude) {
+            existing.latitude = venue.location.latitude;
+            existing.longitude = venue.location.longitude;
+          }
+        }
+      } catch (e) {
+        console.warn('Failed to parse venue from experience:', exp.id);
+      }
+    }
+
+    // Insert all unique venues
+    console.log(`Inserting ${venueMap.size} unique venues...`);
+    for (const venue of venueMap.values()) {
+      await database.runAsync(
+        `INSERT OR IGNORE INTO venues (
+          id, userId, name, type, latitude, longitude, address,
+          visitCount, lastVisited, createdAt, updatedAt, syncStatus, version
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          venue.id, venue.userId, venue.name, venue.type,
+          venue.latitude, venue.longitude, venue.address,
+          venue.visitCount, venue.lastVisited,
+          venue.createdAt, venue.updatedAt, venue.syncStatus, venue.version
+        ]
+      );
+    }
+  }
+
+  private async linkExperiencesToVenues(database: SQLite.SQLiteDatabase): Promise<void> {
+    console.log('Linking experiences to venues...');
+
+    const experiences = await database.getAllAsync('SELECT id, venue FROM experiences WHERE venueId IS NULL');
+    let linked = 0;
+
+    for (const exp of experiences as any[]) {
+      try {
+        const venueData = JSON.parse(exp.venue);
+        if (!venueData?.name) continue;
+
+        // Find matching venue by name (case-insensitive)
+        const venue = await database.getFirstAsync<{ id: string }>(
+          'SELECT id FROM venues WHERE LOWER(name) = LOWER(?)',
+          [venueData.name.trim()]
+        );
+
+        if (venue) {
+          await database.runAsync(
+            'UPDATE experiences SET venueId = ? WHERE id = ?',
+            [venue.id, exp.id]
+          );
+          linked++;
+        }
+      } catch (e) {
+        // Skip malformed
+      }
+    }
+
+    console.log(`Linked ${linked} experiences to venues`);
   }
 
   async isInitialized(): Promise<boolean> {
@@ -554,7 +773,7 @@ export class BasicSQLiteService implements CiderDatabase {
         'fruitAdditions',      // string[]
         'hops',                // object with varieties, character
         'spicesBotanicals',    // string[]
-        'woodAging'            // object with oakTypes, barrelHistory, alternativeWoods
+        'woodAging'            // object with woodType, barrelHistory
       ];
 
       const processedUpdates: Record<string, any> = {};
@@ -666,18 +885,22 @@ export class BasicSQLiteService implements CiderDatabase {
       return await withRetry(async () => {
         const db = await this.connectionManager.getDatabase();
 
+        // Use venueId from experience, or fall back to venue.id
+        const venueId = experience.venueId || experience.venue?.id || null;
+
         await db.runAsync(
           `INSERT INTO experiences (
-            id, userId, ciderId, date, venue, price, containerSize, containerType, containerTypeCustom, pricePerPint,
+            id, userId, ciderId, date, venue, venueId, price, containerSize, containerType, containerTypeCustom, pricePerPint,
             notes, rating, weatherConditions, companionType,
             createdAt, updatedAt, syncStatus, version
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [
             experience.id,
             experience.userId,
             experience.ciderId,
             experience.date.toISOString(),
             JSON.stringify(experience.venue),
+            venueId,
             experience.price,
             experience.containerSize,
             experience.containerType,
@@ -846,6 +1069,7 @@ export class BasicSQLiteService implements CiderDatabase {
       userId: row.userId,
       ciderId: row.ciderId,
       date: new Date(row.date),
+      venueId: row.venueId || undefined,
       venue: JSON.parse(row.venue),
       price: row.price,
       containerSize: row.containerSize,
@@ -859,6 +1083,409 @@ export class BasicSQLiteService implements CiderDatabase {
       createdAt: new Date(row.createdAt),
       updatedAt: new Date(row.updatedAt),
       syncStatus: row.syncStatus,
+      version: row.version
+    };
+  }
+
+  // =========================================================================
+  // VENUE CRUD OPERATIONS
+  // =========================================================================
+
+  async createVenue(venue: Venue): Promise<Venue> {
+    try {
+      const db = await this.connectionManager.getDatabase();
+
+      await db.runAsync(
+        `INSERT INTO venues (
+          id, userId, name, type, latitude, longitude, address,
+          visitCount, lastVisited, createdAt, updatedAt, syncStatus, version
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          venue.id,
+          venue.userId,
+          venue.name,
+          venue.type,
+          venue.location?.latitude || null,
+          venue.location?.longitude || null,
+          venue.address || null,
+          venue.visitCount,
+          venue.lastVisited?.toISOString() || null,
+          venue.createdAt.toISOString(),
+          venue.updatedAt.toISOString(),
+          venue.syncStatus,
+          venue.version
+        ]
+      );
+
+      console.log('Venue created successfully:', venue.name);
+      return venue;
+    } catch (error) {
+      const dbError = new DatabaseError(
+        `Failed to create venue: ${venue.name}`,
+        'Failed to save venue. Please try again.',
+        true,
+        error instanceof Error ? error : undefined
+      );
+      ErrorHandler.log(dbError, 'BasicSQLiteService.createVenue');
+      throw dbError;
+    }
+  }
+
+  async getAllVenues(): Promise<Venue[]> {
+    try {
+      const db = await this.connectionManager.getDatabase();
+      const userId = getCurrentUserId();
+
+      const result = await db.getAllAsync(
+        'SELECT * FROM venues WHERE userId = ? ORDER BY visitCount DESC',
+        [userId]
+      );
+
+      return result.map((row: any) => this.mapRowToVenue(row));
+    } catch (error) {
+      const dbError = new DatabaseError(
+        'Failed to retrieve venues',
+        'Unable to load venues. Please try again.',
+        true,
+        error instanceof Error ? error : undefined
+      );
+      ErrorHandler.log(dbError, 'BasicSQLiteService.getAllVenues');
+      throw dbError;
+    }
+  }
+
+  async getVenueById(id: string): Promise<Venue | null> {
+    try {
+      const db = await this.connectionManager.getDatabase();
+      const userId = getCurrentUserId();
+
+      const result = await db.getFirstAsync(
+        'SELECT * FROM venues WHERE id = ? AND userId = ?',
+        [id, userId]
+      );
+
+      if (!result) {
+        return null;
+      }
+
+      return this.mapRowToVenue(result as any);
+    } catch (error) {
+      const dbError = new DatabaseError(
+        `Failed to get venue by ID: ${id}`,
+        'Unable to load venue details. Please try again.',
+        true,
+        error instanceof Error ? error : undefined
+      );
+      ErrorHandler.log(dbError, 'BasicSQLiteService.getVenueById');
+      throw dbError;
+    }
+  }
+
+  async getVenueByName(name: string): Promise<Venue | null> {
+    try {
+      const db = await this.connectionManager.getDatabase();
+      const userId = getCurrentUserId();
+
+      const result = await db.getFirstAsync(
+        'SELECT * FROM venues WHERE LOWER(name) = LOWER(?) AND userId = ?',
+        [name.trim(), userId]
+      );
+
+      if (!result) {
+        return null;
+      }
+
+      return this.mapRowToVenue(result as any);
+    } catch (error) {
+      console.error('Failed to get venue by name:', error);
+      return null;
+    }
+  }
+
+  async updateVenue(id: string, updates: Partial<Venue>): Promise<void> {
+    try {
+      const db = await this.connectionManager.getDatabase();
+
+      const processedUpdates: Record<string, any> = {};
+
+      for (const [key, value] of Object.entries(updates)) {
+        if (key === 'location' && value) {
+          processedUpdates['latitude'] = (value as any).latitude || null;
+          processedUpdates['longitude'] = (value as any).longitude || null;
+        } else if (key === 'updatedAt' && value instanceof Date) {
+          processedUpdates[key] = value.toISOString();
+        } else if (key === 'lastVisited' && value instanceof Date) {
+          processedUpdates[key] = value.toISOString();
+        } else if (key === 'createdAt' && value instanceof Date) {
+          processedUpdates[key] = value.toISOString();
+        } else if (key !== 'location') {
+          processedUpdates[key] = value;
+        }
+      }
+
+      // Always update the updatedAt timestamp
+      if (!processedUpdates.updatedAt) {
+        processedUpdates.updatedAt = new Date().toISOString();
+      }
+
+      // Increment version for sync conflict detection
+      if (!processedUpdates.version) {
+        const current = await db.getFirstAsync<{ version: number }>(
+          'SELECT version FROM venues WHERE id = ?',
+          [id]
+        );
+        processedUpdates.version = (current?.version || 0) + 1;
+      }
+
+      // Mark as pending sync
+      if (!processedUpdates.syncStatus) {
+        processedUpdates.syncStatus = 'pending';
+      }
+
+      const setClause = Object.keys(processedUpdates).map(key => `${key} = ?`).join(', ');
+      const values = Object.values(processedUpdates);
+
+      await db.runAsync(
+        `UPDATE venues SET ${setClause} WHERE id = ?`,
+        [...values, id]
+      );
+
+      console.log('Venue updated successfully:', id);
+    } catch (error) {
+      const dbError = new DatabaseError(
+        `Failed to update venue: ${id}`,
+        'Unable to update venue. Please try again.',
+        true,
+        error instanceof Error ? error : undefined
+      );
+      ErrorHandler.log(dbError, 'BasicSQLiteService.updateVenue');
+      throw dbError;
+    }
+  }
+
+  async deleteVenue(id: string): Promise<void> {
+    try {
+      const db = await this.connectionManager.getDatabase();
+      await db.runAsync('DELETE FROM venues WHERE id = ?', [id]);
+      console.log('Venue deleted successfully:', id);
+    } catch (error) {
+      const dbError = new DatabaseError(
+        `Failed to delete venue: ${id}`,
+        'Unable to delete venue. Please try again.',
+        true,
+        error instanceof Error ? error : undefined
+      );
+      ErrorHandler.log(dbError, 'BasicSQLiteService.deleteVenue');
+      throw dbError;
+    }
+  }
+
+  async searchVenues(query: string, limit: number = 10): Promise<Venue[]> {
+    try {
+      const db = await this.connectionManager.getDatabase();
+      const userId = getCurrentUserId();
+
+      const result = await db.getAllAsync(
+        `SELECT * FROM venues
+         WHERE userId = ? AND name LIKE ?
+         ORDER BY visitCount DESC
+         LIMIT ?`,
+        [userId, `%${query}%`, limit]
+      );
+
+      return result.map((row: any) => this.mapRowToVenue(row));
+    } catch (error) {
+      console.error('Failed to search venues:', error);
+      return [];
+    }
+  }
+
+  async incrementVenueVisitCount(venueId: string): Promise<void> {
+    try {
+      const db = await this.connectionManager.getDatabase();
+
+      await db.runAsync(
+        `UPDATE venues SET
+          visitCount = visitCount + 1,
+          lastVisited = ?,
+          updatedAt = ?,
+          syncStatus = 'pending'
+         WHERE id = ?`,
+        [new Date().toISOString(), new Date().toISOString(), venueId]
+      );
+
+      console.log('Venue visit count incremented:', venueId);
+    } catch (error) {
+      console.error('Failed to increment venue visit count:', error);
+    }
+  }
+
+  async getVenueCount(): Promise<number> {
+    try {
+      const db = await this.connectionManager.getDatabase();
+      const userId = getCurrentUserId();
+
+      const result = await db.getFirstAsync<{ count: number }>(
+        'SELECT COUNT(*) as count FROM venues WHERE userId = ?',
+        [userId]
+      );
+
+      return result?.count || 0;
+    } catch (error) {
+      console.error('Failed to get venue count:', error);
+      return 0;
+    }
+  }
+
+  async getRecentVenues(limit: number = 5): Promise<Venue[]> {
+    try {
+      const db = await this.connectionManager.getDatabase();
+      const userId = getCurrentUserId();
+
+      const result = await db.getAllAsync(
+        `SELECT * FROM venues
+         WHERE userId = ? AND lastVisited IS NOT NULL
+         ORDER BY lastVisited DESC
+         LIMIT ?`,
+        [userId, limit]
+      );
+
+      return result.map((row: any) => this.mapRowToVenue(row));
+    } catch (error) {
+      console.error('Failed to get recent venues:', error);
+      return [];
+    }
+  }
+
+  async getMostVisitedVenues(limit: number = 5): Promise<Venue[]> {
+    try {
+      const db = await this.connectionManager.getDatabase();
+      const userId = getCurrentUserId();
+
+      const result = await db.getAllAsync(
+        `SELECT * FROM venues
+         WHERE userId = ?
+         ORDER BY visitCount DESC
+         LIMIT ?`,
+        [userId, limit]
+      );
+
+      return result.map((row: any) => this.mapRowToVenue(row));
+    } catch (error) {
+      console.error('Failed to get most visited venues:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Update venue data embedded in experiences when a venue is modified
+   * This ensures consistency between venues table and experience records
+   * @param venueId - The venue ID
+   * @param venueUpdates - The updates to apply
+   * @param oldVenueName - The venue name BEFORE the update (for matching experiences)
+   */
+  async cascadeVenueUpdateToExperiences(venueId: string, venueUpdates: Partial<Venue>, oldVenueName?: string): Promise<number> {
+    try {
+      const db = await this.connectionManager.getDatabase();
+
+      // Use the old venue name for searching (passed from caller before update)
+      const searchName = oldVenueName;
+
+      console.log('[CASCADE] Starting cascade update for venueId:', venueId, 'oldName:', searchName, 'updates:', venueUpdates);
+
+      // First, let's see ALL experiences to debug
+      const allExperiences = await db.getAllAsync(
+        `SELECT id, venue, venueId FROM experiences`
+      );
+      console.log('[CASCADE] Total experiences in DB:', allExperiences.length);
+
+      // Log first few experiences for debugging
+      for (const exp of (allExperiences as any[]).slice(0, 3)) {
+        console.log('[CASCADE] Sample experience:', {
+          id: exp.id,
+          venueId: exp.venueId,
+          venueJson: exp.venue?.substring(0, 100)
+        });
+      }
+
+      // Find all experiences linked to this venue by:
+      // 1. venueId column (if set)
+      // 2. venue.id in JSON (the venue ID is embedded in the venue JSON)
+      const experiences = await db.getAllAsync(
+        `SELECT id, venue, venueId FROM experiences
+         WHERE venueId = ?
+         OR venue LIKE ?`,
+        [
+          venueId,
+          `%"id":"${venueId}"%`  // Match venue ID in the JSON
+        ]
+      );
+
+      console.log('[CASCADE] Found experiences matching venueId column or venue.id in JSON:', experiences.length);
+
+      if (experiences.length === 0) {
+        console.log('[CASCADE] No experiences to update for venue:', venueId, 'name:', searchName);
+        return 0;
+      }
+
+      console.log(`[CASCADE] Found ${experiences.length} experiences to update for venue:`, venueId);
+
+      let updatedCount = 0;
+
+      for (const exp of experiences as any[]) {
+        try {
+          // Parse existing venue JSON
+          const venueData = JSON.parse(exp.venue);
+          console.log('[CASCADE] Processing experience:', exp.id, 'current venue name:', venueData.name);
+
+          // Apply updates to venue data
+          const updatedVenueData = {
+            ...venueData,
+            ...(venueUpdates.name && { name: venueUpdates.name }),
+            ...(venueUpdates.type && { type: venueUpdates.type }),
+            ...(venueUpdates.address !== undefined && { address: venueUpdates.address }),
+            ...(venueUpdates.location && { location: venueUpdates.location }),
+          };
+
+          console.log('[CASCADE] Updating experience', exp.id, 'venue from', venueData.name, 'to', updatedVenueData.name);
+
+          // Update the experience with new venue JSON and set venueId if not set
+          await db.runAsync(
+            `UPDATE experiences SET venue = ?, venueId = COALESCE(venueId, ?), updatedAt = ?, syncStatus = 'pending' WHERE id = ?`,
+            [JSON.stringify(updatedVenueData), venueId, new Date().toISOString(), exp.id]
+          );
+
+          console.log('[CASCADE] Successfully updated experience:', exp.id);
+          updatedCount++;
+        } catch (e) {
+          console.warn('[CASCADE] Failed to update venue in experience:', exp.id, e);
+        }
+      }
+
+      console.log(`[CASCADE] Cascaded venue update to ${updatedCount} experiences`);
+      return updatedCount;
+    } catch (error) {
+      console.error('Failed to cascade venue update to experiences:', error);
+      return 0;
+    }
+  }
+
+  private mapRowToVenue(row: VenueRow): Venue {
+    return {
+      id: row.id,
+      userId: row.userId,
+      name: row.name,
+      type: row.type as any,
+      location: row.latitude && row.longitude ? {
+        latitude: row.latitude,
+        longitude: row.longitude
+      } : undefined,
+      address: row.address || undefined,
+      visitCount: row.visitCount,
+      lastVisited: row.lastVisited ? new Date(row.lastVisited) : undefined,
+      createdAt: new Date(row.createdAt),
+      updatedAt: new Date(row.updatedAt),
+      syncStatus: row.syncStatus as any,
       version: row.version
     };
   }

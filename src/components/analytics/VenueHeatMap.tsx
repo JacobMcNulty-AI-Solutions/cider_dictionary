@@ -20,7 +20,7 @@ import {
   ActivityIndicator,
   Dimensions,
 } from 'react-native';
-import MapView, { Marker, Callout, Region } from 'react-native-maps';
+import MapView, { Marker, Region } from 'react-native-maps';
 import { HeatMapData, ClusteredPoint } from '../../types/analytics';
 
 // ============================================================================
@@ -198,7 +198,13 @@ export const VenueHeatMap: React.FC<VenueHeatMapProps> = ({
       >
         {heatMapData.points.map((cluster, index) => {
           const markerColor = getMarkerColor(cluster.experiences);
-          const markerScale = getMarkerSize(cluster.weight, maxWeight);
+
+          console.log(`[VenueHeatMap] Rendering marker ${index}:`, {
+            lat: cluster.latitude,
+            lng: cluster.longitude,
+            color: markerColor,
+            venues: cluster.venueNames
+          });
 
           return (
             <Marker
@@ -208,48 +214,13 @@ export const VenueHeatMap: React.FC<VenueHeatMapProps> = ({
                 longitude: cluster.longitude,
               }}
               pinColor={markerColor}
+              title={cluster.venueNames.length === 1
+                ? cluster.venueNames[0]
+                : `${cluster.venueNames.length} venues nearby`}
+              description={`${cluster.experiences} experience${cluster.experiences !== 1 ? 's' : ''}`}
               onPress={() => handleMarkerPress(cluster)}
-              tracksViewChanges={false}
               testID={`venue-marker-${index}`}
-            >
-              <View
-                style={[
-                  styles.customMarker,
-                  {
-                    backgroundColor: markerColor,
-                    transform: [{ scale: markerScale }],
-                  },
-                ]}
-              >
-                <Text style={styles.markerText}>{cluster.experiences}</Text>
-              </View>
-              <Callout tooltip={false}>
-                <View style={styles.callout}>
-                  <Text style={styles.calloutTitle}>
-                    {cluster.venueNames.length === 1
-                      ? cluster.venueNames[0]
-                      : `${cluster.venueNames.length} venues nearby`}
-                  </Text>
-                  {cluster.venueNames.length > 1 && (
-                    <View style={styles.venueList}>
-                      {cluster.venueNames.slice(0, 3).map((name, idx) => (
-                        <Text key={idx} style={styles.venueName}>
-                          • {name}
-                        </Text>
-                      ))}
-                      {cluster.venueNames.length > 3 && (
-                        <Text style={styles.moreVenues}>
-                          +{cluster.venueNames.length - 3} more
-                        </Text>
-                      )}
-                    </View>
-                  )}
-                  <Text style={styles.experienceCount}>
-                    {cluster.experiences} experience{cluster.experiences !== 1 ? 's' : ''}
-                  </Text>
-                </View>
-              </Callout>
-            </Marker>
+            />
           );
         })}
       </MapView>

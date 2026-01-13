@@ -35,6 +35,7 @@ critical_analysis/
 .metro-health-check*
 
 # Environment variables (when real keys are added)
+.env
 .env.local
 .env.production
 

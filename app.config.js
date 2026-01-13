@@ -25,7 +25,12 @@ export default {
         "CAMERA",
         "READ_EXTERNAL_STORAGE",
         "WRITE_EXTERNAL_STORAGE"
-      ]
+      ],
+      config: {
+        googleMaps: {
+          apiKey: process.env.GOOGLE_MAPS_API_KEY || ""
+        }
+      }
     },
     platforms: ["ios", "android", "web"],
     updates: {
@@ -38,13 +43,7 @@ export default {
     },
     plugins: [
       "expo-font",
-      "expo-sqlite",
-      [
-        "react-native-maps",
-        {
-          androidGoogleMapsApiKey: process.env.GOOGLE_MAPS_API_KEY || ""
-        }
-      ]
+      "expo-sqlite"
     ]
   }
 };

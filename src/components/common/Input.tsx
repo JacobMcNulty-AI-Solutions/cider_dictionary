@@ -7,6 +7,7 @@ import {
   TextInputProps,
   ViewStyle,
   Animated,
+  Platform,
 } from 'react-native';
 
 interface Props extends TextInputProps {
@@ -46,6 +47,17 @@ const Input = memo<Props>(({
     if (isFocused) return styles.inputFocused;
     return undefined;
   };
+
+  // Get the correct keyboard type for cross-platform decimal support
+  const getKeyboardType = () => {
+    const requestedType = textInputProps.keyboardType;
+    if (requestedType === 'decimal-pad' && Platform.OS === 'android') {
+      // On Android, 'numeric' provides better decimal point support than 'decimal-pad'
+      return 'numeric';
+    }
+    return requestedType;
+  };
+
   return (
     <View style={[styles.container, containerStyle]}>
       <View style={styles.labelContainer}>
@@ -71,6 +83,7 @@ const Input = memo<Props>(({
         accessibilityLabel={label}
         accessibilityHint={required ? 'Required field' : undefined}
         {...textInputProps}
+        keyboardType={getKeyboardType()}
       />
       {error && (
         <Text style={styles.errorText} accessibilityRole="alert">

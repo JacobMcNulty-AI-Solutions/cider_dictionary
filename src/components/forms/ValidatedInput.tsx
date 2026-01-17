@@ -8,7 +8,8 @@ import {
   TextInput,
   StyleSheet,
   Animated,
-  TouchableOpacity
+  TouchableOpacity,
+  Platform
 } from 'react-native';
 import { FieldValidationState } from '../../types/cider';
 
@@ -95,6 +96,15 @@ const ValidatedInput: React.FC<ValidatedInputProps> = ({
       inputRange: [0, 1, 2],
       outputRange: ['#e0e0e0', '#2196F3', '#F44336'],
     });
+  };
+
+  // Get the correct keyboard type for cross-platform decimal support
+  const getKeyboardType = () => {
+    if (keyboardType === 'decimal-pad' && Platform.OS === 'android') {
+      // On Android, 'numeric' provides better decimal point support than 'decimal-pad'
+      return 'numeric';
+    }
+    return keyboardType;
   };
 
   const getValidationIcon = () => {
@@ -185,7 +195,7 @@ const ValidatedInput: React.FC<ValidatedInputProps> = ({
           onBlur={handleBlur}
           placeholder={placeholder}
           placeholderTextColor="#999"
-          keyboardType={keyboardType}
+          keyboardType={getKeyboardType()}
           autoCapitalize={autoCapitalize}
           returnKeyType={returnKeyType}
           multiline={multiline}

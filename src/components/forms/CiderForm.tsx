@@ -328,6 +328,14 @@ export default function CiderForm({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isDirty, setIsDirty] = useState(false);
 
+  // Separate display values for number fields to preserve decimal point while typing
+  const [numberDisplayValues, setNumberDisplayValues] = useState<Record<string, string>>(() => {
+    const transformed = transformInitialData(initialData);
+    return {
+      abv: transformed.abv ? transformed.abv.toString() : '',
+    };
+  });
+
   // Duplicate detection (only for new ciders)
   const { ciders, getSimilarCiderNames, getSimilarBrandNames, findDuplicates } = useCiderStore();
   const [duplicateWarning, setDuplicateWarning] = useState<string | null>(null);
@@ -612,10 +620,14 @@ export default function CiderForm({
           <ValidatedInput
             key={field.key}
             label={field.label}
-            value={value?.toString() || ''}
+            value={numberDisplayValues[field.key] || ''}
             onChangeText={(text) => {
-              const numValue = parseFloat(text) || 0;
-              handleFieldChange(field.key, numValue);
+              // Allow empty, numbers, and one decimal point
+              if (text === '' || /^\d*\.?\d*$/.test(text)) {
+                setNumberDisplayValues(prev => ({ ...prev, [field.key]: text }));
+                const numValue = parseFloat(text) || 0;
+                handleFieldChange(field.key, numValue);
+              }
             }}
             placeholder={field.placeholder}
             validation={validation}

@@ -20,6 +20,9 @@ export default function QuickEntryScreen({ navigation }: Props) {
     overallRating: 5 as Rating, // Default to middle rating
   });
 
+  // Separate string state for ABV to preserve decimal point while typing
+  const [abvDisplayValue, setAbvDisplayValue] = useState('');
+
   const [isLoading, setIsLoading] = useState(false);
   const [errors, setErrors] = useState<FormValidationErrors>({});
 
@@ -109,6 +112,7 @@ export default function QuickEntryScreen({ navigation }: Props) {
       abv: 0,
       overallRating: 5 as Rating,
     });
+    setAbvDisplayValue('');
     setErrors({});
   }, []);
 
@@ -170,10 +174,14 @@ export default function QuickEntryScreen({ navigation }: Props) {
 
             <Input
               label="ABV (%)"
-              value={formData.abv === 0 ? '' : formData.abv.toString()}
+              value={abvDisplayValue}
               onChangeText={(text) => {
-                const numValue = parseFloat(text) || 0;
-                updateAbv(numValue);
+                // Allow empty, numbers, and one decimal point
+                if (text === '' || /^\d*\.?\d*$/.test(text)) {
+                  setAbvDisplayValue(text);
+                  const numValue = parseFloat(text) || 0;
+                  updateAbv(numValue);
+                }
               }}
               placeholder="e.g., 5.0"
               error={errors.abv}

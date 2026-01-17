@@ -11,7 +11,9 @@ import {
   Animated,
   Modal,
   ScrollView,
-  SafeAreaView
+  SafeAreaView,
+  Platform,
+  StatusBar
 } from 'react-native';
 import { useCiderStore } from '../../store/ciderStore';
 
@@ -464,6 +466,8 @@ const styles = StyleSheet.create({
   modalContainer: {
     flex: 1,
     backgroundColor: '#f5f5f5',
+    // Add padding for Android status bar in production builds
+    paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0,
   },
   modalHeader: {
     flexDirection: 'row',

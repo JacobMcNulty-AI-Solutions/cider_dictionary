@@ -11,7 +11,9 @@ import {
   StyleSheet,
   Modal,
   Alert,
-  Dimensions
+  Dimensions,
+  Platform,
+  StatusBar
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
@@ -446,6 +448,8 @@ const styles = StyleSheet.create({
   modalContainer: {
     flex: 1,
     backgroundColor: '#f8f8f8',
+    // Add padding for Android status bar in production builds
+    paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0,
   },
   modalHeader: {
     flexDirection: 'row',

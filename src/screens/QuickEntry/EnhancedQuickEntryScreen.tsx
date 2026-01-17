@@ -1,7 +1,7 @@
 // Enhanced QuickEntry Screen with Progressive Disclosure
 // Now uses the shared CiderForm component for consistency with edit screen
 
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import {
   View,
   StyleSheet,
@@ -32,26 +32,28 @@ export default function EnhancedQuickEntryScreen({ navigation }: Props) {
     }, [])
   );
 
-  // Handle Android back button
-  useEffect(() => {
-    const backAction = () => {
-      if (isDirty) {
-        Alert.alert(
-          'Discard Changes?',
-          'You have unsaved changes. Are you sure you want to go back?',
-          [
-            { text: 'Cancel', style: 'cancel' },
-            { text: 'Discard', style: 'destructive', onPress: () => navigation.goBack() },
-          ]
-        );
-        return true;
-      }
-      return false;
-    };
+  // Handle Android back button - only when this screen is focused
+  useFocusEffect(
+    useCallback(() => {
+      const backAction = () => {
+        if (isDirty) {
+          Alert.alert(
+            'Discard Changes?',
+            'You have unsaved changes. Are you sure you want to go back?',
+            [
+              { text: 'Cancel', style: 'cancel' },
+              { text: 'Discard', style: 'destructive', onPress: () => navigation.goBack() },
+            ]
+          );
+          return true;
+        }
+        return false;
+      };
 
-    const backHandler = BackHandler.addEventListener('hardwareBackPress', backAction);
-    return () => backHandler.remove();
-  }, [isDirty, navigation]);
+      const backHandler = BackHandler.addEventListener('hardwareBackPress', backAction);
+      return () => backHandler.remove();
+    }, [isDirty, navigation])
+  );
 
   // Handle form submission
   const handleSubmit = useCallback(async (formData: Partial<CiderMasterRecord>) => {

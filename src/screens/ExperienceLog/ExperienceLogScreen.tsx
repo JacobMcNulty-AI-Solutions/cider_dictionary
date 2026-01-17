@@ -11,7 +11,8 @@ import {
   KeyboardAvoidingView,
   Platform,
   Alert,
-  TouchableOpacity
+  TouchableOpacity,
+  KeyboardTypeOptions
 } from 'react-native';
 import { useRoute, useNavigation, RouteProp } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
@@ -380,6 +381,9 @@ const PriceInput: React.FC<{
     }
   };
 
+  // Get the correct keyboard type for cross-platform decimal support
+  const decimalKeyboardType: KeyboardTypeOptions = Platform.OS === 'android' ? 'numeric' : 'decimal-pad';
+
   return (
     <View style={styles.inputContainer}>
       <Text style={styles.inputLabel}>{label}</Text>
@@ -388,7 +392,7 @@ const PriceInput: React.FC<{
         value={displayValue}
         onChangeText={handleTextChange}
         placeholder={placeholder}
-        keyboardType="decimal-pad"
+        keyboardType={decimalKeyboardType}
         returnKeyType="done"
       />
     </View>

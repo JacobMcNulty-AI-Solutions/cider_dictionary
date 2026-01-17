@@ -10,7 +10,9 @@ import {
   Modal,
   ScrollView,
   TextInput,
-  SafeAreaView
+  SafeAreaView,
+  Platform,
+  StatusBar
 } from 'react-native';
 import { FieldValidationState } from '../../types/cider';
 
@@ -324,6 +326,8 @@ const styles = StyleSheet.create({
   modalContainer: {
     flex: 1,
     backgroundColor: '#f5f5f5',
+    // Add padding for Android status bar in production builds
+    paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0,
   },
   modalHeader: {
     flexDirection: 'row',

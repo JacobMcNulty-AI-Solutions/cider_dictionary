@@ -7,7 +7,9 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   Alert,
-  BackHandler
+  BackHandler,
+  Platform,
+  StatusBar
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import {
@@ -197,6 +199,7 @@ export default function DownloadFromCloudModal({ visible, onClose, onDownloadCom
       case 'backing_up': return 'Creating backup...';
       case 'fetching_ciders': return 'Fetching ciders from cloud...';
       case 'fetching_experiences': return 'Fetching experiences from cloud...';
+      case 'fetching_venues': return 'Fetching venues from cloud...';
       case 'validating': return 'Validating data...';
       case 'inserting': return 'Saving to device...';
       case 'downloading_images': return 'Downloading images...';
@@ -227,6 +230,7 @@ export default function DownloadFromCloudModal({ visible, onClose, onDownloadCom
               <Text style={styles.statLabel}>Cloud</Text>
               <Text style={styles.statValue}>{cloudStats.ciderCount} ciders</Text>
               <Text style={styles.statValue}>{cloudStats.experienceCount} experiences</Text>
+              <Text style={styles.statValue}>{cloudStats.venueCount} venues</Text>
               {cloudStats.lastUpdated && (
                 <Text style={styles.statDate}>
                   Last updated: {cloudStats.lastUpdated.toLocaleDateString()}
@@ -346,6 +350,15 @@ export default function DownloadFromCloudModal({ visible, onClose, onDownloadCom
             </View>
           )}
 
+          {progress.totalVenues > 0 && (
+            <View style={styles.progressRow}>
+              <Text style={styles.progressLabel}>Venues:</Text>
+              <Text style={styles.progressValue}>
+                {progress.downloadedVenues} / {progress.totalVenues}
+              </Text>
+            </View>
+          )}
+
           {progress.totalImages > 0 && (
             <View style={styles.progressRow}>
               <Text style={styles.progressLabel}>Images:</Text>
@@ -391,6 +404,9 @@ export default function DownloadFromCloudModal({ visible, onClose, onDownloadCom
           </Text>
           <Text style={styles.resultText}>
             {result.experiencesDownloaded} experiences downloaded
+          </Text>
+          <Text style={styles.resultText}>
+            {result.venuesDownloaded} venues downloaded
           </Text>
           {result.imagesDownloaded > 0 && (
             <Text style={styles.resultText}>
@@ -481,6 +497,8 @@ const styles = StyleSheet.create({
     backgroundColor: '#F5F5F5',
     justifyContent: 'center',
     padding: 20,
+    // Add padding for Android status bar in production builds
+    paddingTop: Platform.OS === 'android' ? (StatusBar.currentHeight || 0) + 20 : 20,
   },
   closeButton: {
     position: 'absolute',

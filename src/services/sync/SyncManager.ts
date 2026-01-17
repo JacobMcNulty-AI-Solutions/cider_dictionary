@@ -34,12 +34,14 @@ import { backupService } from '../backup/BackupService';
 
 // Download progress tracking
 export interface DownloadProgress {
-  phase: 'preparing' | 'backing_up' | 'fetching_ciders' | 'fetching_experiences' |
+  phase: 'preparing' | 'backing_up' | 'fetching_ciders' | 'fetching_experiences' | 'fetching_venues' |
          'validating' | 'inserting' | 'downloading_images' | 'complete' | 'error' | 'rolled_back';
   totalCiders: number;
   downloadedCiders: number;
   totalExperiences: number;
   downloadedExperiences: number;
+  totalVenues: number;
+  downloadedVenues: number;
   totalImages: number;
   downloadedImages: number;
   currentItem?: string;
@@ -53,6 +55,7 @@ export interface DownloadResult {
   success: boolean;
   cidersDownloaded: number;
   experiencesDownloaded: number;
+  venuesDownloaded: number;
   imagesDownloaded: number;
   skippedOrphans: number;
   backupId?: string;
@@ -62,6 +65,7 @@ export interface DownloadResult {
 export interface CloudDataStats {
   ciderCount: number;
   experienceCount: number;
+  venueCount: number;
   lastUpdated: Date | null;
 }
 
@@ -94,7 +98,11 @@ class SyncManager {
     totalCiders: 0,
     downloadedCiders: 0,
     totalExperiences: 0,
-    downloadedExperiences: 0
+    downloadedExperiences: 0,
+    totalVenues: 0,
+    downloadedVenues: 0,
+    totalImages: 0,
+    downloadedImages: 0
   };
   private downloadProgressCallback?: (progress: DownloadProgress) => void;
 
@@ -767,6 +775,7 @@ class SyncManager {
         success: false,
         cidersDownloaded: 0,
         experiencesDownloaded: 0,
+        venuesDownloaded: 0,
         imagesDownloaded: 0,
         skippedOrphans: 0,
         error: 'Download already in progress'
@@ -779,6 +788,7 @@ class SyncManager {
         success: false,
         cidersDownloaded: 0,
         experiencesDownloaded: 0,
+        venuesDownloaded: 0,
         imagesDownloaded: 0,
         skippedOrphans: 0,
         error: 'No internet connection. Please check your network and try again.'
@@ -790,6 +800,7 @@ class SyncManager {
         success: false,
         cidersDownloaded: 0,
         experiencesDownloaded: 0,
+        venuesDownloaded: 0,
         imagesDownloaded: 0,
         skippedOrphans: 0,
         error: 'Firebase not initialized. Please restart the app.'
@@ -814,6 +825,8 @@ class SyncManager {
         downloadedCiders: 0,
         totalExperiences: 0,
         downloadedExperiences: 0,
+        totalVenues: 0,
+        downloadedVenues: 0,
         totalImages: 0,
         downloadedImages: 0
       });
@@ -835,6 +848,7 @@ class SyncManager {
           success: true,
           cidersDownloaded: 0,
           experiencesDownloaded: 0,
+          venuesDownloaded: 0,
           imagesDownloaded: 0,
           skippedOrphans: 0,
           error: 'Kept local data as requested'
@@ -975,6 +989,60 @@ class SyncManager {
       }
 
       // ═══════════════════════════════════════════════════════════
+      // PHASE 4.5: FETCH VENUES FROM FIRESTORE (paginated)
+      // ═══════════════════════════════════════════════════════════
+      this.updateDownloadProgress({
+        ...this.downloadProgress,
+        phase: 'fetching_venues'
+      });
+
+      const remoteVenues: Venue[] = [];
+      let lastVenueDoc: QueryDocumentSnapshot | null = null;
+      let hasMoreVenues = true;
+
+      while (hasMoreVenues && !this.downloadAborted) {
+        let venuesQuery = query(
+          collection(firestore, 'venues'),
+          orderBy('createdAt', 'desc'),
+          limit(this.FIRESTORE_BATCH_SIZE)
+        );
+
+        if (lastVenueDoc) {
+          venuesQuery = query(
+            collection(firestore, 'venues'),
+            orderBy('createdAt', 'desc'),
+            startAfter(lastVenueDoc),
+            limit(this.FIRESTORE_BATCH_SIZE)
+          );
+        }
+
+        const snapshot = await getDocs(venuesQuery);
+
+        if (snapshot.empty) {
+          hasMoreVenues = false;
+        } else {
+          snapshot.forEach((doc) => {
+            remoteVenues.push(this.mapFirestoreToVenue(doc.data()));
+          });
+          lastVenueDoc = snapshot.docs[snapshot.docs.length - 1];
+          hasMoreVenues = snapshot.docs.length === this.FIRESTORE_BATCH_SIZE;
+        }
+
+        this.updateDownloadProgress({
+          ...this.downloadProgress,
+          totalVenues: remoteVenues.length,
+          downloadedVenues: remoteVenues.length
+        });
+      }
+
+      console.log(`Fetched ${remoteVenues.length} venues from cloud`);
+
+      // Check for abort
+      if (this.downloadAborted) {
+        throw new Error('Download cancelled by user');
+      }
+
+      // ═══════════════════════════════════════════════════════════
       // PHASE 5: PREPARE RECORDS (skip validation - trust cloud data)
       // ═══════════════════════════════════════════════════════════
       this.updateDownloadProgress({
@@ -1099,6 +1167,43 @@ class SyncManager {
           });
         }
 
+        // Get existing venues for merge strategy
+        let existingVenueMap = new Map<string, Date>();
+        if (conflictStrategy === 'merge_by_date') {
+          const existingVenues = await sqliteService.getAllVenues();
+          existingVenues.forEach(v => {
+            existingVenueMap.set(v.id, new Date(v.updatedAt));
+          });
+        }
+
+        // Insert venues in batches
+        let venuesInserted = 0;
+        for (let i = 0; i < remoteVenues.length; i += this.SQLITE_BATCH_SIZE) {
+          if (this.downloadAborted) {
+            throw new Error('Download cancelled by user');
+          }
+
+          const batch = remoteVenues.slice(i, i + this.SQLITE_BATCH_SIZE);
+
+          for (const venue of batch) {
+            // Merge strategy: skip if local is newer
+            if (conflictStrategy === 'merge_by_date') {
+              const localUpdated = existingVenueMap.get(venue.id);
+              if (localUpdated && localUpdated > new Date(venue.updatedAt)) {
+                continue; // Keep local version
+              }
+            }
+
+            await this.insertOrReplaceVenue(db, venue);
+            venuesInserted++;
+          }
+
+          this.updateDownloadProgress({
+            ...this.downloadProgress,
+            downloadedVenues: venuesInserted
+          });
+        }
+
         // Commit transaction
         await db.execAsync('COMMIT');
         console.log('SQLite transaction committed');
@@ -1161,6 +1266,8 @@ class SyncManager {
           downloadedCiders: cidersInserted,
           totalExperiences: validExperiences.length,
           downloadedExperiences: experiencesInserted,
+          totalVenues: remoteVenues.length,
+          downloadedVenues: venuesInserted,
           totalImages: cidersWithImages.length,
           downloadedImages: imagesDownloaded,
           backupId
@@ -1169,12 +1276,13 @@ class SyncManager {
         // Cleanup old backups
         await backupService.cleanupOldBackups(3);
 
-        console.log(`Download complete: ${cidersInserted} ciders, ${experiencesInserted} experiences, ${imagesDownloaded} images`);
+        console.log(`Download complete: ${cidersInserted} ciders, ${experiencesInserted} experiences, ${venuesInserted} venues, ${imagesDownloaded} images`);
 
         return {
           success: true,
           cidersDownloaded: cidersInserted,
           experiencesDownloaded: experiencesInserted,
+          venuesDownloaded: venuesInserted,
           imagesDownloaded,
           skippedOrphans,
           backupId
@@ -1209,6 +1317,7 @@ class SyncManager {
         success: false,
         cidersDownloaded: 0,
         experiencesDownloaded: 0,
+        venuesDownloaded: 0,
         imagesDownloaded: 0,
         skippedOrphans: 0,
         backupId,
@@ -1488,6 +1597,32 @@ class SyncManager {
   }
 
   /**
+   * Insert or replace a venue using raw SQL for efficiency
+   */
+  private async insertOrReplaceVenue(db: any, venue: Venue): Promise<void> {
+    await db.runAsync(
+      `INSERT OR REPLACE INTO venues (
+        id, userId, name, type, location, address, visitCount, lastVisited,
+        createdAt, updatedAt, syncStatus, version
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        venue.id,
+        venue.userId || 'default-user',
+        venue.name,
+        venue.type || 'other',
+        venue.location ? JSON.stringify(venue.location) : null,
+        venue.address || null,
+        venue.visitCount || 0,
+        venue.lastVisited ? this.safeToISOString(venue.lastVisited) : null,
+        this.safeToISOString(venue.createdAt),
+        this.safeToISOString(venue.updatedAt),
+        'synced',
+        venue.version || 1
+      ]
+    );
+  }
+
+  /**
    * Safely convert Firestore Timestamp or date string to Date object
    * Firestore Timestamps have a toDate() method, strings need new Date()
    */
@@ -1590,6 +1725,29 @@ class SyncManager {
   }
 
   /**
+   * Map Firestore document data to Venue
+   */
+  private mapFirestoreToVenue(data: any): Venue {
+    return {
+      id: data.id,
+      userId: data.userId || 'default-user',
+      name: data.name || 'Unknown Venue',
+      type: data.type || 'other',
+      location: data.location ? {
+        latitude: data.location.latitude,
+        longitude: data.location.longitude
+      } : undefined,
+      address: data.address || undefined,
+      visitCount: data.visitCount || 0,
+      lastVisited: data.lastVisited ? this.parseFirestoreDate(data.lastVisited) : undefined,
+      createdAt: this.parseFirestoreDate(data.createdAt),
+      updatedAt: this.parseFirestoreDate(data.updatedAt),
+      syncStatus: 'synced',
+      version: data.version || 1
+    };
+  }
+
+  /**
    * Check cloud data stats before download
    */
   async getCloudDataStats(): Promise<CloudDataStats | null> {
@@ -1615,9 +1773,12 @@ class SyncManager {
         }
       });
 
+      const venuesSnapshot = await getDocs(collection(db, 'venues'));
+
       return {
         ciderCount: cidersSnapshot.size,
         experienceCount: experiencesSnapshot.size,
+        venueCount: venuesSnapshot.size,
         lastUpdated
       };
     } catch (error) {

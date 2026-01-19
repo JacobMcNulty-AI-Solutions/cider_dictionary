@@ -515,15 +515,14 @@ export default function CiderForm({
       };
     }
 
-    // Build detailed ratings object
-    if (formData.appearanceRating || formData.aromaRating || formData.tasteRating || formData.mouthfeelRating) {
-      result.detailedRatings = {
-        appearance: formData.appearanceRating || undefined,
-        aroma: formData.aromaRating || undefined,
-        taste: formData.tasteRating || undefined,
-        mouthfeel: formData.mouthfeelRating || undefined
-      };
-    }
+    // Build detailed ratings object - default to overall rating if not explicitly set
+    const overallRating = formData.overallRating || 5;
+    result.detailedRatings = {
+      appearance: formData.appearanceRating ?? overallRating,
+      aroma: formData.aromaRating ?? overallRating,
+      taste: formData.tasteRating ?? overallRating,
+      mouthfeel: formData.mouthfeelRating ?? overallRating
+    };
 
     // Remove undefined fields
     Object.keys(result).forEach(key => {

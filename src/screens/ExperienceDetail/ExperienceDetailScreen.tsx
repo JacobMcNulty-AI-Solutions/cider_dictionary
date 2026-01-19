@@ -148,13 +148,22 @@ export default function ExperienceDetailScreen() {
     );
   };
 
-  // Set up header button
+  const handleEdit = () => {
+    navigation.navigate('ExperienceEdit', { experienceId });
+  };
+
+  // Set up header buttons
   useEffect(() => {
     navigation.setOptions({
       headerRight: () => (
-        <TouchableOpacity onPress={handleDelete} style={{ marginRight: 16 }}>
-          <Ionicons name="trash-outline" size={24} color="#FF3B30" />
-        </TouchableOpacity>
+        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+          <TouchableOpacity onPress={handleEdit} style={{ marginRight: 16 }}>
+            <Ionicons name="pencil" size={22} color="#fff" />
+          </TouchableOpacity>
+          <TouchableOpacity onPress={handleDelete} style={{ marginRight: 16 }}>
+            <Ionicons name="trash-outline" size={24} color="#FF3B30" />
+          </TouchableOpacity>
+        </View>
       ),
     });
   }, [navigation, experienceId]);

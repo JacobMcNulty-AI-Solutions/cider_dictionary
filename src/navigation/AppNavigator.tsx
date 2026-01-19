@@ -11,6 +11,7 @@ import CiderEditScreen from '../screens/Collection/CiderEditScreen';
 import ExperienceLogScreen from '../screens/ExperienceLog/ExperienceLogScreen';
 import ExperienceHistoryScreen from '../screens/ExperienceHistory/ExperienceHistoryScreen';
 import ExperienceDetailScreen from '../screens/ExperienceDetail/ExperienceDetailScreen';
+import ExperienceEditScreen from '../screens/ExperienceEdit/ExperienceEditScreen';
 import VenueListScreen from '../screens/Venues/VenueListScreen';
 import VenueDetailScreen from '../screens/Venues/VenueDetailScreen';
 import { RootStackParamList } from '../types/navigation';
@@ -93,6 +94,16 @@ export default function AppNavigator() {
             component={ExperienceDetailScreen}
             options={{
               title: 'Experience Details',
+              headerStyle: { backgroundColor: '#5856D6' },
+              headerTintColor: '#fff',
+              headerTitleStyle: { fontWeight: 'bold' }
+            }}
+          />
+          <Stack.Screen
+            name="ExperienceEdit"
+            component={ExperienceEditScreen}
+            options={{
+              title: 'Edit Experience',
               headerStyle: { backgroundColor: '#5856D6' },
               headerTintColor: '#fff',
               headerTitleStyle: { fontWeight: 'bold' }

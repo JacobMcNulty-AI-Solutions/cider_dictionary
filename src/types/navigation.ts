@@ -17,6 +17,7 @@ export type RootStackParamList = {
   ExperienceLog: { ciderId: string };
   ExperienceHistory: { ciderId: string };
   ExperienceDetail: { experienceId: string };
+  ExperienceEdit: { experienceId: string };
   VenueList: undefined;
   VenueDetail: { venueId: string };
 };

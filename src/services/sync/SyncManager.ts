@@ -1602,15 +1602,16 @@ class SyncManager {
   private async insertOrReplaceVenue(db: any, venue: Venue): Promise<void> {
     await db.runAsync(
       `INSERT OR REPLACE INTO venues (
-        id, userId, name, type, location, address, visitCount, lastVisited,
+        id, userId, name, type, latitude, longitude, address, visitCount, lastVisited,
         createdAt, updatedAt, syncStatus, version
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         venue.id,
         venue.userId || 'default-user',
         venue.name,
         venue.type || 'other',
-        venue.location ? JSON.stringify(venue.location) : null,
+        venue.location?.latitude ?? null,
+        venue.location?.longitude ?? null,
         venue.address || null,
         venue.visitCount || 0,
         venue.lastVisited ? this.safeToISOString(venue.lastVisited) : null,

@@ -177,8 +177,21 @@ export default function CiderDetailScreen({ route, navigation }: Props) {
 
           <View style={styles.detailRow}>
             <Text style={styles.label}>Overall Rating:</Text>
-            <Text style={styles.ratingValue}>{cider.overallRating}/10</Text>
+            {cider._cachedRating !== null && cider._cachedRating !== undefined ? (
+              <Text style={styles.ratingValue}>{cider._cachedRating.toFixed(1)}/10</Text>
+            ) : (
+              <Text style={styles.noRatingText}>Not yet rated</Text>
+            )}
           </View>
+
+          {cider._ratingCount !== undefined && cider._ratingCount > 0 && (
+            <View style={styles.ratingInfoBox}>
+              <Ionicons name="information-circle-outline" size={16} color="#666" />
+              <Text style={styles.ratingInfoText}>
+                Based on {cider._ratingCount} experience{cider._ratingCount !== 1 ? 's' : ''}
+              </Text>
+            </View>
+          )}
 
         </View>
 
@@ -292,29 +305,38 @@ export default function CiderDetailScreen({ route, navigation }: Props) {
         )}
 
         {/* Detailed Ratings */}
-        {cider.detailedRatings && (
+        {cider._cachedDetailedRatings && cider._ratingCount && cider._ratingCount > 0 && (
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Detailed Ratings</Text>
+            <Text style={styles.sectionSubtitle}>Average across all experiences</Text>
 
-            <View style={styles.detailRow}>
-              <Text style={styles.label}>Appearance:</Text>
-              <Text style={styles.ratingValue}>{cider.detailedRatings.appearance}/10</Text>
-            </View>
+            {cider._cachedDetailedRatings.appearance !== undefined && (
+              <View style={styles.detailRow}>
+                <Text style={styles.label}>Appearance:</Text>
+                <Text style={styles.ratingValue}>{cider._cachedDetailedRatings.appearance.toFixed(1)}/10</Text>
+              </View>
+            )}
 
-            <View style={styles.detailRow}>
-              <Text style={styles.label}>Aroma:</Text>
-              <Text style={styles.ratingValue}>{cider.detailedRatings.aroma}/10</Text>
-            </View>
+            {cider._cachedDetailedRatings.aroma !== undefined && (
+              <View style={styles.detailRow}>
+                <Text style={styles.label}>Aroma:</Text>
+                <Text style={styles.ratingValue}>{cider._cachedDetailedRatings.aroma.toFixed(1)}/10</Text>
+              </View>
+            )}
 
-            <View style={styles.detailRow}>
-              <Text style={styles.label}>Taste:</Text>
-              <Text style={styles.ratingValue}>{cider.detailedRatings.taste}/10</Text>
-            </View>
+            {cider._cachedDetailedRatings.taste !== undefined && (
+              <View style={styles.detailRow}>
+                <Text style={styles.label}>Taste:</Text>
+                <Text style={styles.ratingValue}>{cider._cachedDetailedRatings.taste.toFixed(1)}/10</Text>
+              </View>
+            )}
 
-            <View style={styles.detailRow}>
-              <Text style={styles.label}>Mouthfeel:</Text>
-              <Text style={styles.ratingValue}>{cider.detailedRatings.mouthfeel}/10</Text>
-            </View>
+            {cider._cachedDetailedRatings.mouthfeel !== undefined && (
+              <View style={styles.detailRow}>
+                <Text style={styles.label}>Mouthfeel:</Text>
+                <Text style={styles.ratingValue}>{cider._cachedDetailedRatings.mouthfeel.toFixed(1)}/10</Text>
+              </View>
+            )}
           </View>
         )}
 
@@ -368,7 +390,7 @@ export default function CiderDetailScreen({ route, navigation }: Props) {
             <View style={styles.noExperiencesContainer}>
               <Ionicons name="wine-outline" size={48} color="#ccc" />
               <Text style={styles.noExperiencesText}>No experiences logged yet</Text>
-              <Text style={styles.noExperiencesSubtext}>Start by logging your first experience!</Text>
+              <Text style={styles.noExperiencesSubtext}>Log an experience to rate this cider</Text>
             </View>
           ) : (
             <View style={styles.experiencesContainer}>
@@ -517,6 +539,13 @@ const styles = StyleSheet.create({
     color: '#333',
     marginBottom: 12,
   },
+  sectionSubtitle: {
+    fontSize: 14,
+    color: '#666',
+    marginTop: -8,
+    marginBottom: 12,
+    fontStyle: 'italic',
+  },
   detailRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -539,6 +568,25 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#007AFF',
     fontWeight: '600',
+  },
+  noRatingText: {
+    fontSize: 16,
+    color: '#999',
+    fontStyle: 'italic',
+  },
+  ratingInfoBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f0f8ff',
+    padding: 8,
+    borderRadius: 6,
+    marginTop: 8,
+    gap: 6,
+  },
+  ratingInfoText: {
+    fontSize: 13,
+    color: '#666',
+    flex: 1,
   },
   tagsContainer: {
     flexDirection: 'row',

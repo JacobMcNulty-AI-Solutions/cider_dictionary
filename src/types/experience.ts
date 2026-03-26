@@ -1,11 +1,12 @@
 // Phase 3: Experience Logging Types
 // Comprehensive experience tracking for cider tasting sessions
 
-import { Rating, ContainerType } from './cider';
+import { Rating, ContainerType, VenueType } from './cider';
 import { VenueInfo, VenueSuggestion, Location } from './venue';
 
 // Re-export venue types for backward compatibility
 export { VenueInfo, VenueSuggestion, Location } from './venue';
+export type { VenueType } from './cider';
 
 export interface ExperienceLog {
   id: string;
@@ -24,9 +25,17 @@ export interface ExperienceLog {
   containerTypeCustom?: string; // Custom container type when 'other' is selected
   pricePerPint: number; // Calculated automatically (price for equivalent pint)
 
+  // Rating data (now stored on experiences, not ciders)
+  rating: Rating; // Required - this experience's rating
+  detailedRatings?: {
+    appearance?: Rating;
+    aroma?: Rating;
+    taste?: Rating;
+    mouthfeel?: Rating;
+  };
+
   // Optional experience data
   notes?: string;
-  rating?: Rating; // Can override cider rating for this specific experience
   weatherConditions?: 'sunny' | 'cloudy' | 'rainy' | 'stormy' | 'unknown';
   companionType?: 'alone' | 'friends' | 'family' | 'colleagues' | 'date';
 
@@ -52,7 +61,13 @@ export interface ExperienceFormState {
   containerTypeCustom?: string;
   notes: string;
   date: Date;
-  rating?: Rating;
+  rating: Rating; // Required - ratings now on experiences
+  detailedRatings?: {
+    appearance?: Rating;
+    aroma?: Rating;
+    taste?: Rating;
+    mouthfeel?: Rating;
+  };
 }
 
 // VenueSuggestion is now imported from './venue'

@@ -41,3 +41,8 @@ critical_analysis/
 
 # Firebase config (when real keys are added)
 src/services/firebase/config.production.ts
+
+# Migration folder - service account keys
+migration/serviceAccountKey.json
+migration/*.json
+!migration/package.json

@@ -5,6 +5,7 @@ import { Venue, VenueRow, VenueFormData } from '../../types/venue';
 import { SyncOperation, SyncOperationType, SyncStatus } from '../../types/sync';
 import { DatabaseError, ErrorHandler, withRetry } from '../../utils/errors';
 import { getCurrentUserId } from '../../utils/auth';
+import { calculateAverageRating, calculateDetailedRatings } from '../../utils/ratingCalculations';
 
 // Database connection pool for better performance
 class DatabaseConnectionManager {
@@ -79,6 +80,12 @@ class DatabaseConnectionManager {
     // Run venues migration (creates table and extracts from experiences)
     await this.migrateVenuesTable(database);
 
+    // Run rating migration (move ratings from ciders to experiences)
+    await this.migrateRatingsToExperiences(database);
+
+    // Add scrumpy field to ciders table
+    await this.addScrumpyFieldToCiders(database);
+
     // Create ciders table
     await database.execAsync(`
       CREATE TABLE IF NOT EXISTS ciders (
@@ -87,6 +94,7 @@ class DatabaseConnectionManager {
         name TEXT NOT NULL,
         brand TEXT NOT NULL,
         abv REAL NOT NULL,
+        scrumpy INTEGER DEFAULT 0, -- Boolean: 1 if scrumpy-style, 0 if not
         overallRating INTEGER NOT NULL,
 
         -- Optional basic fields
@@ -437,6 +445,247 @@ class DatabaseConnectionManager {
     }
   }
 
+  /**
+   * Migrate ratings from ciders to experiences
+   * - Add rating columns to experiences table
+   * - Add cached rating columns to ciders table
+   * - For ciders WITH experiences: create legacy experience with cider's rating
+   * - For ciders WITHOUT experiences: set rating to null (remove rating data)
+   */
+  private async migrateRatingsToExperiences(database: SQLite.SQLiteDatabase): Promise<void> {
+    const currentVersion = await this.getMigrationVersion(database, 'ratings_to_experiences');
+
+    // Skip if already migrated
+    if (currentVersion >= 1) {
+      console.log('Ratings migration already applied (version', currentVersion, ')');
+      return;
+    }
+
+    console.log('Starting ratings migration...');
+
+    try {
+      // TRANSACTION: All or nothing
+      await database.execAsync('BEGIN TRANSACTION');
+
+      // 1. Add rating columns to experiences table (one at a time - SQLite limitation)
+      const expColumns = await database.getAllAsync(`PRAGMA table_info(experiences)`);
+      const expColumnNames = (expColumns as any[]).map(col => col.name);
+
+      if (!expColumnNames.includes('appearance')) {
+        console.log('Adding appearance column to experiences...');
+        await database.execAsync('ALTER TABLE experiences ADD COLUMN appearance INTEGER');
+      }
+
+      if (!expColumnNames.includes('aroma')) {
+        console.log('Adding aroma column to experiences...');
+        await database.execAsync('ALTER TABLE experiences ADD COLUMN aroma INTEGER');
+      }
+
+      if (!expColumnNames.includes('taste')) {
+        console.log('Adding taste column to experiences...');
+        await database.execAsync('ALTER TABLE experiences ADD COLUMN taste INTEGER');
+      }
+
+      if (!expColumnNames.includes('mouthfeel')) {
+        console.log('Adding mouthfeel column to experiences...');
+        await database.execAsync('ALTER TABLE experiences ADD COLUMN mouthfeel INTEGER');
+      }
+
+      // 2. Add cached rating columns to ciders table (one at a time)
+      const ciderColumns = await database.getAllAsync(`PRAGMA table_info(ciders)`);
+      const ciderColumnNames = (ciderColumns as any[]).map(col => col.name);
+
+      if (!ciderColumnNames.includes('_cachedRating')) {
+        console.log('Adding _cachedRating column to ciders...');
+        await database.execAsync('ALTER TABLE ciders ADD COLUMN _cachedRating INTEGER');
+      }
+
+      if (!ciderColumnNames.includes('_cachedDetailedRatings')) {
+        console.log('Adding _cachedDetailedRatings column to ciders...');
+        await database.execAsync('ALTER TABLE ciders ADD COLUMN _cachedDetailedRatings TEXT');
+      }
+
+      if (!ciderColumnNames.includes('_ratingCount')) {
+        console.log('Adding _ratingCount column to ciders...');
+        await database.execAsync('ALTER TABLE ciders ADD COLUMN _ratingCount INTEGER DEFAULT 0');
+      }
+
+      if (!ciderColumnNames.includes('_ratingLastCalculated')) {
+        console.log('Adding _ratingLastCalculated column to ciders...');
+        await database.execAsync('ALTER TABLE ciders ADD COLUMN _ratingLastCalculated TEXT');
+      }
+
+      // 3. Create indexes for rating columns (performance optimization)
+      await database.execAsync('CREATE INDEX IF NOT EXISTS idx_experiences_rating ON experiences(rating)');
+      await database.execAsync('CREATE INDEX IF NOT EXISTS idx_experiences_appearance ON experiences(appearance)');
+      await database.execAsync('CREATE INDEX IF NOT EXISTS idx_ciders_cached_rating ON ciders(_cachedRating)');
+
+      console.log('Added rating columns and indexes successfully');
+
+      // 4. Get all ciders
+      const allCiders = await database.getAllAsync('SELECT * FROM ciders');
+      console.log(`Found ${(allCiders as any[]).length} ciders to process`);
+
+      let legacyCreated = 0;
+      let ratingsRemoved = 0;
+      let cacheUpdated = 0;
+
+      for (const cider of allCiders as any[]) {
+        // Check if this cider has any experiences
+        const expCount = await database.getFirstAsync<{ count: number }>(
+          'SELECT COUNT(*) as count FROM experiences WHERE ciderId = ?',
+          [cider.id]
+        );
+
+        const hasExperiences = (expCount?.count || 0) > 0;
+
+        if (hasExperiences) {
+          // Cider HAS experiences: Create legacy experience with cider's rating
+          const legacyId = `legacy_${cider.id}`;
+
+          // Check if legacy experience already exists
+          const existingLegacy = await database.getFirstAsync(
+            'SELECT id FROM experiences WHERE id = ?',
+            [legacyId]
+          );
+
+          if (!existingLegacy) {
+            // Parse detailedRatings if present
+            let detailedRatings: any = {};
+            if (cider.detailedRatings) {
+              try {
+                detailedRatings = JSON.parse(cider.detailedRatings);
+              } catch {
+                // Invalid JSON, skip detailed ratings
+              }
+            }
+
+            // Create legacy experience
+            await database.runAsync(`
+              INSERT INTO experiences (
+                id, userId, ciderId, date, venue, price, containerSize, containerType,
+                pricePerPint, rating, appearance, aroma, taste, mouthfeel, notes,
+                createdAt, updatedAt, syncStatus, version
+              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            `, [
+              legacyId,
+              cider.userId,
+              cider.id,
+              cider.createdAt,
+              JSON.stringify({ id: 'legacy', name: 'Initial Rating', type: 'other' }),
+              0, // price
+              568, // containerSize (pint)
+              'bottle', // containerType
+              0, // pricePerPint
+              cider.overallRating,
+              detailedRatings.appearance || null,
+              detailedRatings.aroma || null,
+              detailedRatings.taste || null,
+              detailedRatings.mouthfeel || null,
+              'Rating from before migration - this reflects your initial impression of this cider',
+              cider.createdAt,
+              new Date().toISOString(),
+              'pending',
+              1
+            ]);
+
+            legacyCreated++;
+          }
+
+          // Calculate and cache the rating from ALL experiences (including legacy)
+          const experiences = await database.getAllAsync(
+            'SELECT rating, appearance, aroma, taste, mouthfeel FROM experiences WHERE ciderId = ? AND rating IS NOT NULL',
+            [cider.id]
+          );
+
+          if ((experiences as any[]).length > 0) {
+            const ratings = (experiences as any[]).map(e => e.rating);
+            const avgRating = Math.round(ratings.reduce((sum: number, r: number) => sum + r, 0) / ratings.length);
+
+            // Calculate detailed ratings
+            const detailedAvgs: any = {};
+            ['appearance', 'aroma', 'taste', 'mouthfeel'].forEach(key => {
+              const values = (experiences as any[]).map((e: any) => e[key]).filter((v: any) => v !== null);
+              if (values.length > 0) {
+                detailedAvgs[key] = Math.round(values.reduce((sum: number, v: number) => sum + v, 0) / values.length);
+              }
+            });
+
+            await database.runAsync(`
+              UPDATE ciders
+              SET _cachedRating = ?,
+                  _cachedDetailedRatings = ?,
+                  _ratingCount = ?,
+                  _ratingLastCalculated = ?
+              WHERE id = ?
+            `, [
+              avgRating,
+              Object.keys(detailedAvgs).length > 0 ? JSON.stringify(detailedAvgs) : null,
+              ratings.length,
+              new Date().toISOString(),
+              cider.id
+            ]);
+
+            cacheUpdated++;
+          }
+        } else {
+          // Cider has NO experiences: Remove rating data (set to null)
+          await database.runAsync(`
+            UPDATE ciders
+            SET _cachedRating = NULL,
+                _cachedDetailedRatings = NULL,
+                _ratingCount = 0,
+                _ratingLastCalculated = ?
+            WHERE id = ?
+          `, [new Date().toISOString(), cider.id]);
+
+          ratingsRemoved++;
+        }
+      }
+
+      // 5. Record migration version
+      await this.setMigrationVersion(database, 'ratings_to_experiences', 1);
+
+      // COMMIT: All succeeded
+      await database.execAsync('COMMIT');
+
+      console.log('Ratings migration completed successfully');
+      console.log(`- Legacy experiences created: ${legacyCreated}`);
+      console.log(`- Ratings removed (no experiences): ${ratingsRemoved}`);
+      console.log(`- Rating caches updated: ${cacheUpdated}`);
+
+    } catch (error) {
+      // ROLLBACK: Something failed
+      console.error('Ratings migration failed, rolling back:', error);
+      try {
+        await database.execAsync('ROLLBACK');
+      } catch (rollbackError) {
+        console.error('Rollback failed:', rollbackError);
+      }
+      // Don't throw - allow app to continue without migration
+      console.warn('Continuing without ratings migration - will retry on next launch');
+    }
+  }
+
+  private async addScrumpyFieldToCiders(database: SQLite.SQLiteDatabase): Promise<void> {
+    try {
+      // Check if scrumpy column already exists
+      const tableInfo = await database.getAllAsync(`PRAGMA table_info(ciders)`);
+      const hasColumn = (tableInfo as any[]).some((col: any) => col.name === 'scrumpy');
+
+      if (!hasColumn) {
+        console.log('Adding scrumpy column to ciders table...');
+        await database.execAsync(`
+          ALTER TABLE ciders ADD COLUMN scrumpy INTEGER DEFAULT 0;
+        `);
+        console.log('✅ Scrumpy column added successfully');
+      }
+    } catch (error) {
+      console.error('Failed to add scrumpy column:', error);
+      // Don't throw - allow app to continue
+    }
+  }
+
   private async extractVenuesFromExperiences(database: SQLite.SQLiteDatabase): Promise<void> {
     console.log('Extracting venues from experiences...');
 
@@ -659,7 +908,8 @@ export class BasicSQLiteService implements CiderDatabase {
         name: row.name,
         brand: row.brand,
         abv: row.abv,
-        overallRating: row.overallRating,
+        // Use cached rating if available, fallback to overallRating for backward compatibility
+        overallRating: row._cachedRating ?? row.overallRating,
 
         // Optional basic fields
         photo: row.photo || undefined,
@@ -676,7 +926,10 @@ export class BasicSQLiteService implements CiderDatabase {
         // Expert level fields
         appleClassification: row.appleClassification ? JSON.parse(row.appleClassification) : undefined,
         productionMethods: row.productionMethods ? JSON.parse(row.productionMethods) : undefined,
-        detailedRatings: row.detailedRatings ? JSON.parse(row.detailedRatings) : undefined,
+        // Use cached detailed ratings if available, fallback to detailedRatings
+        detailedRatings: row._cachedDetailedRatings
+          ? JSON.parse(row._cachedDetailedRatings)
+          : (row.detailedRatings ? JSON.parse(row.detailedRatings) : undefined),
         venue: row.venue ? (row.venue.startsWith('{') ? JSON.parse(row.venue) : row.venue) : undefined,
 
         // Additives & Ingredients
@@ -684,6 +937,12 @@ export class BasicSQLiteService implements CiderDatabase {
         hops: row.hops ? JSON.parse(row.hops) : undefined,
         spicesBotanicals: row.spicesBotanicals ? JSON.parse(row.spicesBotanicals) : undefined,
         woodAging: row.woodAging ? JSON.parse(row.woodAging) : undefined,
+
+        // Cached rating fields
+        _cachedRating: row._cachedRating !== null ? row._cachedRating : undefined,
+        _cachedDetailedRatings: row._cachedDetailedRatings ? JSON.parse(row._cachedDetailedRatings) : undefined,
+        _ratingCount: row._ratingCount || undefined,
+        _ratingLastCalculated: row._ratingLastCalculated ? new Date(row._ratingLastCalculated) : undefined,
 
         // System fields
         createdAt: new Date(row.createdAt),
@@ -721,7 +980,8 @@ export class BasicSQLiteService implements CiderDatabase {
         name: row.name,
         brand: row.brand,
         abv: row.abv,
-        overallRating: row.overallRating,
+        // Use cached rating if available, fallback to overallRating for backward compatibility
+        overallRating: row._cachedRating ?? row.overallRating,
 
         // Optional basic fields
         photo: row.photo || undefined,
@@ -738,8 +998,23 @@ export class BasicSQLiteService implements CiderDatabase {
         // Expert level fields
         appleClassification: row.appleClassification ? JSON.parse(row.appleClassification) : undefined,
         productionMethods: row.productionMethods ? JSON.parse(row.productionMethods) : undefined,
-        detailedRatings: row.detailedRatings ? JSON.parse(row.detailedRatings) : undefined,
+        // Use cached detailed ratings if available, fallback to detailedRatings
+        detailedRatings: row._cachedDetailedRatings
+          ? JSON.parse(row._cachedDetailedRatings)
+          : (row.detailedRatings ? JSON.parse(row.detailedRatings) : undefined),
         venue: row.venue ? (row.venue.startsWith('{') ? JSON.parse(row.venue) : row.venue) : undefined,
+
+        // Additives & Ingredients
+        fruitAdditions: row.fruitAdditions ? JSON.parse(row.fruitAdditions) : undefined,
+        hops: row.hops ? JSON.parse(row.hops) : undefined,
+        spicesBotanicals: row.spicesBotanicals ? JSON.parse(row.spicesBotanicals) : undefined,
+        woodAging: row.woodAging ? JSON.parse(row.woodAging) : undefined,
+
+        // Cached rating fields
+        _cachedRating: row._cachedRating !== null ? row._cachedRating : undefined,
+        _cachedDetailedRatings: row._cachedDetailedRatings ? JSON.parse(row._cachedDetailedRatings) : undefined,
+        _ratingCount: row._ratingCount || undefined,
+        _ratingLastCalculated: row._ratingLastCalculated ? new Date(row._ratingLastCalculated) : undefined,
 
         // System fields
         createdAt: new Date(row.createdAt),
@@ -891,9 +1166,9 @@ export class BasicSQLiteService implements CiderDatabase {
         await db.runAsync(
           `INSERT INTO experiences (
             id, userId, ciderId, date, venue, venueId, price, containerSize, containerType, containerTypeCustom, pricePerPint,
-            notes, rating, weatherConditions, companionType,
+            notes, rating, appearance, aroma, taste, mouthfeel, weatherConditions, companionType,
             createdAt, updatedAt, syncStatus, version
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [
             experience.id,
             experience.userId,
@@ -907,7 +1182,11 @@ export class BasicSQLiteService implements CiderDatabase {
             experience.containerTypeCustom || null,
             experience.pricePerPint,
             experience.notes || null,
-            experience.rating || null,
+            experience.rating,
+            experience.detailedRatings?.appearance || null,
+            experience.detailedRatings?.aroma || null,
+            experience.detailedRatings?.taste || null,
+            experience.detailedRatings?.mouthfeel || null,
             experience.weatherConditions || null,
             experience.companionType || null,
             experience.createdAt.toISOString(),
@@ -918,6 +1197,10 @@ export class BasicSQLiteService implements CiderDatabase {
         );
 
         console.log('Experience created successfully:', experience.id);
+
+        // Update cider rating cache with the new experience
+        await this.updateCiderRatingCache(experience.ciderId);
+
         return experience;
       }, 2, 1000);
     } catch (error) {
@@ -974,8 +1257,21 @@ export class BasicSQLiteService implements CiderDatabase {
   async deleteExperience(id: string): Promise<void> {
     try {
       const db = await this.connectionManager.getDatabase();
+
+      // Get the ciderId before deleting so we can update the cache
+      const exp = await db.getFirstAsync<{ ciderId: string }>(
+        'SELECT ciderId FROM experiences WHERE id = ?',
+        [id]
+      );
+      const ciderId = exp?.ciderId;
+
       await db.runAsync('DELETE FROM experiences WHERE id = ?', [id]);
       console.log('Experience deleted successfully:', id);
+
+      // Update cider rating cache if we found the ciderId
+      if (ciderId) {
+        await this.updateCiderRatingCache(ciderId);
+      }
     } catch (error) {
       const dbError = new DatabaseError(
         `Failed to delete experience: ${id}`,
@@ -984,6 +1280,140 @@ export class BasicSQLiteService implements CiderDatabase {
         error instanceof Error ? error : undefined
       );
       ErrorHandler.log(dbError, 'BasicSQLiteService.deleteExperience');
+      throw dbError;
+    }
+  }
+
+  /**
+   * Update cached rating for a cider based on all its experiences
+   * This is called automatically after creating/updating/deleting experiences
+   */
+  async updateCiderRatingCache(ciderId: string): Promise<void> {
+    try {
+      const db = await this.connectionManager.getDatabase();
+
+      // Get all experiences with ratings for this cider
+      const experiences = await db.getAllAsync(
+        `SELECT rating, appearance, aroma, taste, mouthfeel
+         FROM experiences
+         WHERE ciderId = ?`,
+        [ciderId]
+      );
+
+      const expsWithRatings = (experiences as any[]).filter(e => e.rating !== null && e.rating !== undefined);
+
+      if (expsWithRatings.length === 0) {
+        // No rated experiences - set cache to null
+        await db.runAsync(
+          `UPDATE ciders
+           SET _cachedRating = NULL,
+               _cachedDetailedRatings = NULL,
+               _ratingCount = 0,
+               _ratingLastCalculated = ?
+           WHERE id = ?`,
+          [new Date().toISOString(), ciderId]
+        );
+        return;
+      }
+
+      // Map to ExperienceLog format for calculation functions
+      const expLogs: ExperienceLog[] = expsWithRatings.map(e => ({
+        rating: e.rating,
+        detailedRatings: {
+          appearance: e.appearance,
+          aroma: e.aroma,
+          taste: e.taste,
+          mouthfeel: e.mouthfeel
+        }
+      } as any));
+
+      const avgRating = calculateAverageRating(expLogs);
+      const detailedRatings = calculateDetailedRatings(expLogs);
+
+      await db.runAsync(
+        `UPDATE ciders
+         SET _cachedRating = ?,
+             _cachedDetailedRatings = ?,
+             _ratingCount = ?,
+             _ratingLastCalculated = ?
+         WHERE id = ?`,
+        [
+          avgRating,
+          Object.keys(detailedRatings).length > 0 ? JSON.stringify(detailedRatings) : null,
+          expsWithRatings.length,
+          new Date().toISOString(),
+          ciderId
+        ]
+      );
+
+      console.log(`Updated rating cache for cider ${ciderId}: ${avgRating} (from ${expsWithRatings.length} experiences)`);
+    } catch (error) {
+      console.error('Failed to update cider rating cache:', error);
+      // Don't throw - this is a non-critical operation
+    }
+  }
+
+  /**
+   * Update an existing experience
+   */
+  async updateExperience(id: string, updates: Partial<ExperienceLog>): Promise<void> {
+    try {
+      const db = await this.connectionManager.getDatabase();
+
+      // First get the current experience to know the ciderId
+      const current = await db.getFirstAsync<{ ciderId: string }>(
+        'SELECT ciderId FROM experiences WHERE id = ?',
+        [id]
+      );
+
+      if (!current) {
+        throw new Error(`Experience ${id} not found`);
+      }
+
+      const processedUpdates: Record<string, any> = {};
+
+      for (const [key, value] of Object.entries(updates)) {
+        if (key === 'detailedRatings') {
+          // Store detailed ratings as separate columns
+          if (value && typeof value === 'object') {
+            processedUpdates['appearance'] = (value as any).appearance || null;
+            processedUpdates['aroma'] = (value as any).aroma || null;
+            processedUpdates['taste'] = (value as any).taste || null;
+            processedUpdates['mouthfeel'] = (value as any).mouthfeel || null;
+          }
+        } else if (key === 'venue') {
+          processedUpdates[key] = JSON.stringify(value);
+        } else if (key === 'date' || key === 'createdAt' || key === 'updatedAt') {
+          processedUpdates[key] = value instanceof Date ? (value as Date).toISOString() : value;
+        } else if (key !== 'id' && key !== 'userId' && key !== 'ciderId') {
+          processedUpdates[key] = value;
+        }
+      }
+
+      if (!processedUpdates.updatedAt) {
+        processedUpdates.updatedAt = new Date().toISOString();
+      }
+
+      const setClause = Object.keys(processedUpdates).map(key => `${key} = ?`).join(', ');
+      const values = Object.values(processedUpdates);
+
+      await db.runAsync(
+        `UPDATE experiences SET ${setClause} WHERE id = ?`,
+        [...values, id]
+      );
+
+      console.log('Experience updated successfully:', id);
+
+      // Update cider rating cache
+      await this.updateCiderRatingCache(current.ciderId);
+    } catch (error) {
+      const dbError = new DatabaseError(
+        `Failed to update experience: ${id}`,
+        'Unable to update experience. Please try again.',
+        true,
+        error instanceof Error ? error : undefined
+      );
+      ErrorHandler.log(dbError, 'BasicSQLiteService.updateExperience');
       throw dbError;
     }
   }
@@ -1064,6 +1494,13 @@ export class BasicSQLiteService implements CiderDatabase {
     // Handle migration period where both columns might exist
     const pricePerPint = row.pricePerPint || (row.pricePerMl ? row.pricePerMl * 568 : 0);
 
+    // Build detailed ratings if any are present
+    const detailedRatings: any = {};
+    if (row.appearance !== null && row.appearance !== undefined) detailedRatings.appearance = row.appearance;
+    if (row.aroma !== null && row.aroma !== undefined) detailedRatings.aroma = row.aroma;
+    if (row.taste !== null && row.taste !== undefined) detailedRatings.taste = row.taste;
+    if (row.mouthfeel !== null && row.mouthfeel !== undefined) detailedRatings.mouthfeel = row.mouthfeel;
+
     return {
       id: row.id,
       userId: row.userId,
@@ -1077,7 +1514,8 @@ export class BasicSQLiteService implements CiderDatabase {
       containerTypeCustom: row.containerTypeCustom || undefined,
       pricePerPint,
       notes: row.notes || undefined,
-      rating: row.rating || undefined,
+      rating: row.rating,
+      detailedRatings: Object.keys(detailedRatings).length > 0 ? detailedRatings : undefined,
       weatherConditions: row.weatherConditions || undefined,
       companionType: row.companionType || undefined,
       createdAt: new Date(row.createdAt),

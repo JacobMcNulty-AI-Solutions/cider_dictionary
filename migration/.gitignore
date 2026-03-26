@@ -1,0 +1,15 @@
+# Firebase service account key (NEVER COMMIT THIS!)
+serviceAccountKey.json
+*.json
+
+# Dependencies
+node_modules/
+
+# Build
+*.js
+*.d.ts
+!package.json
+
+# Logs
+*.log
+npm-debug.log*

@@ -1,23 +1,22 @@
 import React, { useState, useCallback, useMemo } from 'react';
-import { View, ScrollView, StyleSheet, Alert, KeyboardAvoidingView, Platform } from 'react-native';
+import { View, ScrollView, StyleSheet, Alert, KeyboardAvoidingView, Platform, Text } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { RootTabScreenProps } from '../../types/navigation';
 import { QuickEntryForm, FormValidationErrors, Rating } from '../../types/cider';
 import { validateQuickEntryForm, sanitizeFormData } from '../../utils/validation';
 import { AppError, DatabaseError, ErrorHandler } from '../../utils/errors';
 import SafeAreaContainer from '../../components/common/SafeAreaContainer';
 import Input from '../../components/common/Input';
-import RatingInput from '../../components/common/RatingInput';
 import Button from '../../components/common/Button';
 import { sqliteService } from '../../services/database/sqlite';
 
 type Props = RootTabScreenProps<'QuickEntry'>;
 
 export default function QuickEntryScreen({ navigation }: Props) {
-  const [formData, setFormData] = useState<QuickEntryForm>({
+  const [formData, setFormData] = useState<Omit<QuickEntryForm, 'overallRating'>>({
     name: '',
     brand: '',
     abv: 0,
-    overallRating: 5 as Rating, // Default to middle rating
   });
 
   // Separate string state for ABV to preserve decimal point while typing
@@ -51,12 +50,12 @@ export default function QuickEntryScreen({ navigation }: Props) {
       // Initialize database if not already done
       await sqliteService.initializeDatabase();
 
-      // Create the cider record with sanitized data
+      // Create the cider record WITHOUT rating (ratings come from experiences)
       const newCider = await sqliteService.createCider({
         name: sanitizedData.name,
         brand: sanitizedData.brand,
         abv: sanitizedData.abv,
-        overallRating: sanitizedData.overallRating,
+        overallRating: 5 as Rating, // Placeholder - will be replaced by cache on first experience
       });
 
       console.log('New cider created:', newCider);
@@ -64,17 +63,27 @@ export default function QuickEntryScreen({ navigation }: Props) {
       // Reset form
       resetForm();
 
+      // OPTIONAL (not forced) - Ask user if they want to log first experience
       Alert.alert(
-        'Success!',
-        `${newCider.name} has been added to your collection.`,
+        'Cider Added!',
+        `${newCider.name} has been added to your collection. Would you like to log your first tasting experience?`,
         [
           {
-            text: 'Add Another',
+            text: 'Not Now',
+            onPress: () => navigation.navigate('Collection'),
+            style: 'cancel',
+          },
+          {
+            text: 'Add Another Cider',
             style: 'default',
           },
           {
-            text: 'View Collection',
-            onPress: () => navigation.navigate('Collection'),
+            text: 'Log First Tasting',
+            onPress: () => navigation.navigate('ExperienceLog', {
+              ciderId: newCider.id,
+              ciderName: newCider.name,
+              isFirstExperience: true
+            }),
             style: 'default',
           },
         ]
@@ -110,7 +119,6 @@ export default function QuickEntryScreen({ navigation }: Props) {
       name: '',
       brand: '',
       abv: 0,
-      overallRating: 5 as Rating,
     });
     setAbvDisplayValue('');
     setErrors({});
@@ -134,7 +142,6 @@ export default function QuickEntryScreen({ navigation }: Props) {
   const updateName = useMemo(() => updateFormData('name'), [updateFormData]);
   const updateBrand = useMemo(() => updateFormData('brand'), [updateFormData]);
   const updateAbv = useMemo(() => updateFormData('abv'), [updateFormData]);
-  const updateRating = useMemo(() => updateFormData('overallRating'), [updateFormData]);
 
   return (
     <SafeAreaContainer>
@@ -186,26 +193,17 @@ export default function QuickEntryScreen({ navigation }: Props) {
               placeholder="e.g., 5.0"
               error={errors.abv}
               keyboardType="decimal-pad"
-              returnKeyType="next"
+              returnKeyType="done"
             />
 
-            <RatingInput
-              label="Overall Rating"
-              rating={formData.overallRating}
-              onRatingChange={updateRating}
-              maxRating={10}
-            />
-            {errors.overallRating && (
-              <View style={styles.errorContainer}>
-                <Input
-                  label=""
-                  value=""
-                  onChangeText={() => {}}
-                  error={errors.overallRating}
-                  containerStyle={styles.hiddenInput}
-                />
-              </View>
-            )}
+            {/* Info banner explaining ratings come from experiences */}
+            <View style={styles.ratingInfoBanner}>
+              <Ionicons name="information-circle-outline" size={20} color="#007AFF" />
+              <Text style={styles.ratingInfoText}>
+                Ratings are based on your tasting experiences. After adding a cider,
+                log your first tasting to rate it.
+              </Text>
+            </View>
 
             <View style={styles.buttonContainer}>
               <Button
@@ -240,11 +238,20 @@ const styles = StyleSheet.create({
     marginTop: 32,
     marginBottom: 20,
   },
-  errorContainer: {
-    marginTop: -16,
+  ratingInfoBanner: {
+    flexDirection: 'row',
+    backgroundColor: '#E3F2FD',
+    padding: 12,
+    borderRadius: 8,
+    marginTop: 16,
+    marginBottom: 8,
+    alignItems: 'flex-start',
   },
-  hiddenInput: {
-    height: 0,
-    marginBottom: 0,
+  ratingInfoText: {
+    flex: 1,
+    marginLeft: 8,
+    fontSize: 14,
+    color: '#1976D2',
+    lineHeight: 20,
   },
 });

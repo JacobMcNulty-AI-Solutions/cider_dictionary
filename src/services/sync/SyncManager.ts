@@ -361,6 +361,11 @@ class SyncManager {
         style: cider.style || null,
         traditionalStyle: cider.traditionalStyle || null,
         overallRating: cider.overallRating || null,
+        // NEW: Cached rating fields (calculated from experiences)
+        _cachedRating: cider._cachedRating !== undefined ? cider._cachedRating : null,
+        _cachedDetailedRatings: cider._cachedDetailedRatings || null,
+        _ratingCount: cider._ratingCount || 0,
+        _ratingLastCalculated: cider._ratingLastCalculated ? safeDate(cider._ratingLastCalculated) : null,
         tasteTags: cider.tasteTags || null,
         sweetness: cider.sweetness || null,
         carbonation: cider.carbonation || null,
@@ -457,6 +462,10 @@ class SyncManager {
       await setDoc(experienceRef, experienceData);
 
       console.log('Experience synced to Firebase:', experience.id);
+
+      // CRITICAL: After syncing experience, update the cider's cached rating locally
+      // The cache update will trigger another sync operation for the cider
+      await sqliteService.updateCiderRatingCache(experience.ciderId);
     } catch (error) {
       console.error('Failed to sync create experience:', error);
       throw error;
@@ -477,6 +486,10 @@ class SyncManager {
       };
 
       await updateDoc(experienceRef, experienceData);
+
+      // CRITICAL: After syncing experience, update the cider's cached rating locally
+      // The cache update will trigger another sync operation for the cider
+      await sqliteService.updateCiderRatingCache(experience.ciderId);
     } catch (error) {
       console.error('Failed to sync update experience:', error);
       throw error;
@@ -485,10 +498,19 @@ class SyncManager {
 
   private async syncDeleteExperience(experienceId: string): Promise<void> {
     try {
+      // Get the experience before deleting to extract ciderId for cache update
+      const experience = await sqliteService.getExperienceById(experienceId);
+
       const db = firebaseService.getFirestore();
       const experienceRef = doc(db, 'experiences', experienceId);
 
       await deleteDoc(experienceRef);
+
+      // CRITICAL: After deleting experience, update the cider's cached rating locally
+      // The cache update will trigger another sync operation for the cider
+      if (experience) {
+        await sqliteService.updateCiderRatingCache(experience.ciderId);
+      }
     } catch (error) {
       console.error('Failed to sync delete experience:', error);
       throw error;
@@ -1530,8 +1552,9 @@ class SyncManager {
         traditionalStyle, sweetness, carbonation, clarity, color, tasteTags,
         appleClassification, productionMethods, detailedRatings, venue,
         fruitAdditions, hops, spicesBotanicals, woodAging,
+        _cachedRating, _cachedDetailedRatings, _ratingCount, _ratingLastCalculated,
         createdAt, updatedAt, syncStatus, version
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         cider.id,
         cider.userId || 'default-user',
@@ -1555,6 +1578,10 @@ class SyncManager {
         cider.hops ? JSON.stringify(cider.hops) : null,
         cider.spicesBotanicals ? JSON.stringify(cider.spicesBotanicals) : null,
         cider.woodAging ? JSON.stringify(cider.woodAging) : null,
+        cider._cachedRating !== undefined ? cider._cachedRating : null,
+        cider._cachedDetailedRatings ? JSON.stringify(cider._cachedDetailedRatings) : null,
+        cider._ratingCount || 0,
+        cider._ratingLastCalculated ? this.safeToISOString(cider._ratingLastCalculated) : null,
         this.safeToISOString(cider.createdAt),
         this.safeToISOString(cider.updatedAt),
         'synced',
@@ -1570,9 +1597,9 @@ class SyncManager {
     await db.runAsync(
       `INSERT OR REPLACE INTO experiences (
         id, userId, ciderId, date, venue, price, containerSize, containerType,
-        containerTypeCustom, pricePerPint, notes, rating, weatherConditions,
+        containerTypeCustom, pricePerPint, notes, rating, detailedRatings, weatherConditions,
         companionType, createdAt, updatedAt, syncStatus, version
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         experience.id,
         experience.userId || 'default-user',
@@ -1586,6 +1613,7 @@ class SyncManager {
         experience.pricePerPint || 0,
         experience.notes || null,
         experience.rating || null,
+        experience.detailedRatings ? JSON.stringify(experience.detailedRatings) : null,
         experience.weatherConditions || null,
         experience.companionType || null,
         this.safeToISOString(experience.createdAt),
@@ -1676,6 +1704,11 @@ class SyncManager {
       brand: data.brand || '',
       abv: data.abv ?? 0,
       overallRating: data.overallRating ?? 5,
+      // NEW: Cached rating fields (calculated from experiences)
+      _cachedRating: data._cachedRating !== undefined ? data._cachedRating : undefined,
+      _cachedDetailedRatings: data._cachedDetailedRatings || undefined,
+      _ratingCount: data._ratingCount || undefined,
+      _ratingLastCalculated: data._ratingLastCalculated ? this.parseFirestoreDate(data._ratingLastCalculated) : undefined,
       photo: data.photo || undefined,
       notes: data.notes || undefined,
       traditionalStyle: data.traditionalStyle || undefined,
@@ -1716,6 +1749,7 @@ class SyncManager {
       pricePerPint: data.pricePerPint || 0,
       notes: data.notes || undefined,
       rating: data.rating || undefined,
+      detailedRatings: data.detailedRatings || undefined,
       weatherConditions: data.weatherConditions || undefined,
       companionType: data.companionType || undefined,
       createdAt: this.parseFirestoreDate(data.createdAt),

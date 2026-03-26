@@ -25,6 +25,7 @@ import { RootStackParamList } from '../../types/navigation';
 import SafeAreaContainer from '../../components/common/SafeAreaContainer';
 import LoadingSpinner from '../../components/common/LoadingSpinner';
 import Button from '../../components/common/Button';
+import RatingInput from '../../components/common/RatingInput';
 import FormSection from '../../components/forms/FormSection';
 import LocationPicker from '../../components/maps/LocationPicker';
 import VenueSelector from '../../components/venue/VenueSelector';
@@ -63,7 +64,12 @@ export default function ExperienceLogScreen({ route, navigation }: Props) {
     containerType: 'bottle',
     notes: '',
     date: new Date(),
-    rating: undefined
+    detailedRatings: {
+      appearance: undefined,
+      aroma: undefined,
+      taste: undefined,
+      mouthfeel: undefined
+    }
   });
 
   const [locationError, setLocationError] = useState<string | null>(null);
@@ -78,14 +84,34 @@ export default function ExperienceLogScreen({ route, navigation }: Props) {
     return 0;
   }, [formState.price, formState.containerSize]);
 
+  // Auto-calculate overall rating from detailed ratings
+  const overallRating = useMemo(() => {
+    const { appearance, aroma, taste, mouthfeel } = formState.detailedRatings || {};
+    const ratings = [appearance, aroma, taste, mouthfeel].filter((r): r is number => r !== undefined);
+
+    if (ratings.length === 0) return undefined;
+
+    const sum = ratings.reduce((acc, r) => acc + r, 0);
+    const average = sum / ratings.length;
+    const rounded = Math.round(average * 10) / 10; // Round to 1 decimal place
+    return Math.max(1, Math.min(10, rounded)) as Rating;
+  }, [formState.detailedRatings]);
+
   // Form validation
   const isFormValid = useMemo(() => {
+    const hasAllDetailedRatings =
+      formState.detailedRatings?.appearance !== undefined &&
+      formState.detailedRatings?.aroma !== undefined &&
+      formState.detailedRatings?.taste !== undefined &&
+      formState.detailedRatings?.mouthfeel !== undefined;
+
     return (
       formState.venue.id &&
       formState.venue.name.trim().length >= 2 &&
       formState.venue.location &&
       formState.price > 0 &&
       formState.containerSize > 0 &&
+      hasAllDetailedRatings && // Require all 4 detailed ratings
       pricePerPint > 0
     );
   }, [formState, pricePerPint]);
@@ -176,6 +202,16 @@ export default function ExperienceLogScreen({ route, navigation }: Props) {
     }
   }, []);
 
+  const handleDetailedRatingChange = useCallback((field: 'appearance' | 'aroma' | 'taste' | 'mouthfeel', rating: number) => {
+    setFormState(prev => ({
+      ...prev,
+      detailedRatings: {
+        ...prev.detailedRatings,
+        [field]: rating as Rating
+      }
+    }));
+  }, []);
+
   // Handle form submission
   const handleSubmit = useCallback(async () => {
     if (!isFormValid || !cider) return;
@@ -197,7 +233,8 @@ export default function ExperienceLogScreen({ route, navigation }: Props) {
         containerTypeCustom: formState.containerTypeCustom,
         pricePerPint,
         notes: formState.notes || undefined,
-        rating: formState.rating,
+        rating: overallRating!, // Auto-calculated from detailed ratings
+        detailedRatings: formState.detailedRatings, // Required detailed ratings
         createdAt: new Date(),
         updatedAt: new Date(),
         syncStatus: 'pending',
@@ -315,6 +352,47 @@ export default function ExperienceLogScreen({ route, navigation }: Props) {
             />
 
             <PricePerPintDisplay value={pricePerPint} />
+          </FormSection>
+
+          {/* Rating Section */}
+          <FormSection title="Rating">
+            <View style={styles.detailedRatingsContainer}>
+              <RatingInput
+                label="Appearance"
+                rating={formState.detailedRatings?.appearance}
+                onRatingChange={(rating) => handleDetailedRatingChange('appearance', rating)}
+                maxRating={10}
+                required
+              />
+              <RatingInput
+                label="Aroma"
+                rating={formState.detailedRatings?.aroma}
+                onRatingChange={(rating) => handleDetailedRatingChange('aroma', rating)}
+                maxRating={10}
+                required
+              />
+              <RatingInput
+                label="Taste"
+                rating={formState.detailedRatings?.taste}
+                onRatingChange={(rating) => handleDetailedRatingChange('taste', rating)}
+                maxRating={10}
+                required
+              />
+              <RatingInput
+                label="Mouthfeel"
+                rating={formState.detailedRatings?.mouthfeel}
+                onRatingChange={(rating) => handleDetailedRatingChange('mouthfeel', rating)}
+                maxRating={10}
+                required
+              />
+            </View>
+
+            {overallRating !== undefined && (
+              <View style={styles.calculatedRatingBox}>
+                <Text style={styles.calculatedRatingLabel}>Overall Rating (calculated)</Text>
+                <Text style={styles.calculatedRatingValue}>{overallRating.toFixed(1)}/10</Text>
+              </View>
+            )}
           </FormSection>
 
           {/* Notes */}
@@ -711,5 +789,29 @@ const styles = StyleSheet.create({
     fontSize: 18,
     color: '#666',
     textAlign: 'center',
+  },
+  detailedRatingsContainer: {
+    gap: 8,
+  },
+  calculatedRatingBox: {
+    marginTop: 16,
+    padding: 16,
+    backgroundColor: '#f0f8ff',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#007AFF',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  calculatedRatingLabel: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#333',
+  },
+  calculatedRatingValue: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#007AFF',
   },
 });

@@ -20,12 +20,13 @@ import { StackNavigationProp } from '@react-navigation/stack';
 import { Ionicons } from '@expo/vector-icons';
 
 import { ExperienceLog, CONTAINER_SIZES, VenueInfo, Location } from '../../types/experience';
-import { CiderMasterRecord, ContainerType } from '../../types/cider';
+import { CiderMasterRecord, ContainerType, Rating } from '../../types/cider';
 import { RootStackParamList } from '../../types/navigation';
 
 import SafeAreaContainer from '../../components/common/SafeAreaContainer';
 import LoadingSpinner from '../../components/common/LoadingSpinner';
 import Button from '../../components/common/Button';
+import RatingInput from '../../components/common/RatingInput';
 import FormSection from '../../components/forms/FormSection';
 import VenueSelector from '../../components/venue/VenueSelector';
 
@@ -60,7 +61,17 @@ export default function ExperienceEditScreen() {
   const [containerType, setContainerType] = useState<ContainerType>('bottle');
   const [containerTypeCustom, setContainerTypeCustom] = useState<string | undefined>();
   const [notes, setNotes] = useState('');
-  const [rating, setRating] = useState<number | undefined>();
+  const [detailedRatings, setDetailedRatings] = useState<{
+    appearance?: Rating;
+    aroma?: Rating;
+    taste?: Rating;
+    mouthfeel?: Rating;
+  }>({
+    appearance: undefined,
+    aroma: undefined,
+    taste: undefined,
+    mouthfeel: undefined
+  });
   const [currentLocation, setCurrentLocation] = useState<Location | null>(null);
 
   // Auto-calculate price per pint
@@ -72,17 +83,37 @@ export default function ExperienceEditScreen() {
     return 0;
   }, [price, containerSize]);
 
+  // Auto-calculate overall rating from detailed ratings
+  const overallRating = useMemo(() => {
+    const { appearance, aroma, taste, mouthfeel } = detailedRatings || {};
+    const ratings = [appearance, aroma, taste, mouthfeel].filter((r): r is number => r !== undefined);
+
+    if (ratings.length === 0) return undefined;
+
+    const sum = ratings.reduce((acc, r) => acc + r, 0);
+    const average = sum / ratings.length;
+    const rounded = Math.round(average * 10) / 10; // Round to 1 decimal place
+    return Math.max(1, Math.min(10, rounded)) as Rating;
+  }, [detailedRatings]);
+
   // Form validation
   const isFormValid = useMemo(() => {
+    const hasAllDetailedRatings =
+      detailedRatings?.appearance !== undefined &&
+      detailedRatings?.aroma !== undefined &&
+      detailedRatings?.taste !== undefined &&
+      detailedRatings?.mouthfeel !== undefined;
+
     return (
       venue.id &&
       venue.name.trim().length >= 2 &&
       venue.location &&
       price > 0 &&
       containerSize > 0 &&
+      hasAllDetailedRatings && // Require all 4 detailed ratings
       pricePerPint > 0
     );
-  }, [venue, price, containerSize, pricePerPint]);
+  }, [venue, price, containerSize, detailedRatings, pricePerPint]);
 
   // Load experience data
   useEffect(() => {
@@ -110,7 +141,12 @@ export default function ExperienceEditScreen() {
         setContainerType(foundExperience.containerType);
         setContainerTypeCustom(foundExperience.containerTypeCustom);
         setNotes(foundExperience.notes || '');
-        setRating(foundExperience.rating);
+        setDetailedRatings(foundExperience.detailedRatings || {
+          appearance: undefined,
+          aroma: undefined,
+          taste: undefined,
+          mouthfeel: undefined
+        });
         if (foundExperience.venue.location) {
           setCurrentLocation(foundExperience.venue.location);
         }
@@ -205,6 +241,14 @@ export default function ExperienceEditScreen() {
     }
   }, []);
 
+  const handleDetailedRatingChange = useCallback((field: 'appearance' | 'aroma' | 'taste' | 'mouthfeel', newRating: number) => {
+    setDetailedRatings(prev => ({
+      ...prev,
+      [field]: newRating as Rating
+    }));
+    setIsDirty(true);
+  }, []);
+
   // Handle form submission
   const handleSubmit = useCallback(async () => {
     if (!isFormValid || !experience) return;
@@ -222,7 +266,8 @@ export default function ExperienceEditScreen() {
         containerTypeCustom,
         pricePerPint,
         notes: notes || undefined,
-        rating,
+        rating: overallRating!,
+        detailedRatings,
         updatedAt: new Date(),
         syncStatus: 'pending',
         version: (experience.version || 1) + 1
@@ -250,7 +295,7 @@ export default function ExperienceEditScreen() {
     } finally {
       setIsSubmitting(false);
     }
-  }, [experience, venue, price, containerSize, containerType, containerTypeCustom, pricePerPint, notes, rating, isFormValid, experienceId, navigation]);
+  }, [experience, venue, price, containerSize, containerType, containerTypeCustom, pricePerPint, notes, rating, detailedRatings, isFormValid, experienceId, navigation]);
 
   // Handle cancel
   const handleCancel = useCallback(() => {
@@ -399,6 +444,47 @@ export default function ExperienceEditScreen() {
                 £{pricePerPint > 0 ? pricePerPint.toFixed(2) : '0.00'}
               </Text>
             </View>
+          </FormSection>
+
+          {/* Rating Section */}
+          <FormSection title="Rating">
+            <View style={styles.detailedRatingsContainer}>
+              <RatingInput
+                label="Appearance"
+                rating={detailedRatings?.appearance}
+                onRatingChange={(rating) => handleDetailedRatingChange('appearance', rating)}
+                maxRating={10}
+                required
+              />
+              <RatingInput
+                label="Aroma"
+                rating={detailedRatings?.aroma}
+                onRatingChange={(rating) => handleDetailedRatingChange('aroma', rating)}
+                maxRating={10}
+                required
+              />
+              <RatingInput
+                label="Taste"
+                rating={detailedRatings?.taste}
+                onRatingChange={(rating) => handleDetailedRatingChange('taste', rating)}
+                maxRating={10}
+                required
+              />
+              <RatingInput
+                label="Mouthfeel"
+                rating={detailedRatings?.mouthfeel}
+                onRatingChange={(rating) => handleDetailedRatingChange('mouthfeel', rating)}
+                maxRating={10}
+                required
+              />
+            </View>
+
+            {overallRating !== undefined && (
+              <View style={styles.calculatedRatingBox}>
+                <Text style={styles.calculatedRatingLabel}>Overall Rating (calculated)</Text>
+                <Text style={styles.calculatedRatingValue}>{overallRating.toFixed(1)}/10</Text>
+              </View>
+            )}
           </FormSection>
 
           {/* Notes */}
@@ -625,5 +711,29 @@ const styles = StyleSheet.create({
     fontSize: 18,
     color: '#666',
     textAlign: 'center',
+  },
+  detailedRatingsContainer: {
+    gap: 8,
+  },
+  calculatedRatingBox: {
+    marginTop: 16,
+    padding: 16,
+    backgroundColor: '#f0f8ff',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#007AFF',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  calculatedRatingLabel: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#333',
+  },
+  calculatedRatingValue: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#007AFF',
   },
 });

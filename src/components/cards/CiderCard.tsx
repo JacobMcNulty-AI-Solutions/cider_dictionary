@@ -9,24 +9,12 @@ interface Props {
 }
 
 const CiderCard = memo<Props>(({ cider, onPress }) => {
-  // Memoize the stars rendering for better performance
-  const stars = useMemo(() => {
-    const starsArray = [];
-    const maxRating = 10;
+  // Get the rating to display (use cached rating if available)
+  const displayRating = cider._cachedRating !== null && cider._cachedRating !== undefined
+    ? cider._cachedRating
+    : null;
 
-    for (let i = 0; i < Math.min(5, maxRating); i++) {
-      const starRating = (i + 1) * (maxRating / 5);
-      starsArray.push(
-        <Ionicons
-          key={i}
-          name={cider.overallRating >= starRating ? 'star' : 'star-outline'}
-          size={18}
-          color={cider.overallRating >= starRating ? '#FFD700' : '#E1E1E1'}
-        />
-      );
-    }
-    return starsArray;
-  }, [cider.overallRating]);
+  const hasRating = displayRating !== null;
 
   // Memoize the formatted date
   const formattedDate = useMemo(() => {
@@ -62,11 +50,19 @@ const CiderCard = memo<Props>(({ cider, onPress }) => {
             {cider.brand}
           </Text>
         </View>
-        <View style={styles.ratingBadge}>
-          <Text style={styles.ratingBadgeText}>
-            {cider.overallRating}
-          </Text>
-        </View>
+        {hasRating ? (
+          <View style={styles.ratingBadge}>
+            <Text style={styles.ratingBadgeText}>
+              {displayRating!.toFixed(1)}
+            </Text>
+          </View>
+        ) : (
+          <View style={[styles.ratingBadge, styles.noRatingBadge]}>
+            <Text style={[styles.ratingBadgeText, styles.noRatingBadgeText]}>
+              -
+            </Text>
+          </View>
+        )}
       </View>
 
       <View style={styles.details}>
@@ -83,9 +79,14 @@ const CiderCard = memo<Props>(({ cider, onPress }) => {
           <View style={styles.metricItem}>
             <Text style={styles.metricLabel}>Rating</Text>
             <View style={styles.ratingContainer}>
-              <View style={styles.stars}>
-                {stars}
-              </View>
+              {hasRating ? (
+                <View style={styles.ratingDisplay}>
+                  <Ionicons name="star" size={16} color="#FFD700" />
+                  <Text style={styles.ratingText}>{displayRating!.toFixed(1)}/10</Text>
+                </View>
+              ) : (
+                <Text style={styles.noRatingText}>Not rated</Text>
+              )}
             </View>
           </View>
         </View>
@@ -157,6 +158,12 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '700',
   },
+  noRatingBadge: {
+    backgroundColor: '#E1E1E1',
+  },
+  noRatingBadgeText: {
+    color: '#999',
+  },
   details: {
     marginBottom: 16,
   },
@@ -186,9 +193,20 @@ const styles = StyleSheet.create({
   ratingContainer: {
     alignItems: 'center',
   },
-  stars: {
+  ratingDisplay: {
     flexDirection: 'row',
-    gap: 2,
+    alignItems: 'center',
+    gap: 4,
+  },
+  ratingText: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#1A1A1A',
+  },
+  noRatingText: {
+    fontSize: 14,
+    fontStyle: 'italic',
+    color: '#999',
   },
   footer: {
     borderTopWidth: 1,

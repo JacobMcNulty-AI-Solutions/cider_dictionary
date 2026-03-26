@@ -12,6 +12,7 @@ import {
   TouchableOpacity,
   Alert
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { CiderMasterRecord, Rating } from '../../types/cider';
 import { useCiderStore } from '../../store/ciderStore';
 import ValidatedInput from './ValidatedInput';
@@ -38,7 +39,6 @@ export interface FormValidationErrors {
   name?: string;
   brand?: string;
   abv?: string;
-  overallRating?: string;
   [key: string]: string | undefined;
 }
 
@@ -50,20 +50,21 @@ const FORM_SECTIONS = [
   {
     id: 'core',
     title: 'Essential Details',
-    description: 'Required information',
+    description: 'Quick entry - required information',
     fields: [
       { key: 'name', label: 'Cider Name', type: 'text', required: true, placeholder: 'Enter cider name' },
       { key: 'brand', label: 'Brand', type: 'text', required: true, placeholder: 'Enter brand name' },
       { key: 'abv', label: 'ABV (%)', type: 'number', required: true, placeholder: 'Enter ABV (e.g., 5.2)' },
-      { key: 'overallRating', label: 'Overall Rating', type: 'rating', required: true, placeholder: 'Rate from 1-10' },
+      { key: 'scrumpy', label: 'Scrumpy Style', type: 'checkbox', required: false, placeholder: 'Is this a traditional scrumpy?' },
+      { key: 'photo', label: 'Photo', type: 'image', required: false, placeholder: 'Add a photo (optional)' },
     ],
     collapsible: false,
     defaultExpanded: true,
   },
   {
     id: 'basic_characteristics',
-    title: 'Cider Characteristics',
-    description: 'Core characteristics and tasting notes',
+    title: 'Detailed Characteristics',
+    description: 'Optional tasting notes and characteristics',
     fields: [
       { key: 'traditionalStyle', label: 'Traditional Style', type: 'select', required: false, placeholder: 'Select style (optional)', options: [
         { label: 'West Country Traditional', value: 'west_country_traditional' },
@@ -111,7 +112,6 @@ const FORM_SECTIONS = [
         'Light-bodied', 'Medium-bodied', 'Full-bodied', 'Fizzy', 'Still', 'Creamy', 'Astringent', 'Tannic', 'Balanced', 'Complex'
       ] },
       { key: 'notes', label: 'Tasting Notes', type: 'text', required: false, placeholder: 'Personal notes about this cider (optional)', multiline: true },
-      { key: 'photo', label: 'Photo', type: 'image', required: false, placeholder: 'Add a photo (optional)' },
     ],
     collapsible: true,
     defaultExpanded: false,
@@ -249,19 +249,6 @@ const FORM_SECTIONS = [
     collapsible: true,
     defaultExpanded: false,
   },
-  {
-    id: 'detailed_ratings',
-    title: 'Detailed Ratings',
-    description: 'Rate individual aspects of the cider',
-    fields: [
-      { key: 'appearanceRating', label: 'Appearance Rating', type: 'rating', required: false, placeholder: 'Rate appearance (1-10)' },
-      { key: 'aromaRating', label: 'Aroma Rating', type: 'rating', required: false, placeholder: 'Rate aroma (1-10)' },
-      { key: 'tasteRating', label: 'Taste Rating', type: 'rating', required: false, placeholder: 'Rate taste (1-10)' },
-      { key: 'mouthfeelRating', label: 'Mouthfeel Rating', type: 'rating', required: false, placeholder: 'Rate mouthfeel (1-10)' },
-    ],
-    collapsible: true,
-    defaultExpanded: false,
-  }
 ];
 
 // =============================================================================
@@ -304,29 +291,26 @@ export default function CiderForm({
       flatData.barrelHistory = data.woodAging.barrelHistory || [];
     }
 
-    // Flatten detailed ratings
-    if (data.detailedRatings) {
-      flatData.appearanceRating = data.detailedRatings.appearance;
-      flatData.aromaRating = data.detailedRatings.aroma;
-      flatData.tasteRating = data.detailedRatings.taste;
-      flatData.mouthfeelRating = data.detailedRatings.mouthfeel;
-    }
-
     return flatData;
   }, []);
 
   // Form state - set default values for required fields
   const [formData, setFormData] = useState<Record<string, any>>(() => {
     const transformed = transformInitialData(initialData);
-    // Set default rating of 5 if not provided (so user can submit without changing it)
-    if (transformed.overallRating === undefined) {
-      transformed.overallRating = 5;
-    }
     return transformed;
   });
   const [errors, setErrors] = useState<FormValidationErrors>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isDirty, setIsDirty] = useState(false);
+
+  // Track which sections are expanded
+  const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>(() => {
+    const initial: Record<string, boolean> = {};
+    FORM_SECTIONS.forEach(section => {
+      initial[section.id] = section.defaultExpanded !== false;
+    });
+    return initial;
+  });
 
   // Separate display values for number fields to preserve decimal point while typing
   const [numberDisplayValues, setNumberDisplayValues] = useState<Record<string, string>>(() => {
@@ -352,12 +336,13 @@ export default function CiderForm({
     const hasName = formData.name && formData.name.trim().length > 0;
     const hasBrand = formData.brand && formData.brand.trim().length > 0;
     const hasAbv = formData.abv && formData.abv > 0;
-    const hasRating = formData.overallRating && formData.overallRating > 0;
 
-    const canSubmit = hasName && hasBrand && hasAbv && hasRating;
+    const canSubmit = hasName && hasBrand && hasAbv;
 
-    const requiredFieldsCount = [hasName, hasBrand, hasAbv, hasRating].filter(Boolean).length;
+    const requiredFieldsCount = [hasName, hasBrand, hasAbv].filter(Boolean).length;
     const optionalFieldsCount = [
+      formData.scrumpy !== undefined,
+      formData.photo,
       formData.traditionalStyle,
       formData.sweetness,
       formData.carbonation,
@@ -365,7 +350,6 @@ export default function CiderForm({
       formData.color,
       formData.tasteTags && formData.tasteTags.length > 0,
       formData.notes,
-      formData.photo,
       formData.appleCategories && formData.appleCategories.length > 0,
       formData.appleVarieties && formData.appleVarieties.length > 0,
       formData.fermentation,
@@ -375,14 +359,10 @@ export default function CiderForm({
       formData.hopCharacter && formData.hopCharacter.length > 0,
       formData.spicesBotanicals && formData.spicesBotanicals.length > 0,
       formData.woodType && formData.woodType.length > 0,
-      formData.barrelHistory && formData.barrelHistory.length > 0,
-      formData.appearanceRating,
-      formData.aromaRating,
-      formData.tasteRating,
-      formData.mouthfeelRating
+      formData.barrelHistory && formData.barrelHistory.length > 0
     ].filter(Boolean).length;
 
-    const totalFields = 25;
+    const totalFields = 21;
     const completedFields = requiredFieldsCount + optionalFieldsCount;
     const percentage = Math.round((completedFields / totalFields) * 100);
 
@@ -456,10 +436,6 @@ export default function CiderForm({
       newErrors.abv = 'ABV must be between 0.1% and 20%';
     }
 
-    if (!formData.overallRating) {
-      newErrors.overallRating = 'Rating is required';
-    }
-
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   }, [formData]);
@@ -470,7 +446,7 @@ export default function CiderForm({
       name: formData.name,
       brand: formData.brand,
       abv: formData.abv,
-      overallRating: formData.overallRating,
+      scrumpy: formData.scrumpy || undefined,
       photo: formData.photo || undefined,
       notes: formData.notes || undefined,
       traditionalStyle: formData.traditionalStyle || undefined,
@@ -515,15 +491,6 @@ export default function CiderForm({
       };
     }
 
-    // Build detailed ratings object - default to overall rating if not explicitly set
-    const overallRating = formData.overallRating || 5;
-    result.detailedRatings = {
-      appearance: formData.appearanceRating ?? overallRating,
-      aroma: formData.aromaRating ?? overallRating,
-      taste: formData.tasteRating ?? overallRating,
-      mouthfeel: formData.mouthfeelRating ?? overallRating
-    };
-
     // Remove undefined fields
     Object.keys(result).forEach(key => {
       const value = result[key as keyof typeof result];
@@ -557,10 +524,6 @@ export default function CiderForm({
       validationErrors.abv = 'ABV is required';
     } else if (formData.abv < 0.1 || formData.abv > 20) {
       validationErrors.abv = 'ABV must be between 0.1% and 20%';
-    }
-
-    if (!formData.overallRating) {
-      validationErrors.overallRating = 'Rating is required';
     }
 
     // If there are errors, show them and update state
@@ -704,18 +667,77 @@ export default function CiderForm({
           />
         );
 
+      case 'checkbox':
+        return (
+          <View key={field.key} style={styles.checkboxContainer}>
+            <TouchableOpacity
+              style={styles.checkboxRow}
+              onPress={() => handleFieldChange(field.key, !value)}
+              activeOpacity={0.7}
+            >
+              <View style={[styles.checkbox, value && styles.checkboxChecked]}>
+                {value && <Ionicons name="checkmark" size={18} color="#fff" />}
+              </View>
+              <View style={styles.checkboxLabelContainer}>
+                <Text style={styles.checkboxLabel}>{field.label}</Text>
+                {field.placeholder && (
+                  <Text style={styles.checkboxDescription}>{field.placeholder}</Text>
+                )}
+              </View>
+            </TouchableOpacity>
+          </View>
+        );
+
       default:
         return null;
     }
   };
 
+  // Toggle section expansion
+  const toggleSection = useCallback((sectionId: string) => {
+    setExpandedSections(prev => ({
+      ...prev,
+      [sectionId]: !prev[sectionId]
+    }));
+  }, []);
+
   // Render form section
   const renderFormSection = (section: typeof FORM_SECTIONS[0]) => {
+    const isExpanded = expandedSections[section.id];
+    const isCollapsible = section.collapsible !== false;
+
     return (
       <View key={section.id} style={styles.section}>
-        <Text style={styles.sectionTitle}>{section.title}</Text>
-        {section.description && <Text style={styles.sectionDescription}>{section.description}</Text>}
-        {section.fields.map(field => renderFormField(field))}
+        {isCollapsible ? (
+          <TouchableOpacity
+            style={styles.sectionHeader}
+            onPress={() => toggleSection(section.id)}
+            activeOpacity={0.7}
+          >
+            <View style={styles.sectionHeaderContent}>
+              <Text style={styles.sectionTitle}>{section.title}</Text>
+              {section.description && (
+                <Text style={styles.sectionDescription}>{section.description}</Text>
+              )}
+            </View>
+            <Ionicons
+              name={isExpanded ? 'chevron-up' : 'chevron-down'}
+              size={24}
+              color="#007AFF"
+            />
+          </TouchableOpacity>
+        ) : (
+          <>
+            <Text style={styles.sectionTitle}>{section.title}</Text>
+            {section.description && <Text style={styles.sectionDescription}>{section.description}</Text>}
+          </>
+        )}
+
+        {(!isCollapsible || isExpanded) && (
+          <View style={styles.sectionFields}>
+            {section.fields.map(field => renderFormField(field))}
+          </View>
+        )}
       </View>
     );
   };
@@ -834,19 +856,79 @@ const styles = StyleSheet.create({
   section: {
     marginBottom: 20,
   },
+  sectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    backgroundColor: '#f8f9fa',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+    marginBottom: 12,
+  },
+  sectionHeaderContent: {
+    flex: 1,
+  },
   sectionTitle: {
     fontSize: 18,
     fontWeight: 'bold',
     color: '#333',
-    marginBottom: 8,
+    marginBottom: 4,
   },
   sectionDescription: {
-    fontSize: 14,
+    fontSize: 13,
     color: '#666',
-    marginBottom: 12,
+    marginTop: 2,
+  },
+  sectionFields: {
+    paddingTop: 4,
   },
   ratingContainer: {
     marginBottom: 16,
+  },
+  checkboxContainer: {
+    marginBottom: 16,
+  },
+  checkboxRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    backgroundColor: '#f8f9fa',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+  },
+  checkbox: {
+    width: 24,
+    height: 24,
+    borderRadius: 6,
+    borderWidth: 2,
+    borderColor: '#ccc',
+    backgroundColor: '#fff',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  checkboxChecked: {
+    backgroundColor: '#007AFF',
+    borderColor: '#007AFF',
+  },
+  checkboxLabelContainer: {
+    flex: 1,
+  },
+  checkboxLabel: {
+    fontSize: 16,
+    fontWeight: '500',
+    color: '#333',
+    marginBottom: 2,
+  },
+  checkboxDescription: {
+    fontSize: 13,
+    color: '#666',
+    lineHeight: 18,
   },
   duplicateWarning: {
     backgroundColor: '#fff3cd',

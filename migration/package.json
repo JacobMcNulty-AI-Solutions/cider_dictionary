@@ -1,0 +1,19 @@
+{
+  "name": "cider-firestore-migration",
+  "version": "1.0.0",
+  "description": "Firestore ratings migration for cider dictionary app",
+  "scripts": {
+    "migrate:dry-run": "cross-env DRY_RUN=true ts-node migrate-firestore-ratings.ts",
+    "migrate:live": "cross-env DRY_RUN=false ts-node migrate-firestore-ratings.ts"
+  },
+  "dependencies": {
+    "firebase-admin": "^12.0.0",
+    "dotenv": "^16.4.0",
+    "cross-env": "^7.0.3"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.3.3"
+  }
+}

@@ -64,6 +64,12 @@ export interface CiderMasterRecord {
   name: string;
   brand: string;
   abv: number;
+  scrumpy?: boolean; // True if traditional scrumpy-style cider
+
+  /**
+   * @deprecated Ratings are now calculated from experiences. Use _cachedRating instead.
+   * This field is kept for backward compatibility during migration.
+   */
   overallRating: Rating;
 
   // Basic optional fields (casual level)
@@ -107,12 +113,27 @@ export interface CiderMasterRecord {
     barrelHistory?: ('virgin_oak' | 'bourbon_barrel' | 'wine_barrel' | 'sherry_barrel' | 'rum_barrel' | 'gin_barrel')[];
   };
 
+  /**
+   * @deprecated Ratings are now calculated from experiences. Use _cachedDetailedRatings instead.
+   * This field is kept for backward compatibility during migration.
+   */
   detailedRatings?: {
     appearance?: Rating;
     aroma?: Rating;
     taste?: Rating;
     mouthfeel?: Rating;
   };
+
+  // Cached rating fields (calculated from experiences)
+  _cachedRating?: Rating | null; // Cached average rating from all experiences
+  _cachedDetailedRatings?: {
+    appearance?: Rating;
+    aroma?: Rating;
+    taste?: Rating;
+    mouthfeel?: Rating;
+  };
+  _ratingCount?: number; // Number of experiences with ratings
+  _ratingLastCalculated?: Date; // When the cache was last updated
 
   // Venue information
   venue?: {
@@ -134,7 +155,7 @@ export interface CiderMasterRecord {
 
 // Backward compatibility alias
 export type BasicCiderRecord = Pick<CiderMasterRecord,
-  'id' | 'name' | 'brand' | 'abv' | 'overallRating' | 'createdAt'>;
+  'id' | 'name' | 'brand' | 'abv' | 'overallRating' | 'createdAt' | '_cachedRating' | '_ratingCount'>;
 
 // =============================================================================
 // PROGRESSIVE DISCLOSURE CONFIGURATION

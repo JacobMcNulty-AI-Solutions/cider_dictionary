@@ -1548,9 +1548,9 @@ class SyncManager {
   private async insertOrReplaceCider(db: any, cider: CiderMasterRecord): Promise<void> {
     await db.runAsync(
       `INSERT OR REPLACE INTO ciders (
-        id, userId, name, brand, abv, overallRating, photo, notes,
+        id, userId, name, brand, abv, scrumpy, overallRating, photo, notes,
         traditionalStyle, sweetness, carbonation, clarity, color, tasteTags,
-        appleClassification, productionMethods, detailedRatings, venue,
+        appleClassification, productionMethods, detailedRatings,
         fruitAdditions, hops, spicesBotanicals, woodAging,
         _cachedRating, _cachedDetailedRatings, _ratingCount, _ratingLastCalculated,
         createdAt, updatedAt, syncStatus, version
@@ -1561,6 +1561,7 @@ class SyncManager {
         cider.name,
         cider.brand,
         cider.abv || null,
+        cider.scrumpy ? 1 : 0,
         cider.overallRating || null,
         cider.photo || null,
         cider.notes || null,
@@ -1573,7 +1574,6 @@ class SyncManager {
         cider.appleClassification ? JSON.stringify(cider.appleClassification) : null,
         cider.productionMethods ? JSON.stringify(cider.productionMethods) : null,
         cider.detailedRatings ? JSON.stringify(cider.detailedRatings) : null,
-        cider.venue ? JSON.stringify(cider.venue) : null,
         cider.fruitAdditions ? JSON.stringify(cider.fruitAdditions) : null,
         cider.hops ? JSON.stringify(cider.hops) : null,
         cider.spicesBotanicals ? JSON.stringify(cider.spicesBotanicals) : null,
@@ -1596,16 +1596,17 @@ class SyncManager {
   private async insertOrReplaceExperience(db: any, experience: ExperienceLog): Promise<void> {
     await db.runAsync(
       `INSERT OR REPLACE INTO experiences (
-        id, userId, ciderId, date, venue, price, containerSize, containerType,
-        containerTypeCustom, pricePerPint, notes, rating, detailedRatings, weatherConditions,
-        companionType, createdAt, updatedAt, syncStatus, version
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        id, userId, ciderId, date, venue, venueId, price, containerSize, containerType,
+        containerTypeCustom, pricePerPint, notes, rating, appearance, aroma, taste, mouthfeel,
+        createdAt, updatedAt, syncStatus, version
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         experience.id,
         experience.userId || 'default-user',
         experience.ciderId,
         this.safeToISOString(experience.date),
         experience.venue ? JSON.stringify(experience.venue) : null,
+        experience.venueId || null,
         experience.price || 0,
         experience.containerSize || 500,
         experience.containerType || 'bottle',
@@ -1613,9 +1614,10 @@ class SyncManager {
         experience.pricePerPint || 0,
         experience.notes || null,
         experience.rating || null,
-        experience.detailedRatings ? JSON.stringify(experience.detailedRatings) : null,
-        experience.weatherConditions || null,
-        experience.companionType || null,
+        experience.detailedRatings?.appearance || null,
+        experience.detailedRatings?.aroma || null,
+        experience.detailedRatings?.taste || null,
+        experience.detailedRatings?.mouthfeel || null,
         this.safeToISOString(experience.createdAt),
         this.safeToISOString(experience.updatedAt),
         'synced',
@@ -1750,8 +1752,6 @@ class SyncManager {
       notes: data.notes || undefined,
       rating: data.rating || undefined,
       detailedRatings: data.detailedRatings || undefined,
-      weatherConditions: data.weatherConditions || undefined,
-      companionType: data.companionType || undefined,
       createdAt: this.parseFirestoreDate(data.createdAt),
       updatedAt: this.parseFirestoreDate(data.updatedAt),
       syncStatus: 'synced',

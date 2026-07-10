@@ -61,6 +61,7 @@ export default function ExperienceEditScreen() {
   const [containerType, setContainerType] = useState<ContainerType>('bottle');
   const [containerTypeCustom, setContainerTypeCustom] = useState<string | undefined>();
   const [notes, setNotes] = useState('');
+  const [directRating, setDirectRating] = useState<Rating | undefined>(undefined);
   const [detailedRatings, setDetailedRatings] = useState<{
     appearance?: Rating;
     aroma?: Rating;
@@ -83,37 +84,31 @@ export default function ExperienceEditScreen() {
     return 0;
   }, [price, containerSize]);
 
-  // Auto-calculate overall rating from detailed ratings
+  // If all 4 sub-ratings are filled, compute the overall from them.
+  // Otherwise fall back to the directly-entered overall rating.
   const overallRating = useMemo(() => {
     const { appearance, aroma, taste, mouthfeel } = detailedRatings || {};
-    const ratings = [appearance, aroma, taste, mouthfeel].filter((r): r is number => r !== undefined);
+    const allFilled = appearance !== undefined && aroma !== undefined && taste !== undefined && mouthfeel !== undefined;
+    if (allFilled) {
+      const sum = appearance! + aroma! + taste! + mouthfeel!;
+      const rounded = Math.round((sum / 4) * 10) / 10;
+      return Math.max(1, Math.min(10, rounded)) as Rating;
+    }
+    return directRating;
+  }, [detailedRatings, directRating]);
 
-    if (ratings.length === 0) return undefined;
-
-    const sum = ratings.reduce((acc, r) => acc + r, 0);
-    const average = sum / ratings.length;
-    const rounded = Math.round(average * 10) / 10; // Round to 1 decimal place
-    return Math.max(1, Math.min(10, rounded)) as Rating;
-  }, [detailedRatings]);
-
-  // Form validation
+  // Form validation — overall rating is required (either direct or computed from sub-ratings)
   const isFormValid = useMemo(() => {
-    const hasAllDetailedRatings =
-      detailedRatings?.appearance !== undefined &&
-      detailedRatings?.aroma !== undefined &&
-      detailedRatings?.taste !== undefined &&
-      detailedRatings?.mouthfeel !== undefined;
-
     return (
       venue.id &&
       venue.name.trim().length >= 2 &&
       venue.location &&
       price > 0 &&
       containerSize > 0 &&
-      hasAllDetailedRatings && // Require all 4 detailed ratings
+      overallRating !== undefined &&
       pricePerPint > 0
     );
-  }, [venue, price, containerSize, detailedRatings, pricePerPint]);
+  }, [venue, price, containerSize, overallRating, pricePerPint]);
 
   // Load experience data
   useEffect(() => {
@@ -141,6 +136,7 @@ export default function ExperienceEditScreen() {
         setContainerType(foundExperience.containerType);
         setContainerTypeCustom(foundExperience.containerTypeCustom);
         setNotes(foundExperience.notes || '');
+        setDirectRating(foundExperience.rating);
         setDetailedRatings(foundExperience.detailedRatings || {
           appearance: undefined,
           aroma: undefined,
@@ -295,7 +291,7 @@ export default function ExperienceEditScreen() {
     } finally {
       setIsSubmitting(false);
     }
-  }, [experience, venue, price, containerSize, containerType, containerTypeCustom, pricePerPint, notes, rating, detailedRatings, isFormValid, experienceId, navigation]);
+  }, [experience, venue, price, containerSize, containerType, containerTypeCustom, pricePerPint, notes, overallRating, detailedRatings, isFormValid, experienceId, navigation]);
 
   // Handle cancel
   const handleCancel = useCallback(() => {
@@ -448,41 +444,49 @@ export default function ExperienceEditScreen() {
 
           {/* Rating Section */}
           <FormSection title="Rating">
+            <RatingInput
+              label="Overall Rating"
+              rating={directRating}
+              onRatingChange={(r) => { setDirectRating(r as Rating); setIsDirty(true); }}
+              maxRating={10}
+              required
+            />
+
+            <Text style={styles.subRatingsHeading}>Detailed Ratings (optional)</Text>
             <View style={styles.detailedRatingsContainer}>
               <RatingInput
                 label="Appearance"
                 rating={detailedRatings?.appearance}
                 onRatingChange={(rating) => handleDetailedRatingChange('appearance', rating)}
                 maxRating={10}
-                required
               />
               <RatingInput
                 label="Aroma"
                 rating={detailedRatings?.aroma}
                 onRatingChange={(rating) => handleDetailedRatingChange('aroma', rating)}
                 maxRating={10}
-                required
               />
               <RatingInput
                 label="Taste"
                 rating={detailedRatings?.taste}
                 onRatingChange={(rating) => handleDetailedRatingChange('taste', rating)}
                 maxRating={10}
-                required
               />
               <RatingInput
                 label="Mouthfeel"
                 rating={detailedRatings?.mouthfeel}
                 onRatingChange={(rating) => handleDetailedRatingChange('mouthfeel', rating)}
                 maxRating={10}
-                required
               />
             </View>
 
-            {overallRating !== undefined && (
+            {detailedRatings?.appearance !== undefined &&
+             detailedRatings?.aroma !== undefined &&
+             detailedRatings?.taste !== undefined &&
+             detailedRatings?.mouthfeel !== undefined && (
               <View style={styles.calculatedRatingBox}>
-                <Text style={styles.calculatedRatingLabel}>Overall Rating (calculated)</Text>
-                <Text style={styles.calculatedRatingValue}>{overallRating.toFixed(1)}/10</Text>
+                <Text style={styles.calculatedRatingLabel}>Overall (calculated from sub-ratings)</Text>
+                <Text style={styles.calculatedRatingValue}>{overallRating?.toFixed(1)}/10</Text>
               </View>
             )}
           </FormSection>
@@ -711,6 +715,13 @@ const styles = StyleSheet.create({
     fontSize: 18,
     color: '#666',
     textAlign: 'center',
+  },
+  subRatingsHeading: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#666',
+    marginTop: 16,
+    marginBottom: 8,
   },
   detailedRatingsContainer: {
     gap: 8,

@@ -1,15 +1,45 @@
- [DistributionsTab] Distributions computed successfully
- LOG  [VenueAnalyzer] Generating heat map for 1 experiences
- LOG  [VenueAnalyzer] Calculating insights for 1 experiences
- LOG  [AnalyticsCacheManager] Set cache entry: venue:insights:1 (TTL: 300000ms)
- LOG  [VenueAnalyzer] getVenuePointsFromTable: Found 1 total venues
- LOG  [VenueAnalyzer] Sample venues: [{"location": {"latitude": 51.4549781, "longitude": -0.2044713}, "name": "Testyieeees", "type": "retail", "visitCount": 1}]
- LOG  [VenueAnalyzer] getVenuePointsFromTable: 1 venues with valid location, 0 without location, 0 invalid coords
- LOG  [VenueAnalyzer] Returning 1 venue points for heat map
- LOG  [AnalyticsCacheManager] Set cache entry: venue:heat_map:1:100 (TTL: 300000ms)
- LOG  [VenueAnalyzer] Heat map generated in 25.52ms
- LOG  [VenuesTab] Analytics loaded in 27.04ms
- LOG  [VenueHeatMap] Received data: {"bounds": {"centerLat": 51.4549781, "centerLng": -0.2044713, "maxLat": 51.4549781, "maxLng": -0.2044713, "minLat": 51.4549781, "minLng": -0.2044713}, "firstPoint": {"experiences": 1, "latitude": 51.4549781, "longitude": -0.2044713, "venueNames": ["Testyieeees"], "weight": 1}, "metadata": {"clusterRadius": 100, "totalExperiences": 1, "totalVenues": 1}, "points": 1}
+ LOG  SQLite database initialized successfully
+ ERROR  Failed to calculate analytics: [TypeError: Cannot read property 'toLowerCase' of undefined]
+ ERROR  [OverviewTab] Failed to load analytics: [TypeError: Cannot read property 'toLowerCase' of undefined]
+ LOG  [AnalyticsScreen] Loaded 23 ciders and 43 experiences
+ ERROR  Failed to calculate analytics: [TypeError: Cannot read property 'toLowerCase' of undefined]
+ ERROR  [OverviewTab] Failed to load analytics: [TypeError: Cannot read property 'toLowerCase' of undefined]
+ ERROR  Failed to calculate analytics: [TypeError: Cannot read property 'toLowerCase' of undefined]
+ ERROR  [OverviewTab] Failed to load analytics: [TypeError: Cannot read property 'toLowerCase' of undefined]
+ ERROR  Failed to calculate analytics: [TypeError: Cannot read property 'toLowerCase' of undefined]
+ ERROR  [OverviewTab] Failed to load analytics: [TypeError: Cannot read property 'toLowerCase' of undefined]
+ LOG  [TrendAnalyzer] Computing trends...
+ LOG  [TrendAnalyzer] Filtered data: 23 ciders, 43 experiences
+ LOG  [AnalyticsCacheManager] Set cache entry: trends:6M:month (TTL: 300000ms)
+ LOG  [TrendAnalyzer] Trends computed in 13.43ms
+ LOG  [DistributionsTab] Computing distributions...
+ LOG  [DistributionsTab] Using 23 ciders and 43 experiences
+ LOG  [DistributionAnalyzer] Returning cached distributions
+ LOG  [DistributionsTab] Distributions computed successfully
  LOG  [VenueAnalyzer] Heat map retrieved from cache
  LOG  [VenueAnalyzer] Insights retrieved from cache
- LOG  [VenuesTab] Analytics loaded in 1.60ms
+ LOG  [VenuesTab] Analytics loaded in 4.73ms
+ LOG  [VenueHeatMap] Rendering marker 0: {"color": "#4CAF50", "lat": 51.5348505, "lng": 0.7110582, "venues": ["The Alex"]}
+ LOG  [VenueHeatMap] Rendering marker 1: {"color": "#4CAF50", "lat": 51.5378589, "lng": 0.7125686, "venues": ["The Dickens"]}
+ LOG  [VenueHeatMap] Rendering marker 2: {"color": "#4CAF50", "lat": 51.5179429, "lng": -0.1155794, "venues": ["Penderel's Oak Wetherspoons"]}
+ LOG  [VenueHeatMap] Rendering marker 3: {"color": "#4CAF50", "lat": 51.58168939788315, "lng": 0.7038833945989609, "venues": ["Freight House", "Rochford Marlborough Head"]}        
+ LOG  [VenueHeatMap] Rendering marker 4: {"color": "#4CAF50", "lat": 56.821247283452024, "lng": -5.104923695325851, "venues": ["Fort Williams Morrisons"]}
+ LOG  [VenueHeatMap] Rendering marker 5: {"color": "#4CAF50", "lat": 51.57429824927892, "lng": 0.7079073786735535, "venues": ["Ann Boleyn"]}
+ LOG  [VenueHeatMap] Rendering marker 6: {"color": "#4CAF50", "lat": 51.5286108, "lng": -0.0915192, "venues": ["The Eagle, Hoxton"]}
+ LOG  [VenueHeatMap] Rendering marker 7: {"color": "#4CAF50", "lat": 50.864067135906566, "lng": 0.2573706954717636, "venues": ["Hailsham Tesco's Superstore"]}
+ LOG  [VenueHeatMap] Rendering marker 8: {"color": "#4CAF50", "lat": 51.58014880252776, "lng": 0.7069974392652512, "venues": ["Rochford Sainsbury's"]}
+ LOG  [VenueHeatMap] Rendering marker 9: {"color": "#4CAF50", "lat": 51.4549781, "lng": -0.2044713, "venues": ["Testyieeees"]}
+ LOG  [VenueHeatMap] Rendering marker 0: {"color": "#4CAF50", "lat": 51.5348505, "lng": 0.7110582, "venues": ["The Alex"]}
+ LOG  [VenueHeatMap] Rendering marker 1: {"color": "#4CAF50", "lat": 51.5378589, "lng": 0.7125686, "venues": ["The Dickens"]}
+ LOG  [VenueHeatMap] Rendering marker 2: {"color": "#4CAF50", "lat": 51.5179429, "lng": -0.1155794, "venues": ["Penderel's Oak Wetherspoons"]}
+ LOG  [VenueHeatMap] Rendering marker 3: {"color": "#4CAF50", "lat": 51.58168939788315, "lng": 0.7038833945989609, "venues": ["Freight House", "Rochford Marlborough Head"]}        
+ LOG  [VenueHeatMap] Rendering marker 4: {"color": "#4CAF50", "lat": 56.821247283452024, "lng": -5.104923695325851, "venues": ["Fort Williams Morrisons"]}
+ LOG  [VenueHeatMap] Rendering marker 5: {"color": "#4CAF50", "lat": 51.57429824927892, "lng": 0.7079073786735535, "venues": ["Ann Boleyn"]}
+ LOG  [VenueHeatMap] Rendering marker 6: {"color": "#4CAF50", "lat": 51.5286108, "lng": -0.0915192, "venues": ["The Eagle, Hoxton"]}
+ LOG  [VenueHeatMap] Rendering marker 7: {"color": "#4CAF50", "lat": 50.864067135906566, "lng": 0.2573706954717636, "venues": ["Hailsham Tesco's Superstore"]}
+ LOG  [VenueHeatMap] Rendering marker 8: {"color": "#4CAF50", "lat": 51.58014880252776, "lng": 0.7069974392652512, "venues": ["Rochford Sainsbury's"]}
+ LOG  [VenueHeatMap] Rendering marker 9: {"color": "#4CAF50", "lat": 51.4549781, "lng": -0.2044713, "venues": ["Testyieeees"]}
+ ERROR  [TypeError: insights.venueTypes.entries is not a function (it is undefined)]
+ ERROR  React Error Boundary caught an error: [TypeError: insights.venueTypes.entries is not a function (it is undefined)] 
+
+Call Stack

@@ -83,6 +83,12 @@ class DatabaseConnectionManager {
     // Run rating migration (move ratings from ciders to experiences)
     await this.migrateRatingsToExperiences(database);
 
+    // Ensure rating columns exist on experiences (in case migration was interrupted)
+    await this.ensureExperienceRatingColumns(database);
+
+    // Ensure cached rating columns exist on ciders (in case migration was interrupted)
+    await this.ensureCiderCachedRatingColumns(database);
+
     // Add scrumpy field to ciders table
     await this.addScrumpyFieldToCiders(database);
 
@@ -113,13 +119,18 @@ class DatabaseConnectionManager {
         appleClassification TEXT, -- JSON object
         productionMethods TEXT,   -- JSON object
         detailedRatings TEXT,     -- JSON object
-        venue TEXT,               -- JSON object or simple string
 
         -- Additives & Ingredients (stored as JSON)
         fruitAdditions TEXT,      -- JSON array
         hops TEXT,                -- JSON object
         spicesBotanicals TEXT,    -- JSON array
         woodAging TEXT,           -- JSON object
+
+        -- Cached rating fields (calculated from experiences)
+        _cachedRating REAL,               -- Cached average rating
+        _cachedDetailedRatings TEXT,      -- JSON object with detailed ratings
+        _ratingCount INTEGER DEFAULT 0,   -- Number of experiences with ratings
+        _ratingLastCalculated TEXT,       -- ISO timestamp of last calculation
 
         -- System fields
         createdAt TEXT NOT NULL,
@@ -139,6 +150,7 @@ class DatabaseConnectionManager {
         -- Experience details
         date TEXT NOT NULL,
         venue TEXT NOT NULL, -- JSON object with venue info
+        venueId TEXT,        -- Reference to venues table (nullable for legacy data)
 
         -- Price and value
         price REAL NOT NULL,
@@ -150,8 +162,12 @@ class DatabaseConnectionManager {
         -- Optional experience data
         notes TEXT,
         rating INTEGER,
-        weatherConditions TEXT,
-        companionType TEXT,
+
+        -- Detailed ratings (individual columns for querying)
+        appearance INTEGER,
+        aroma INTEGER,
+        taste INTEGER,
+        mouthfeel INTEGER,
 
         -- System fields
         createdAt TEXT NOT NULL,
@@ -497,7 +513,7 @@ class DatabaseConnectionManager {
 
       if (!ciderColumnNames.includes('_cachedRating')) {
         console.log('Adding _cachedRating column to ciders...');
-        await database.execAsync('ALTER TABLE ciders ADD COLUMN _cachedRating INTEGER');
+        await database.execAsync('ALTER TABLE ciders ADD COLUMN _cachedRating REAL');
       }
 
       if (!ciderColumnNames.includes('_cachedDetailedRatings')) {
@@ -664,6 +680,59 @@ class DatabaseConnectionManager {
       }
       // Don't throw - allow app to continue without migration
       console.warn('Continuing without ratings migration - will retry on next launch');
+    }
+  }
+
+  /**
+   * Ensure experiences table has all required rating columns
+   * Runs every time to catch any migration failures
+   */
+  private async ensureExperienceRatingColumns(database: SQLite.SQLiteDatabase): Promise<void> {
+    try {
+      const tableInfo = await database.getAllAsync(`PRAGMA table_info(experiences)`);
+      const columnNames = (tableInfo as any[]).map((col: any) => col.name);
+
+      const requiredColumns = ['appearance', 'aroma', 'taste', 'mouthfeel'];
+
+      for (const colName of requiredColumns) {
+        if (!columnNames.includes(colName)) {
+          console.log(`Adding ${colName} column to experiences table...`);
+          await database.execAsync(`ALTER TABLE experiences ADD COLUMN ${colName} INTEGER`);
+          console.log(`✅ ${colName} column added successfully`);
+        }
+      }
+    } catch (error) {
+      console.error('Failed to ensure experience rating columns:', error);
+      // Don't throw - allow app to continue
+    }
+  }
+
+  /**
+   * Ensure ciders table has all required cached rating columns
+   * Runs every time to catch any migration failures
+   */
+  private async ensureCiderCachedRatingColumns(database: SQLite.SQLiteDatabase): Promise<void> {
+    try {
+      const tableInfo = await database.getAllAsync(`PRAGMA table_info(ciders)`);
+      const columnNames = (tableInfo as any[]).map((col: any) => col.name);
+
+      const requiredColumns = [
+        { name: '_cachedRating', type: 'REAL' },
+        { name: '_cachedDetailedRatings', type: 'TEXT' },
+        { name: '_ratingCount', type: 'INTEGER DEFAULT 0' },
+        { name: '_ratingLastCalculated', type: 'TEXT' }
+      ];
+
+      for (const col of requiredColumns) {
+        if (!columnNames.includes(col.name)) {
+          console.log(`Adding ${col.name} column to ciders table...`);
+          await database.execAsync(`ALTER TABLE ciders ADD COLUMN ${col.name} ${col.type}`);
+          console.log(`✅ ${col.name} column added successfully`);
+        }
+      }
+    } catch (error) {
+      console.error('Failed to ensure cider cached rating columns:', error);
+      // Don't throw - allow app to continue
     }
   }
 
@@ -840,19 +909,21 @@ export class BasicSQLiteService implements CiderDatabase {
         // Use prepared statement for better performance
         await db.runAsync(
           `INSERT INTO ciders (
-            id, userId, name, brand, abv, overallRating,
+            id, userId, name, brand, abv, scrumpy, overallRating,
             photo, notes,
             traditionalStyle, sweetness, carbonation, clarity, color, tasteTags,
-            appleClassification, productionMethods, detailedRatings, venue,
+            appleClassification, productionMethods, detailedRatings,
             fruitAdditions, hops, spicesBotanicals, woodAging,
+            _cachedRating, _cachedDetailedRatings, _ratingCount, _ratingLastCalculated,
             createdAt, updatedAt, syncStatus, version
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [
             ciderData.id,
             ciderData.userId,
             ciderData.name,
             ciderData.brand,
             ciderData.abv,
+            ciderData.scrumpy ? 1 : 0,
             ciderData.overallRating,
 
             ciderData.photo || null,
@@ -868,12 +939,16 @@ export class BasicSQLiteService implements CiderDatabase {
             ciderData.appleClassification ? JSON.stringify(ciderData.appleClassification) : null,
             ciderData.productionMethods ? JSON.stringify(ciderData.productionMethods) : null,
             ciderData.detailedRatings ? JSON.stringify(ciderData.detailedRatings) : null,
-            ciderData.venue ? (typeof ciderData.venue === 'string' ? ciderData.venue : JSON.stringify(ciderData.venue)) : null,
 
             ciderData.fruitAdditions ? JSON.stringify(ciderData.fruitAdditions) : null,
             ciderData.hops ? JSON.stringify(ciderData.hops) : null,
             ciderData.spicesBotanicals ? JSON.stringify(ciderData.spicesBotanicals) : null,
             ciderData.woodAging ? JSON.stringify(ciderData.woodAging) : null,
+
+            ciderData._cachedRating !== undefined ? ciderData._cachedRating : null,
+            ciderData._cachedDetailedRatings ? JSON.stringify(ciderData._cachedDetailedRatings) : null,
+            ciderData._ratingCount || 0,
+            ciderData._ratingLastCalculated ? ciderData._ratingLastCalculated.toISOString() : null,
 
             ciderData.createdAt.toISOString(),
             ciderData.updatedAt.toISOString(),
@@ -908,6 +983,7 @@ export class BasicSQLiteService implements CiderDatabase {
         name: row.name,
         brand: row.brand,
         abv: row.abv,
+        scrumpy: row.scrumpy === 1 ? true : undefined,
         // Use cached rating if available, fallback to overallRating for backward compatibility
         overallRating: row._cachedRating ?? row.overallRating,
 
@@ -930,7 +1006,6 @@ export class BasicSQLiteService implements CiderDatabase {
         detailedRatings: row._cachedDetailedRatings
           ? JSON.parse(row._cachedDetailedRatings)
           : (row.detailedRatings ? JSON.parse(row.detailedRatings) : undefined),
-        venue: row.venue ? (row.venue.startsWith('{') ? JSON.parse(row.venue) : row.venue) : undefined,
 
         // Additives & Ingredients
         fruitAdditions: row.fruitAdditions ? JSON.parse(row.fruitAdditions) : undefined,
@@ -980,6 +1055,7 @@ export class BasicSQLiteService implements CiderDatabase {
         name: row.name,
         brand: row.brand,
         abv: row.abv,
+        scrumpy: row.scrumpy === 1 ? true : undefined,
         // Use cached rating if available, fallback to overallRating for backward compatibility
         overallRating: row._cachedRating ?? row.overallRating,
 
@@ -1002,7 +1078,6 @@ export class BasicSQLiteService implements CiderDatabase {
         detailedRatings: row._cachedDetailedRatings
           ? JSON.parse(row._cachedDetailedRatings)
           : (row.detailedRatings ? JSON.parse(row.detailedRatings) : undefined),
-        venue: row.venue ? (row.venue.startsWith('{') ? JSON.parse(row.venue) : row.venue) : undefined,
 
         // Additives & Ingredients
         fruitAdditions: row.fruitAdditions ? JSON.parse(row.fruitAdditions) : undefined,
@@ -1044,7 +1119,6 @@ export class BasicSQLiteService implements CiderDatabase {
         'appleClassification', // object with categories, varieties, longAshtonClassification
         'productionMethods',   // object with fermentation, specialProcesses
         'detailedRatings',     // object with appearance, aroma, taste, mouthfeel
-        'venue',               // object with id, name, type, location
         'fruitAdditions',      // string[]
         'hops',                // object with varieties, character
         'spicesBotanicals',    // string[]
@@ -1059,6 +1133,9 @@ export class BasicSQLiteService implements CiderDatabase {
           processedUpdates[key] = value !== null && value !== undefined
             ? JSON.stringify(value)
             : null;
+        } else if (key === 'scrumpy') {
+          // Convert boolean to SQLite integer (0 or 1)
+          processedUpdates[key] = value ? 1 : 0;
         } else if (key === 'updatedAt' && value instanceof Date) {
           processedUpdates[key] = value.toISOString();
         } else if (key === 'createdAt' && value instanceof Date) {
@@ -1166,9 +1243,9 @@ export class BasicSQLiteService implements CiderDatabase {
         await db.runAsync(
           `INSERT INTO experiences (
             id, userId, ciderId, date, venue, venueId, price, containerSize, containerType, containerTypeCustom, pricePerPint,
-            notes, rating, appearance, aroma, taste, mouthfeel, weatherConditions, companionType,
+            notes, rating, appearance, aroma, taste, mouthfeel,
             createdAt, updatedAt, syncStatus, version
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [
             experience.id,
             experience.userId,
@@ -1187,8 +1264,6 @@ export class BasicSQLiteService implements CiderDatabase {
             experience.detailedRatings?.aroma || null,
             experience.detailedRatings?.taste || null,
             experience.detailedRatings?.mouthfeel || null,
-            experience.weatherConditions || null,
-            experience.companionType || null,
             experience.createdAt.toISOString(),
             experience.updatedAt.toISOString(),
             experience.syncStatus,
@@ -1516,8 +1591,6 @@ export class BasicSQLiteService implements CiderDatabase {
       notes: row.notes || undefined,
       rating: row.rating,
       detailedRatings: Object.keys(detailedRatings).length > 0 ? detailedRatings : undefined,
-      weatherConditions: row.weatherConditions || undefined,
-      companionType: row.companionType || undefined,
       createdAt: new Date(row.createdAt),
       updatedAt: new Date(row.updatedAt),
       syncStatus: row.syncStatus,

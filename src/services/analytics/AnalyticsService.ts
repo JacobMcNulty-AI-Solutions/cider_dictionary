@@ -150,7 +150,7 @@ class AnalyticsService {
   private calculateProducerDiversity(ciders: CiderMasterRecord[]): number {
     if (ciders.length === 0) return 0;
 
-    const producers = new Set(ciders.map(c => c.brand.toLowerCase()));
+    const producers = new Set(ciders.map(c => (c.brand || '').toLowerCase()));
     const uniqueProducers = producers.size;
     const totalCiders = ciders.length;
 
@@ -208,8 +208,8 @@ class AnalyticsService {
     const detectedRegions = new Set<string>();
 
     ciders.forEach(cider => {
-      const brandLower = cider.brand.toLowerCase();
-      const nameLower = cider.name.toLowerCase();
+      const brandLower = (cider.brand || '').toLowerCase();
+      const nameLower = (cider.name || '').toLowerCase();
 
       for (const [region, keywords] of Object.entries(regionKeywords)) {
         if (keywords.some(keyword =>
@@ -386,6 +386,7 @@ class AnalyticsService {
 
     // Group by venue
     const venueStats = experiences.reduce((acc, exp) => {
+      if (!exp.venue?.name) return acc;
       const venueKey = exp.venue.name.toLowerCase();
 
       if (!acc[venueKey]) {

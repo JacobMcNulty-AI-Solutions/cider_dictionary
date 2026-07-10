@@ -36,8 +36,6 @@ export interface ExperienceLog {
 
   // Optional experience data
   notes?: string;
-  weatherConditions?: 'sunny' | 'cloudy' | 'rainy' | 'stormy' | 'unknown';
-  companionType?: 'alone' | 'friends' | 'family' | 'colleagues' | 'date';
 
   // System fields
   createdAt: Date;

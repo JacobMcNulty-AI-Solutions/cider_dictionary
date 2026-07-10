@@ -692,6 +692,7 @@ export class DistributionAnalyzer {
    * @returns Normalized style name
    */
   private normalizeStyleName(style: string): string {
+    if (!style) return '';
     return style.toLowerCase().replace(/_/g, ' ').trim();
   }
 

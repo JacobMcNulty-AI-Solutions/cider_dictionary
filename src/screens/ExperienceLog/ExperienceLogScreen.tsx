@@ -438,9 +438,11 @@ const PriceInput: React.FC<{
 }> = ({ label, value, onChangeText, placeholder }) => {
   const [displayValue, setDisplayValue] = React.useState(value > 0 ? value.toString() : '');
 
-  // Update display value when prop value changes
+  // Update display value when prop value changes externally (e.g. form reset)
+  // Only clear if the display currently shows a non-zero value — avoids wiping
+  // the input when the user types '0' or '0.' as the start of a decimal.
   React.useEffect(() => {
-    if (value === 0 && displayValue !== '') {
+    if (value === 0 && displayValue !== '' && parseFloat(displayValue) !== 0) {
       setDisplayValue('');
     }
   }, [value, displayValue]);
@@ -460,7 +462,7 @@ const PriceInput: React.FC<{
   };
 
   // Get the correct keyboard type for cross-platform decimal support
-  const decimalKeyboardType: KeyboardTypeOptions = Platform.OS === 'android' ? 'numeric' : 'decimal-pad';
+  const decimalKeyboardType: KeyboardTypeOptions = 'decimal-pad';
 
   return (
     <View style={styles.inputContainer}>

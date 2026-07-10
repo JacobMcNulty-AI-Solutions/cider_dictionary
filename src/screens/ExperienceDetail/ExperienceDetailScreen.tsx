@@ -301,31 +301,7 @@ export default function ExperienceDetailScreen() {
           </View>
         </View>
 
-        {/* Experience Context */}
-        {(experience.weatherConditions || experience.companionType) && (
-          <View style={styles.detailCard}>
-            <View style={styles.detailHeader}>
-              <Ionicons name="information-circle" size={20} color="#5856D6" />
-              <Text style={styles.detailTitle}>Context</Text>
-            </View>
-            {experience.weatherConditions && (
-              <View style={styles.contextRow}>
-                <Text style={styles.contextLabel}>Weather:</Text>
-                <Text style={styles.contextValue}>
-                  {experience.weatherConditions.charAt(0).toUpperCase() + experience.weatherConditions.slice(1)}
-                </Text>
-              </View>
-            )}
-            {experience.companionType && (
-              <View style={styles.contextRow}>
-                <Text style={styles.contextLabel}>Company:</Text>
-                <Text style={styles.contextValue}>
-                  {experience.companionType.charAt(0).toUpperCase() + experience.companionType.slice(1)}
-                </Text>
-              </View>
-            )}
-          </View>
-        )}
+        {/* Experience Context - Removed weatherConditions and companionType (orphaned fields) */}
 
         {/* Notes */}
         {experience.notes && (

@@ -135,17 +135,6 @@ export interface CiderMasterRecord {
   _ratingCount?: number; // Number of experiences with ratings
   _ratingLastCalculated?: Date; // When the cache was last updated
 
-  // Venue information
-  venue?: {
-    id: string;
-    name: string;
-    type: VenueType;
-    location?: {
-      latitude: number;
-      longitude: number;
-    };
-  };
-
   // System fields
   createdAt: Date;
   updatedAt: Date;

@@ -139,6 +139,10 @@ export default function CiderDetailScreen({ route, navigation }: Props) {
     );
   }
 
+  const averageRating = experiences.length > 0
+    ? experiences.reduce((sum, exp) => sum + exp.rating, 0) / experiences.length
+    : null;
+
   const formatDate = (dateString: string | Date) => {
     const date = new Date(dateString);
     return date.toLocaleDateString();
@@ -175,20 +179,27 @@ export default function CiderDetailScreen({ route, navigation }: Props) {
             <Text style={styles.value}>{cider.abv}%</Text>
           </View>
 
+          {cider.scrumpy && (
+            <View style={styles.detailRow}>
+              <Text style={styles.label}>Scrumpy Style:</Text>
+              <Text style={styles.value}>Yes</Text>
+            </View>
+          )}
+
           <View style={styles.detailRow}>
             <Text style={styles.label}>Overall Rating:</Text>
-            {cider._cachedRating !== null && cider._cachedRating !== undefined ? (
-              <Text style={styles.ratingValue}>{cider._cachedRating.toFixed(1)}/10</Text>
+            {averageRating !== null ? (
+              <Text style={styles.ratingValue}>{averageRating.toFixed(1)}/10</Text>
             ) : (
               <Text style={styles.noRatingText}>Not yet rated</Text>
             )}
           </View>
 
-          {cider._ratingCount !== undefined && cider._ratingCount > 0 && (
+          {experiences.length > 0 && (
             <View style={styles.ratingInfoBox}>
               <Ionicons name="information-circle-outline" size={16} color="#666" />
               <Text style={styles.ratingInfoText}>
-                Based on {cider._ratingCount} experience{cider._ratingCount !== 1 ? 's' : ''}
+                Average of {experiences.length} experience{experiences.length !== 1 ? 's' : ''}
               </Text>
             </View>
           )}

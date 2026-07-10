@@ -185,6 +185,13 @@ export class VenueAnalyzer {
       const cached = await this.cacheManager.get<VenueInsights>(cacheKey);
       if (cached) {
         console.log('[VenueAnalyzer] Insights retrieved from cache');
+        // Restore Maps from plain objects (JSON serialization destroys Map type)
+        if (cached.venueTypes && !(cached.venueTypes instanceof Map)) {
+          cached.venueTypes = new Map(Object.entries(cached.venueTypes as any));
+        }
+        if (cached.averageRatings && !(cached.averageRatings instanceof Map)) {
+          cached.averageRatings = new Map(Object.entries(cached.averageRatings as any));
+        }
         return cached;
       }
 
@@ -293,7 +300,8 @@ export class VenueAnalyzer {
       const typeCounts = new Map<string, number>();
 
       for (const exp of experiences) {
-        const type = exp.venue.type;
+        const type = exp.venue?.type;
+        if (!type) continue;
         typeCounts.set(type, (typeCounts.get(type) || 0) + 1);
       }
 

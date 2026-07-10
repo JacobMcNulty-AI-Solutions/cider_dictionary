@@ -174,7 +174,9 @@ export default function DistributionsTab({ ciders, experiences, timeRange }: Dis
       setDistributions(distributionData);
 
       // Compute stats for stat cards
-      const ratings = ciders.map((c) => c.overallRating).filter((r) => r >= 1 && r <= 10);
+      const ratings = ciders
+        .map((c) => c._cachedRating)
+        .filter((r): r is number => r != null && r >= 1 && r <= 10);
       const abvValues = ciders.map((c) => c.abv).filter((v) => typeof v === 'number' && isFinite(v));
       const prices = experiences
         .map((e) => e.pricePerPint)

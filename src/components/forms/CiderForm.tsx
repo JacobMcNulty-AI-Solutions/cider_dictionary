@@ -767,6 +767,16 @@ export default function CiderForm({
         contentContainerStyle={styles.scrollViewContent}
         keyboardShouldPersistTaps="handled"
       >
+        {!isEdit && (
+          <View style={styles.ratingInfoBanner}>
+            <Ionicons name="information-circle-outline" size={20} color="#1976D2" />
+            <Text style={styles.ratingInfoText}>
+              Ratings are calculated from your tasting experiences. After adding a cider,
+              log a tasting to rate it.
+            </Text>
+          </View>
+        )}
+
         {FORM_SECTIONS.map((section) => renderFormSection(section))}
 
         {/* Duplicate Warning */}
@@ -887,6 +897,21 @@ const styles = StyleSheet.create({
   },
   ratingContainer: {
     marginBottom: 16,
+  },
+  ratingInfoBanner: {
+    flexDirection: 'row',
+    backgroundColor: '#E3F2FD',
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 16,
+    alignItems: 'flex-start',
+  },
+  ratingInfoText: {
+    flex: 1,
+    marginLeft: 8,
+    fontSize: 14,
+    color: '#1976D2',
+    lineHeight: 20,
   },
   checkboxContainer: {
     marginBottom: 16,

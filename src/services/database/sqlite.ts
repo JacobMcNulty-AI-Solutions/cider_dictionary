@@ -975,17 +975,43 @@ export class BasicSQLiteService implements CiderDatabase {
   async getAllCiders(): Promise<CiderMasterRecord[]> {
     try {
       const db = await this.connectionManager.getDatabase();
-      const result = await db.getAllAsync('SELECT * FROM ciders ORDER BY createdAt DESC');
+      // Compute rating live from experiences instead of trusting the possibly-stale
+      // _cachedRating column. The user-entered `overallRating` field is deprecated.
+      const result = await db.getAllAsync(`
+        SELECT c.*,
+               (SELECT AVG(rating) FROM experiences WHERE ciderId = c.id AND rating IS NOT NULL) AS liveRating,
+               (SELECT COUNT(*) FROM experiences WHERE ciderId = c.id AND rating IS NOT NULL) AS liveRatingCount,
+               (SELECT AVG(appearance) FROM experiences WHERE ciderId = c.id AND appearance IS NOT NULL) AS liveAppearance,
+               (SELECT AVG(aroma) FROM experiences WHERE ciderId = c.id AND aroma IS NOT NULL) AS liveAroma,
+               (SELECT AVG(taste) FROM experiences WHERE ciderId = c.id AND taste IS NOT NULL) AS liveTaste,
+               (SELECT AVG(mouthfeel) FROM experiences WHERE ciderId = c.id AND mouthfeel IS NOT NULL) AS liveMouthfeel
+        FROM ciders c
+        ORDER BY c.createdAt DESC
+      `);
 
-      const ciders: CiderMasterRecord[] = result.map((row: any) => ({
+      const roundOne = (n: number | null | undefined): number | undefined =>
+        n == null ? undefined : Math.round(n * 10) / 10;
+
+      const ciders: CiderMasterRecord[] = result.map((row: any) => {
+        const liveRating = roundOne(row.liveRating);
+        const liveDetailed: any = {};
+        const app = roundOne(row.liveAppearance);
+        const aro = roundOne(row.liveAroma);
+        const tas = roundOne(row.liveTaste);
+        const mou = roundOne(row.liveMouthfeel);
+        if (app !== undefined) liveDetailed.appearance = app;
+        if (aro !== undefined) liveDetailed.aroma = aro;
+        if (tas !== undefined) liveDetailed.taste = tas;
+        if (mou !== undefined) liveDetailed.mouthfeel = mou;
+
+        return {
         id: row.id,
         userId: row.userId,
         name: row.name,
         brand: row.brand,
         abv: row.abv,
         scrumpy: row.scrumpy === 1 ? true : undefined,
-        // Use cached rating if available, fallback to overallRating for backward compatibility
-        overallRating: row._cachedRating ?? row.overallRating,
+        overallRating: liveRating ?? row.overallRating,
 
         // Optional basic fields
         photo: row.photo || undefined,
@@ -1002,10 +1028,7 @@ export class BasicSQLiteService implements CiderDatabase {
         // Expert level fields
         appleClassification: row.appleClassification ? JSON.parse(row.appleClassification) : undefined,
         productionMethods: row.productionMethods ? JSON.parse(row.productionMethods) : undefined,
-        // Use cached detailed ratings if available, fallback to detailedRatings
-        detailedRatings: row._cachedDetailedRatings
-          ? JSON.parse(row._cachedDetailedRatings)
-          : (row.detailedRatings ? JSON.parse(row.detailedRatings) : undefined),
+        detailedRatings: Object.keys(liveDetailed).length > 0 ? liveDetailed : undefined,
 
         // Additives & Ingredients
         fruitAdditions: row.fruitAdditions ? JSON.parse(row.fruitAdditions) : undefined,
@@ -1013,10 +1036,10 @@ export class BasicSQLiteService implements CiderDatabase {
         spicesBotanicals: row.spicesBotanicals ? JSON.parse(row.spicesBotanicals) : undefined,
         woodAging: row.woodAging ? JSON.parse(row.woodAging) : undefined,
 
-        // Cached rating fields
-        _cachedRating: row._cachedRating !== null ? row._cachedRating : undefined,
-        _cachedDetailedRatings: row._cachedDetailedRatings ? JSON.parse(row._cachedDetailedRatings) : undefined,
-        _ratingCount: row._ratingCount || undefined,
+        // Live-computed rating fields (single source of truth: experiences)
+        _cachedRating: liveRating,
+        _cachedDetailedRatings: Object.keys(liveDetailed).length > 0 ? liveDetailed : undefined,
+        _ratingCount: row.liveRatingCount || undefined,
         _ratingLastCalculated: row._ratingLastCalculated ? new Date(row._ratingLastCalculated) : undefined,
 
         // System fields
@@ -1024,7 +1047,8 @@ export class BasicSQLiteService implements CiderDatabase {
         updatedAt: new Date(row.updatedAt),
         syncStatus: row.syncStatus,
         version: row.version
-      }));
+        };
+      });
 
       return ciders;
     } catch (error) {
@@ -1042,13 +1066,37 @@ export class BasicSQLiteService implements CiderDatabase {
   async getCiderById(id: string): Promise<CiderMasterRecord | null> {
     try {
       const db = await this.connectionManager.getDatabase();
-      const result = await db.getFirstAsync('SELECT * FROM ciders WHERE id = ?', [id]);
+      // Compute rating live from experiences instead of trusting the possibly-stale
+      // _cachedRating column. The user-entered `overallRating` field is deprecated.
+      const result = await db.getFirstAsync(`
+        SELECT c.*,
+               (SELECT AVG(rating) FROM experiences WHERE ciderId = c.id AND rating IS NOT NULL) AS liveRating,
+               (SELECT COUNT(*) FROM experiences WHERE ciderId = c.id AND rating IS NOT NULL) AS liveRatingCount,
+               (SELECT AVG(appearance) FROM experiences WHERE ciderId = c.id AND appearance IS NOT NULL) AS liveAppearance,
+               (SELECT AVG(aroma) FROM experiences WHERE ciderId = c.id AND aroma IS NOT NULL) AS liveAroma,
+               (SELECT AVG(taste) FROM experiences WHERE ciderId = c.id AND taste IS NOT NULL) AS liveTaste,
+               (SELECT AVG(mouthfeel) FROM experiences WHERE ciderId = c.id AND mouthfeel IS NOT NULL) AS liveMouthfeel
+        FROM ciders c WHERE c.id = ?
+      `, [id]);
 
       if (!result) {
         return null;
       }
 
       const row = result as any;
+      const roundOne = (n: number | null | undefined): number | undefined =>
+        n == null ? undefined : Math.round(n * 10) / 10;
+      const liveRating = roundOne(row.liveRating);
+      const liveDetailed: any = {};
+      const app = roundOne(row.liveAppearance);
+      const aro = roundOne(row.liveAroma);
+      const tas = roundOne(row.liveTaste);
+      const mou = roundOne(row.liveMouthfeel);
+      if (app !== undefined) liveDetailed.appearance = app;
+      if (aro !== undefined) liveDetailed.aroma = aro;
+      if (tas !== undefined) liveDetailed.taste = tas;
+      if (mou !== undefined) liveDetailed.mouthfeel = mou;
+
       return {
         id: row.id,
         userId: row.userId,
@@ -1056,8 +1104,7 @@ export class BasicSQLiteService implements CiderDatabase {
         brand: row.brand,
         abv: row.abv,
         scrumpy: row.scrumpy === 1 ? true : undefined,
-        // Use cached rating if available, fallback to overallRating for backward compatibility
-        overallRating: row._cachedRating ?? row.overallRating,
+        overallRating: liveRating ?? row.overallRating,
 
         // Optional basic fields
         photo: row.photo || undefined,
@@ -1074,10 +1121,7 @@ export class BasicSQLiteService implements CiderDatabase {
         // Expert level fields
         appleClassification: row.appleClassification ? JSON.parse(row.appleClassification) : undefined,
         productionMethods: row.productionMethods ? JSON.parse(row.productionMethods) : undefined,
-        // Use cached detailed ratings if available, fallback to detailedRatings
-        detailedRatings: row._cachedDetailedRatings
-          ? JSON.parse(row._cachedDetailedRatings)
-          : (row.detailedRatings ? JSON.parse(row.detailedRatings) : undefined),
+        detailedRatings: Object.keys(liveDetailed).length > 0 ? liveDetailed : undefined,
 
         // Additives & Ingredients
         fruitAdditions: row.fruitAdditions ? JSON.parse(row.fruitAdditions) : undefined,
@@ -1085,10 +1129,10 @@ export class BasicSQLiteService implements CiderDatabase {
         spicesBotanicals: row.spicesBotanicals ? JSON.parse(row.spicesBotanicals) : undefined,
         woodAging: row.woodAging ? JSON.parse(row.woodAging) : undefined,
 
-        // Cached rating fields
-        _cachedRating: row._cachedRating !== null ? row._cachedRating : undefined,
-        _cachedDetailedRatings: row._cachedDetailedRatings ? JSON.parse(row._cachedDetailedRatings) : undefined,
-        _ratingCount: row._ratingCount || undefined,
+        // Live-computed rating fields (single source of truth: experiences)
+        _cachedRating: liveRating,
+        _cachedDetailedRatings: Object.keys(liveDetailed).length > 0 ? liveDetailed : undefined,
+        _ratingCount: row.liveRatingCount || undefined,
         _ratingLastCalculated: row._ratingLastCalculated ? new Date(row._ratingLastCalculated) : undefined,
 
         // System fields

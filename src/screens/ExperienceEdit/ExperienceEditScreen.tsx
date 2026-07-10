@@ -61,7 +61,6 @@ export default function ExperienceEditScreen() {
   const [containerType, setContainerType] = useState<ContainerType>('bottle');
   const [containerTypeCustom, setContainerTypeCustom] = useState<string | undefined>();
   const [notes, setNotes] = useState('');
-  const [directRating, setDirectRating] = useState<Rating | undefined>(undefined);
   const [detailedRatings, setDetailedRatings] = useState<{
     appearance?: Rating;
     aroma?: Rating;
@@ -84,20 +83,18 @@ export default function ExperienceEditScreen() {
     return 0;
   }, [price, containerSize]);
 
-  // If all 4 sub-ratings are filled, compute the overall from them.
-  // Otherwise fall back to the directly-entered overall rating.
+  // Overall rating is always computed as the average of the 4 detailed ratings.
   const overallRating = useMemo(() => {
     const { appearance, aroma, taste, mouthfeel } = detailedRatings || {};
-    const allFilled = appearance !== undefined && aroma !== undefined && taste !== undefined && mouthfeel !== undefined;
-    if (allFilled) {
-      const sum = appearance! + aroma! + taste! + mouthfeel!;
-      const rounded = Math.round((sum / 4) * 10) / 10;
-      return Math.max(1, Math.min(10, rounded)) as Rating;
+    if (appearance === undefined || aroma === undefined || taste === undefined || mouthfeel === undefined) {
+      return undefined;
     }
-    return directRating;
-  }, [detailedRatings, directRating]);
+    const sum = appearance + aroma + taste + mouthfeel;
+    const rounded = Math.round((sum / 4) * 10) / 10;
+    return Math.max(1, Math.min(10, rounded)) as Rating;
+  }, [detailedRatings]);
 
-  // Form validation — overall rating is required (either direct or computed from sub-ratings)
+  // Form validation — all 4 detailed ratings are required
   const isFormValid = useMemo(() => {
     return (
       venue.id &&
@@ -136,7 +133,6 @@ export default function ExperienceEditScreen() {
         setContainerType(foundExperience.containerType);
         setContainerTypeCustom(foundExperience.containerTypeCustom);
         setNotes(foundExperience.notes || '');
-        setDirectRating(foundExperience.rating);
         setDetailedRatings(foundExperience.detailedRatings || {
           appearance: undefined,
           aroma: undefined,
@@ -337,7 +333,9 @@ export default function ExperienceEditScreen() {
           <View style={styles.ciderReference}>
             <Text style={styles.ciderName}>{cider.name}</Text>
             <Text style={styles.ciderBrand}>by {cider.brand}</Text>
-            <Text style={styles.ciderDetails}>{cider.abv}% ABV • Rating: {cider.overallRating}/10</Text>
+            <Text style={styles.ciderDetails}>
+              {cider.abv}% ABV • Rating: {cider._cachedRating != null ? `${cider._cachedRating.toFixed(1)}/10` : 'Not yet rated'}
+            </Text>
           </View>
 
           {/* Venue Selection */}
@@ -444,49 +442,41 @@ export default function ExperienceEditScreen() {
 
           {/* Rating Section */}
           <FormSection title="Rating">
-            <RatingInput
-              label="Overall Rating"
-              rating={directRating}
-              onRatingChange={(r) => { setDirectRating(r as Rating); setIsDirty(true); }}
-              maxRating={10}
-              required
-            />
-
-            <Text style={styles.subRatingsHeading}>Detailed Ratings (optional)</Text>
             <View style={styles.detailedRatingsContainer}>
               <RatingInput
                 label="Appearance"
                 rating={detailedRatings?.appearance}
                 onRatingChange={(rating) => handleDetailedRatingChange('appearance', rating)}
                 maxRating={10}
+                required
               />
               <RatingInput
                 label="Aroma"
                 rating={detailedRatings?.aroma}
                 onRatingChange={(rating) => handleDetailedRatingChange('aroma', rating)}
                 maxRating={10}
+                required
               />
               <RatingInput
                 label="Taste"
                 rating={detailedRatings?.taste}
                 onRatingChange={(rating) => handleDetailedRatingChange('taste', rating)}
                 maxRating={10}
+                required
               />
               <RatingInput
                 label="Mouthfeel"
                 rating={detailedRatings?.mouthfeel}
                 onRatingChange={(rating) => handleDetailedRatingChange('mouthfeel', rating)}
                 maxRating={10}
+                required
               />
             </View>
 
-            {detailedRatings?.appearance !== undefined &&
-             detailedRatings?.aroma !== undefined &&
-             detailedRatings?.taste !== undefined &&
-             detailedRatings?.mouthfeel !== undefined && (
+            {overallRating !== undefined && (
               <View style={styles.calculatedRatingBox}>
-                <Text style={styles.calculatedRatingLabel}>Overall (calculated from sub-ratings)</Text>
-                <Text style={styles.calculatedRatingValue}>{overallRating?.toFixed(1)}/10</Text>
+                <Text style={styles.calculatedRatingLabel}>Overall Rating (calculated)</Text>
+                <Text style={styles.calculatedRatingValue}>{overallRating.toFixed(1)}/10</Text>
               </View>
             )}
           </FormSection>
@@ -715,13 +705,6 @@ const styles = StyleSheet.create({
     fontSize: 18,
     color: '#666',
     textAlign: 'center',
-  },
-  subRatingsHeading: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#666',
-    marginTop: 16,
-    marginBottom: 8,
   },
   detailedRatingsContainer: {
     gap: 8,

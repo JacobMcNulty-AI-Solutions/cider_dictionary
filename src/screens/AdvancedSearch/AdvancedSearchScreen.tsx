@@ -351,9 +351,9 @@ export default function AdvancedSearchScreen({ navigation }: Props) {
             <Text style={styles.resultName} numberOfLines={1}>
               {cider.name}
             </Text>
-            {cider.overallRating && (
+            {cider._cachedRating != null && (
               <View style={styles.ratingBadge}>
-                <Text style={styles.ratingText}>⭐ {cider.overallRating}</Text>
+                <Text style={styles.ratingText}>⭐ {cider._cachedRating.toFixed(1)}</Text>
               </View>
             )}
           </View>

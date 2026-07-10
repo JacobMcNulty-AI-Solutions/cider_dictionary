@@ -156,20 +156,21 @@ export interface DisclosureConfig {
   optional: (keyof CiderMasterRecord)[];
 }
 
+// Ratings are derived from experiences, so overallRating is not a form field.
 export const DISCLOSURE_CONFIGS: Record<DisclosureLevel, DisclosureConfig> = {
   casual: {
-    fields: ['name', 'brand', 'abv', 'overallRating'],
+    fields: ['name', 'brand', 'abv'],
     targetTime: 30,
     optional: ['photo']
   },
   enthusiast: {
-    fields: ['name', 'brand', 'abv', 'overallRating', 'tasteTags'],
+    fields: ['name', 'brand', 'abv', 'tasteTags'],
     targetTime: 120,
     optional: ['photo', 'notes', 'traditionalStyle', 'sweetness', 'carbonation', 'clarity', 'color']
   },
   expert: {
-    fields: ['name', 'brand', 'abv', 'overallRating', 'tasteTags',
-             'appleClassification', 'productionMethods', 'detailedRatings'],
+    fields: ['name', 'brand', 'abv', 'tasteTags',
+             'appleClassification', 'productionMethods'],
     targetTime: 300,
     optional: ['venue', 'photo', 'notes', 'traditionalStyle', 'sweetness', 'carbonation', 'clarity', 'color']
   }

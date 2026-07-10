@@ -46,10 +46,14 @@ const EnhancedCiderCard = memo<Props>(({
     });
   }, [cider.createdAt, viewMode]);
 
+  const displayRating = cider._cachedRating ?? null;
+  const hasRating = displayRating !== null && displayRating !== undefined;
+
   const ratingStars = useMemo(() => {
+    if (!hasRating) return '';
     const stars = [];
-    const fullStars = Math.floor(cider.overallRating / 2);
-    const hasHalfStar = (cider.overallRating % 2) >= 1;
+    const fullStars = Math.floor(displayRating! / 2);
+    const hasHalfStar = (displayRating! % 2) >= 1;
 
     for (let i = 0; i < 5; i++) {
       if (i < fullStars) {
@@ -62,7 +66,7 @@ const EnhancedCiderCard = memo<Props>(({
     }
 
     return stars.join('');
-  }, [cider.overallRating]);
+  }, [displayRating, hasRating]);
 
   const abvColor = useMemo(() => {
     if (cider.abv < 4) return '#28A745';
@@ -235,10 +239,16 @@ const EnhancedCiderCard = memo<Props>(({
           </View>
 
           <View style={styles.ratingSection}>
-            <Text style={styles.ratingStars}>{ratingStars}</Text>
-            <Text style={styles.ratingText}>
-              {cider.overallRating}/10
-            </Text>
+            {hasRating ? (
+              <>
+                <Text style={styles.ratingStars}>{ratingStars}</Text>
+                <Text style={styles.ratingText}>
+                  {displayRating!.toFixed(1)}/10
+                </Text>
+              </>
+            ) : (
+              <Text style={styles.noRatingText}>Not rated</Text>
+            )}
           </View>
         </View>
 
@@ -392,6 +402,11 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#666',
     fontWeight: '500',
+  },
+  noRatingText: {
+    fontSize: 12,
+    color: '#999',
+    fontStyle: 'italic',
   },
   detailsSection: {
     marginBottom: 8,

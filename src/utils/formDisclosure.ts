@@ -81,17 +81,16 @@ export const FORM_FIELD_CONFIGS: Record<keyof CiderMasterRecord, FormFieldConfig
     ]
   },
 
+  // Deprecated: ratings are derived from experiences. Config kept only to satisfy
+  // the Record<keyof CiderMasterRecord, ...> type constraint and is never rendered
+  // (removed from DISCLOSURE_CONFIGS).
   overallRating: {
     key: 'overallRating',
     label: 'Overall Rating',
     type: 'rating',
-    required: true,
-    placeholder: 'Rate from 1-10',
-    section: 'core',
-    validationRules: [
-      { type: 'required', message: 'Rating is required' },
-      { type: 'range', value: [1, 10], message: 'Rating must be between 1 and 10' }
-    ]
+    required: false,
+    placeholder: '',
+    section: 'core'
   },
 
   // Optional core fields
@@ -387,8 +386,7 @@ export class FormDisclosureManager {
     return {
       disclosureLevel: level,
       formData: {
-        userId,
-        overallRating: 5 as any // Default rating
+        userId
       },
       validationState: {},
       fieldStates: {},

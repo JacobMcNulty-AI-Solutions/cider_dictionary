@@ -308,7 +308,9 @@ export default function ExperienceLogScreen({ route, navigation }: Props) {
           <View style={styles.ciderReference}>
             <Text style={styles.ciderName}>{cider.name}</Text>
             <Text style={styles.ciderBrand}>by {cider.brand}</Text>
-            <Text style={styles.ciderDetails}>{cider.abv}% ABV • Rating: {cider.overallRating}/10</Text>
+            <Text style={styles.ciderDetails}>
+              {cider.abv}% ABV • Rating: {cider._cachedRating != null ? `${cider._cachedRating.toFixed(1)}/10` : 'Not yet rated'}
+            </Text>
           </View>
 
           {/* Location Status */}

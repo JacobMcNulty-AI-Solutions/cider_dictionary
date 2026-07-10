@@ -58,14 +58,16 @@ export default function EnhancedQuickEntryScreen({ navigation }: Props) {
   // Handle form submission
   const handleSubmit = useCallback(async (formData: Partial<CiderMasterRecord>) => {
     try {
-      // Create cider record
+      // Ratings are derived from experiences; overallRating is a NOT NULL DB
+      // placeholder that is never displayed (getAllCiders/getCiderById compute
+      // the live rating from experiences).
       const ciderData = {
         name: formData.name || 'Unknown Cider',
         brand: formData.brand || 'Unknown Brand',
         abv: formData.abv || 5.0,
-        overallRating: formData.overallRating || 5,
         userId: 'default-user',
         ...formData,
+        overallRating: 5,
       };
 
       const ciderId = await addCider(ciderData);

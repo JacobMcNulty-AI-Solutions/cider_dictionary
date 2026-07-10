@@ -199,7 +199,7 @@ export default function ExperienceDetailScreen() {
               <Text style={styles.ciderBrand}>by {cider?.brand || 'Unknown Brand'}</Text>
               {cider && (
                 <Text style={styles.ciderDetails}>
-                  {cider.abv}% ABV • Overall Rating: {cider.overallRating}/10
+                  {cider.abv}% ABV • Overall Rating: {cider._cachedRating != null ? `${cider._cachedRating.toFixed(1)}/10` : 'Not yet rated'}
                 </Text>
               )}
             </View>

@@ -28,6 +28,7 @@ import {
 } from '../../types/analytics';
 import { linearRegression, mean, sum, round } from '../../utils/statistics';
 import { cacheManager } from './AnalyticsCacheManager';
+import { getIsoWeekNumber } from './analyticsConstants';
 
 // ============================================================================
 // Type Definitions
@@ -135,14 +136,15 @@ export class TrendAnalyzer {
         'date'
       );
 
-      // Collection growth trend
+      // Collection growth trend — cumulative running total of ciders logged.
       if (filteredCiders.length > 0) {
-        result.collectionGrowth = this.analyzeTrend(
+        const perPeriod = this.analyzeTrend(
           groupedCiders,
           (group) => group.length,
-          'Collection Growth',
+          'Total Ciders Logged',
           config.groupBy
         );
+        result.collectionGrowth = perPeriod ? this.toCumulative(perPeriod) : null;
       }
 
       // Rating trend
@@ -206,6 +208,35 @@ export class TrendAnalyzer {
    * @param groupBy - Time period grouping
    * @returns Complete trend analysis or null if insufficient data
    */
+  // Convert a per-period trend into a cumulative running total.
+  // Predictions are dropped since they were computed against per-period deltas.
+  private toCumulative(trend: TrendAnalysis): TrendAnalysis {
+    let running = 0;
+    const cumulativeDataPoints = trend.dataPoints.map(dp => {
+      running += dp.value;
+      return { ...dp, value: Math.round(running * 100) / 100 };
+    });
+
+    const chartData: ChartData = {
+      ...trend.chartData,
+      datasets: trend.chartData.datasets.map((ds, idx) =>
+        idx === 0
+          ? {
+              ...ds,
+              data: cumulativeDataPoints.map(dp => dp.value),
+            }
+          : ds
+      ),
+    };
+
+    return {
+      ...trend,
+      dataPoints: cumulativeDataPoints,
+      predictions: [],
+      chartData,
+    };
+  }
+
   analyzeTrend<T>(
     groupedData: Map<string, T[]>,
     valueExtractor: (items: T[]) => number,
@@ -357,7 +388,7 @@ export class TrendAnalyzer {
         return `${year}-${month}-${day}`;
 
       case 'week': {
-        const weekNum = this.getWeekNumber(date);
+        const weekNum = getIsoWeekNumber(date);
         return `${year}-W${String(weekNum).padStart(2, '0')}`;
       }
 
@@ -431,14 +462,6 @@ export class TrendAnalyzer {
    * @param date - Date to get week number for
    * @returns Week number (1-53)
    */
-  private getWeekNumber(date: Date): number {
-    const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
-    const dayNum = d.getUTCDay() || 7;
-    d.setUTCDate(d.getUTCDate() + 4 - dayNum);
-    const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
-    return Math.ceil(((d.getTime() - yearStart.getTime()) / 86400000 + 1) / 7);
-  }
-
   /**
    * Get date from year and week number
    *

@@ -230,7 +230,13 @@ export default function AnalyticsScreen({ navigation }: Props) {
     // For Venues tab, only pass experiences
     switch (activeTab) {
       case 'overview':
-        return <OverviewTab timeRange={selectedTimeRange} />;
+        return (
+          <OverviewTab
+            timeRange={selectedTimeRange}
+            ciders={ciders}
+            experiences={experiences}
+          />
+        );
 
       case 'trends':
         return (

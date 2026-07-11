@@ -4,6 +4,25 @@
 import { CiderMasterRecord, TraditionalStyle, Rating } from '../../types/cider';
 import { ExperienceLog, VenueInfo } from '../../types/experience';
 import { sqliteService } from '../database/sqlite';
+import { YourTypeSummary, OverdueCider } from '../../types/analytics';
+import { HIGH_RATING_THRESHOLD } from './analyticsConstants';
+
+const SWEETNESS_LABELS: Record<string, string> = {
+  bone_dry: 'bone dry',
+  dry: 'dry',
+  off_dry: 'off-dry',
+  medium: 'medium',
+  sweet: 'sweet',
+};
+
+const CARBONATION_LABELS: Record<string, string> = {
+  still: 'still',
+  lightly_sparkling: 'lightly sparkling',
+  sparkling: 'sparkling',
+  highly_carbonated: 'highly carbonated',
+};
+
+const MS_PER_DAY = 86400000;
 
 export interface AnalyticsData {
   collectionStats: {
@@ -508,6 +527,154 @@ class AnalyticsService {
     }
 
     return cutoff;
+  }
+
+  // ==========================================================================
+  // Analytics Enhancement — Feature 2: "Your Type" Summary
+  // ==========================================================================
+
+  public generateYourTypeSummary(
+    ciders: CiderMasterRecord[],
+    experiences: ExperienceLog[]
+  ): YourTypeSummary {
+    const noData: YourTypeSummary = {
+      sentence: '',
+      topSweetness: null,
+      topCarbonation: null,
+      topBrands: [],
+      hasEnoughData: false,
+    };
+
+    const highlyRated = experiences.filter(
+      exp => typeof exp.rating === 'number' && exp.rating >= HIGH_RATING_THRESHOLD
+    );
+    if (highlyRated.length < 3) return noData;
+
+    const cidersById = new Map<string, CiderMasterRecord>();
+    for (const cider of ciders) cidersById.set(cider.id, cider);
+
+    const sweetnessCounts = new Map<string, number>();
+    const carbonationCounts = new Map<string, number>();
+    const brandCounts = new Map<string, number>();
+
+    for (const exp of highlyRated) {
+      const cider = cidersById.get(exp.ciderId);
+      if (!cider) continue;
+      if (cider.sweetness) {
+        sweetnessCounts.set(cider.sweetness, (sweetnessCounts.get(cider.sweetness) || 0) + 1);
+      }
+      if (cider.carbonation) {
+        carbonationCounts.set(cider.carbonation, (carbonationCounts.get(cider.carbonation) || 0) + 1);
+      }
+      const brand = cider.brand?.trim();
+      if (brand) {
+        brandCounts.set(brand, (brandCounts.get(brand) || 0) + 1);
+      }
+    }
+
+    const pickMode = (counts: Map<string, number>): string | null => {
+      if (counts.size === 0) return null;
+      const entries = Array.from(counts.entries());
+      entries.sort((a, b) => {
+        if (b[1] !== a[1]) return b[1] - a[1];
+        return a[0].localeCompare(b[0]);
+      });
+      return entries[0][0];
+    };
+
+    const topSweetnessKey = pickMode(sweetnessCounts);
+    const topCarbonationKey = pickMode(carbonationCounts);
+    const topSweetness = topSweetnessKey ? SWEETNESS_LABELS[topSweetnessKey] || null : null;
+    const topCarbonation = topCarbonationKey ? CARBONATION_LABELS[topCarbonationKey] || null : null;
+
+    const brandEntries = Array.from(brandCounts.entries()).sort((a, b) => {
+      if (b[1] !== a[1]) return b[1] - a[1];
+      return a[0].localeCompare(b[0]);
+    });
+    const topBrands = brandEntries.slice(0, 2).map(([b]) => b);
+
+    // Degenerate fast-path: no meaningful signal to describe.
+    if (!topSweetness && !topCarbonation && topBrands.length === 0) return noData;
+
+    let sentence = 'You tend to prefer ';
+    if (topSweetness) sentence += `${topSweetness}, `;
+    sentence += topCarbonation ? `${topCarbonation} ciders` : 'ciders';
+    if (topBrands.length === 1) sentence += ` from ${topBrands[0]}`;
+    else if (topBrands.length === 2) sentence += ` from ${topBrands[0]} and ${topBrands[1]}`;
+    sentence += `, rated ${HIGH_RATING_THRESHOLD}+.`;
+
+    return {
+      sentence,
+      topSweetness,
+      topCarbonation,
+      topBrands,
+      hasEnoughData: true,
+    };
+  }
+
+  // ==========================================================================
+  // Analytics Enhancement — Feature 6: Haven't Had in a While
+  // ==========================================================================
+
+  public computeOverdueCiders(
+    ciders: CiderMasterRecord[],
+    experiences: ExperienceLog[],
+    monthsThreshold: number = 3
+  ): OverdueCider[] {
+    const now = Date.now();
+    const thresholdDate = new Date();
+    thresholdDate.setMonth(thresholdDate.getMonth() - monthsThreshold);
+
+    const groupedByCider = new Map<string, ExperienceLog[]>();
+    for (const exp of experiences) {
+      const list = groupedByCider.get(exp.ciderId) || [];
+      list.push(exp);
+      groupedByCider.set(exp.ciderId, list);
+    }
+
+    const result: OverdueCider[] = [];
+    for (const cider of ciders) {
+      const group = groupedByCider.get(cider.id);
+      if (!group || group.length === 0) continue;
+
+      const validRatings = group
+        .map(e => e.rating)
+        .filter((r): r is number => typeof r === 'number');
+      if (validRatings.length === 0) continue;
+
+      const avgRating = validRatings.reduce((a, b) => a + b, 0) / validRatings.length;
+      const roundedAvg = Math.round(avgRating * 10) / 10;
+      const experienceCount = validRatings.length;
+
+      if (roundedAvg < HIGH_RATING_THRESHOLD) continue;
+      if (experienceCount < 2) continue;
+
+      let lastExperienceDate = new Date(group[0].date);
+      for (const exp of group) {
+        const d = new Date(exp.date);
+        if (d > lastExperienceDate) lastExperienceDate = d;
+      }
+      if (lastExperienceDate >= thresholdDate) continue;
+
+      const daysSinceLastTried = Math.floor((now - lastExperienceDate.getTime()) / MS_PER_DAY);
+      const monthsSinceLastTried = Math.floor(daysSinceLastTried / 30);
+
+      result.push({
+        cider,
+        lastExperienceDate,
+        avgRating: roundedAvg,
+        experienceCount,
+        daysSinceLastTried,
+        monthsSinceLastTried,
+      });
+    }
+
+    result.sort((a, b) => {
+      if (b.avgRating !== a.avgRating) return b.avgRating - a.avgRating;
+      return b.daysSinceLastTried - a.daysSinceLastTried;
+    });
+
+    return result;
   }
 }
 

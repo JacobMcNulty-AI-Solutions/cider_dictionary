@@ -185,13 +185,15 @@ export class VenueAnalyzer {
       const cached = await this.cacheManager.get<VenueInsights>(cacheKey);
       if (cached) {
         console.log('[VenueAnalyzer] Insights retrieved from cache');
-        // Restore Maps from plain objects (JSON serialization destroys Map type)
-        if (cached.venueTypes && !(cached.venueTypes instanceof Map)) {
-          cached.venueTypes = new Map(Object.entries(cached.venueTypes as any));
-        }
-        if (cached.averageRatings && !(cached.averageRatings instanceof Map)) {
-          cached.averageRatings = new Map(Object.entries(cached.averageRatings as any));
-        }
+        // Restore Maps from plain objects (JSON serialization destroys Map type).
+        // Treat undefined as empty — legacy cache entries may have serialized Maps
+        // to `undefined` before this fix landed.
+        cached.venueTypes = cached.venueTypes instanceof Map
+          ? cached.venueTypes
+          : new Map(Object.entries((cached.venueTypes as any) || {}));
+        cached.averageRatings = cached.averageRatings instanceof Map
+          ? cached.averageRatings
+          : new Map(Object.entries((cached.averageRatings as any) || {}));
         return cached;
       }
 
@@ -433,7 +435,7 @@ export class VenueAnalyzer {
     try {
       const allVenues = await sqliteService.getAllVenues();
       for (const venue of allVenues) {
-        if (venue.location) {
+        if (venue.location && venue.name) {
           venuesCache.set(venue.name.toLowerCase(), {
             latitude: venue.location.latitude,
             longitude: venue.location.longitude
@@ -446,11 +448,12 @@ export class VenueAnalyzer {
     }
 
     for (const exp of experiences) {
-      let location = exp.venue.location;
+      const venueName = exp.venue?.name;
+      let location = exp.venue?.location;
 
       // If no location in experience, try to get it from venues table
-      if (!location && venuesCache.has(exp.venue.name.toLowerCase())) {
-        location = venuesCache.get(exp.venue.name.toLowerCase());
+      if (!location && venueName && venuesCache.has(venueName.toLowerCase())) {
+        location = venuesCache.get(venueName.toLowerCase());
         if (location) {
           fromVenuesTable++;
         }

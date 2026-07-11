@@ -17,7 +17,7 @@
  * @module DistributionsTab
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   View,
   ScrollView,
@@ -35,6 +35,11 @@ import DistributionAnalyzer, { FullDistributionResult } from '../../services/ana
 import { CiderMasterRecord } from '../../types/cider';
 import { ExperienceLog } from '../../types/experience';
 import { mean, median, mode, standardDeviation, min, max } from '../../utils/statistics';
+import BrandRatingTable from './components/BrandRatingTable';
+import SubRatingRadarChart from './components/SubRatingRadarChart';
+import BrandLoyaltyList from './components/BrandLoyaltyList';
+import FlavourRadarChart from './components/FlavourRadarChart';
+import TagHeatmapGrid from './components/TagHeatmapGrid';
 
 // ============================================================================
 // Type Definitions
@@ -93,14 +98,6 @@ function getAbvSummary(stats: StatMetrics | null): string {
 }
 
 /**
- * Get summary text for style distribution
- */
-function getStyleSummary(styleCount: number): string {
-  if (styleCount === 0) return 'No styles yet';
-  return `You've tried ${styleCount} different style${styleCount !== 1 ? 's' : ''}`;
-}
-
-/**
  * Get summary text for brand distribution
  */
 function getBrandSummary(brandCount: number): string {
@@ -153,6 +150,29 @@ export default function DistributionsTab({ ciders, experiences, timeRange }: Dis
   const [ratingStats, setRatingStats] = useState<StatMetrics | null>(null);
   const [abvStats, setAbvStats] = useState<StatMetrics | null>(null);
   const [priceStats, setPriceStats] = useState<StatMetrics | null>(null);
+
+  // Enhancement-plan analyzers (synchronous, memoized).
+  const distributionAnalyzer = useMemo(() => DistributionAnalyzer.getInstance(), []);
+  const brandRatingRows = useMemo(
+    () => distributionAnalyzer.computeBrandRatingTable(ciders, experiences),
+    [distributionAnalyzer, ciders, experiences]
+  );
+  const subRatingAverages = useMemo(
+    () => distributionAnalyzer.computeSubRatingAverages(experiences),
+    [distributionAnalyzer, experiences]
+  );
+  const brandLoyalty = useMemo(
+    () => distributionAnalyzer.computeBrandLoyaltyScores(ciders, experiences),
+    [distributionAnalyzer, ciders, experiences]
+  );
+  const flavourRadar = useMemo(
+    () => distributionAnalyzer.computeFlavourRadar(ciders),
+    [distributionAnalyzer, ciders]
+  );
+  const tagHeatmap = useMemo(
+    () => distributionAnalyzer.computeTagRatingHeatmap(ciders, experiences),
+    [distributionAnalyzer, ciders, experiences]
+  );
 
   /**
    * Load distributions from ciders and experiences props
@@ -285,7 +305,6 @@ export default function DistributionsTab({ ciders, experiences, timeRange }: Dis
   // ============================================================================
 
   // Extract distribution counts for summaries
-  const styleCount = distributions.styleDistribution.labels.filter((l) => !l.includes('No ')).length;
   const brandCount = distributions.brandDistribution.labels.filter((l) => !l.includes('No ')).length;
   const mostCommonTag = distributions.tagDistribution.labels[0]?.includes('No ')
     ? null
@@ -308,6 +327,9 @@ export default function DistributionsTab({ ciders, experiences, timeRange }: Dis
             {distributions.metadata.ciderCount} ciders • {distributions.metadata.experienceCount} experiences
           </Text>
         </View>
+
+        {/* Feature 1: Flavour Radar */}
+        <FlavourRadarChart data={flavourRadar} />
 
         {/* Rating Distribution Section */}
         <View style={styles.section}>
@@ -335,6 +357,9 @@ export default function DistributionsTab({ ciders, experiences, timeRange }: Dis
           <Text style={styles.summaryText}>{getRatingSummary(ratingStats)}</Text>
         </View>
 
+        {/* Feature 7: Sub-rating Radar */}
+        <SubRatingRadarChart averages={subRatingAverages} />
+
         {/* ABV Distribution Section */}
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
@@ -361,23 +386,6 @@ export default function DistributionsTab({ ciders, experiences, timeRange }: Dis
           <Text style={styles.summaryText}>{getAbvSummary(abvStats)}</Text>
         </View>
 
-        {/* Style Breakdown Section */}
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <Ionicons name="color-palette" size={24} color="#FFCE56" />
-            <Text style={styles.sectionTitle}>Style Breakdown</Text>
-          </View>
-          <DistributionChart
-            distribution={distributions.styleDistribution}
-            title="Cider styles you've tried"
-            chartType="bar"
-            color="#FFCE56"
-            showAverage={false}
-            isLoading={false}
-          />
-          <Text style={styles.summaryText}>{getStyleSummary(styleCount)}</Text>
-        </View>
-
         {/* Top Brands Section */}
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
@@ -395,6 +403,12 @@ export default function DistributionsTab({ ciders, experiences, timeRange }: Dis
           <Text style={styles.summaryText}>{getBrandSummary(brandCount)}</Text>
         </View>
 
+        {/* Feature 12: Brand Avg Rating Table */}
+        <BrandRatingTable rows={brandRatingRows} />
+
+        {/* Feature 11: Brand Re-trial Rate */}
+        <BrandLoyaltyList rows={brandLoyalty} />
+
         {/* Taste Tags Section */}
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
@@ -411,6 +425,9 @@ export default function DistributionsTab({ ciders, experiences, timeRange }: Dis
           />
           <Text style={styles.summaryText}>{getTagSummary(mostCommonTag)}</Text>
         </View>
+
+        {/* Feature 3: Tag Sentiment Heatmap */}
+        <TagHeatmapGrid data={tagHeatmap} />
 
         {/* Price Distribution Section */}
         <View style={styles.section}>

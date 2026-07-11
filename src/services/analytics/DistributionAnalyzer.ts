@@ -26,6 +26,61 @@ import {
 } from '../../types/analytics';
 import { mean, median, mode, standardDeviation, min, max } from '../../utils/statistics';
 import AnalyticsCacheManager from './AnalyticsCacheManager';
+import {
+  NewVsRepeatStats,
+  DayOfWeekStat,
+  DayOfWeekStats,
+  QuarterStat,
+  SeasonalStats,
+  BrandRatingRow,
+  SubRatingAverages,
+  CiderConsistencyRow,
+  RatingConsistencyResult,
+  BrandLoyaltyRow,
+  FlavourRadarData,
+  TagRatingHeatmapRow,
+  TagRatingHeatmapData,
+} from '../../types/analytics';
+import {
+  HIGH_RATING_THRESHOLD,
+  SWEETNESS_SCALE,
+  CARBONATION_SCALE,
+  CLARITY_SCALE,
+} from './analyticsConstants';
+
+interface BrandExperienceEntry {
+  ratingSum: number;
+  ratingCount: number;
+  ciderIds: Set<string>;
+  experienceCount: number;
+  perCiderCounts: Map<string, number>;
+}
+
+const DAY_NAMES = [
+  'Sunday',
+  'Monday',
+  'Tuesday',
+  'Wednesday',
+  'Thursday',
+  'Friday',
+  'Saturday',
+];
+
+const QUARTER_LABELS: Record<'Q1' | 'Q2' | 'Q3' | 'Q4', string> = {
+  Q1: 'Q1 (Jan-Mar)',
+  Q2: 'Q2 (Apr-Jun)',
+  Q3: 'Q3 (Jul-Sep)',
+  Q4: 'Q4 (Oct-Dec)',
+};
+
+const monthToQuarter = (month: number): 'Q1' | 'Q2' | 'Q3' | 'Q4' => {
+  if (month <= 2) return 'Q1';
+  if (month <= 5) return 'Q2';
+  if (month <= 8) return 'Q3';
+  return 'Q4';
+};
+
+const round1 = (n: number): number => Math.round(n * 10) / 10;
 
 // ============================================================================
 // Type Definitions
@@ -745,6 +800,431 @@ export class DistributionAnalyzer {
     const expIds = experiences.map(e => e.id).sort().join(',');
     const hash = `${ciderIds}_${expIds}`.substring(0, 100); // Limit length
     return `distributions_${ciders.length}_${experiences.length}_${hash}`;
+  }
+
+  // ==========================================================================
+  // Analytics Enhancement — Phase 1
+  // ==========================================================================
+
+  // Feature 4: New vs Repeat Ciders
+  public computeNewVsRepeatStats(experiences: ExperienceLog[]): NewVsRepeatStats {
+    if (experiences.length === 0) {
+      return { newCount: 0, repeatCount: 0, totalCount: 0, explorerPercentage: 0 };
+    }
+
+    const sorted = [...experiences].sort(
+      (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
+    );
+
+    const seen = new Set<string>();
+    let newCount = 0;
+    let repeatCount = 0;
+
+    for (const exp of sorted) {
+      if (!exp.ciderId) continue;
+      if (seen.has(exp.ciderId)) {
+        repeatCount++;
+      } else {
+        seen.add(exp.ciderId);
+        newCount++;
+      }
+    }
+
+    const totalCount = newCount + repeatCount;
+    const explorerPercentage = totalCount > 0
+      ? Math.round((newCount / totalCount) * 100)
+      : 0;
+
+    return { newCount, repeatCount, totalCount, explorerPercentage };
+  }
+
+  // Feature 9: Best Drinking Day
+  // Note: uses local timezone via Date.getDay() — consistent with the rest of the app.
+  public computeDayOfWeekStats(experiences: ExperienceLog[]): DayOfWeekStats {
+    const buckets: Array<{ count: number; ratingSum: number; ratingCount: number }> =
+      Array.from({ length: 7 }, () => ({ count: 0, ratingSum: 0, ratingCount: 0 }));
+
+    for (const exp of experiences) {
+      const date = new Date(exp.date);
+      if (isNaN(date.getTime())) continue;
+      const idx = date.getDay();
+      buckets[idx].count++;
+      if (typeof exp.rating === 'number') {
+        buckets[idx].ratingSum += exp.rating;
+        buckets[idx].ratingCount++;
+      }
+    }
+
+    const days: DayOfWeekStat[] = buckets.map((b, idx) => ({
+      dayName: DAY_NAMES[idx],
+      dayIndex: idx,
+      count: b.count,
+      averageRating: b.ratingCount > 0 ? round1(b.ratingSum / b.ratingCount) : 0,
+    }));
+
+    const busiestDay = days.reduce(
+      (best, day) => (day.count > best.count ? day : best),
+      days[0]
+    );
+
+    const eligibleForRating = days.filter(d => d.count >= 3);
+    const highestRatedDay = eligibleForRating.length > 0
+      ? eligibleForRating.reduce(
+          (best, day) => (day.averageRating > best.averageRating ? day : best),
+          eligibleForRating[0]
+        )
+      : null;
+
+    return { days, busiestDay, highestRatedDay };
+  }
+
+  // Feature 10: Seasonal Patterns
+  public computeSeasonalStats(experiences: ExperienceLog[]): SeasonalStats {
+    const buckets: Record<'Q1' | 'Q2' | 'Q3' | 'Q4', { count: number; ratingSum: number; ratingCount: number }> = {
+      Q1: { count: 0, ratingSum: 0, ratingCount: 0 },
+      Q2: { count: 0, ratingSum: 0, ratingCount: 0 },
+      Q3: { count: 0, ratingSum: 0, ratingCount: 0 },
+      Q4: { count: 0, ratingSum: 0, ratingCount: 0 },
+    };
+
+    for (const exp of experiences) {
+      const date = new Date(exp.date);
+      if (isNaN(date.getTime())) continue;
+      const q = monthToQuarter(date.getMonth());
+      buckets[q].count++;
+      if (typeof exp.rating === 'number') {
+        buckets[q].ratingSum += exp.rating;
+        buckets[q].ratingCount++;
+      }
+    }
+
+    const quarters: QuarterStat[] = (['Q1', 'Q2', 'Q3', 'Q4'] as const).map(q => ({
+      quarter: q,
+      label: QUARTER_LABELS[q],
+      count: buckets[q].count,
+      averageRating:
+        buckets[q].ratingCount > 0 ? round1(buckets[q].ratingSum / buckets[q].ratingCount) : 0,
+    }));
+
+    const peakQuarter = quarters.reduce(
+      (best, q) => (q.count > best.count ? q : best),
+      quarters[0]
+    );
+
+    const chartData: ChartData = {
+      labels: ['Q1\nJan-Mar', 'Q2\nApr-Jun', 'Q3\nJul-Sep', 'Q4\nOct-Dec'],
+      datasets: [
+        {
+          label: 'Experiences',
+          data: quarters.map(q => q.count),
+        },
+      ],
+    };
+
+    return { quarters, peakQuarter, chartData };
+  }
+
+  // Shared helper for Features 11 and 12.
+  private buildBrandExperienceMap(
+    ciders: CiderMasterRecord[],
+    experiences: ExperienceLog[]
+  ): Map<string, BrandExperienceEntry> {
+    const ciderIdToBrand = new Map<string, string>();
+    for (const cider of ciders) {
+      const brand = cider.brand?.trim();
+      if (brand) ciderIdToBrand.set(cider.id, brand);
+    }
+
+    const result = new Map<string, BrandExperienceEntry>();
+
+    for (const exp of experiences) {
+      const brand = ciderIdToBrand.get(exp.ciderId);
+      if (!brand) continue;
+
+      let entry = result.get(brand);
+      if (!entry) {
+        entry = {
+          ratingSum: 0,
+          ratingCount: 0,
+          ciderIds: new Set<string>(),
+          experienceCount: 0,
+          perCiderCounts: new Map<string, number>(),
+        };
+        result.set(brand, entry);
+      }
+
+      entry.experienceCount++;
+      entry.ciderIds.add(exp.ciderId);
+      entry.perCiderCounts.set(
+        exp.ciderId,
+        (entry.perCiderCounts.get(exp.ciderId) || 0) + 1
+      );
+
+      if (typeof exp.rating === 'number') {
+        entry.ratingSum += exp.rating;
+        entry.ratingCount++;
+      }
+    }
+
+    return result;
+  }
+
+  // Feature 12: Brand Avg Rating Table
+  public computeBrandRatingTable(
+    ciders: CiderMasterRecord[],
+    experiences: ExperienceLog[]
+  ): BrandRatingRow[] {
+    const map = this.buildBrandExperienceMap(ciders, experiences);
+    const rows: BrandRatingRow[] = [];
+
+    for (const [brand, entry] of map.entries()) {
+      if (!brand) continue;
+      if (entry.ratingCount === 0) continue; // Skip: no rated experiences.
+      rows.push({
+        brand,
+        avgRating: round1(entry.ratingSum / entry.ratingCount),
+        ciderCount: entry.ciderIds.size,
+        experienceCount: entry.experienceCount,
+      });
+    }
+
+    rows.sort((a, b) => {
+      if (b.avgRating !== a.avgRating) return b.avgRating - a.avgRating;
+      return a.brand.localeCompare(b.brand);
+    });
+
+    return rows;
+  }
+
+  // ==========================================================================
+  // Analytics Enhancement — Phase 2
+  // ==========================================================================
+
+  // Feature 7: Sub-rating Radar
+  public computeSubRatingAverages(experiences: ExperienceLog[]): SubRatingAverages {
+    const empty: SubRatingAverages = {
+      appearance: 0,
+      aroma: 0,
+      taste: 0,
+      mouthfeel: 0,
+      sampleCount: 0,
+      hasEnoughData: false,
+    };
+
+    const cohort = experiences.filter(e => {
+      const dr = e.detailedRatings;
+      return (
+        dr &&
+        typeof dr.appearance === 'number' &&
+        typeof dr.aroma === 'number' &&
+        typeof dr.taste === 'number' &&
+        typeof dr.mouthfeel === 'number'
+      );
+    });
+
+    if (cohort.length === 0) return empty;
+
+    let sumApp = 0, sumAro = 0, sumTas = 0, sumMou = 0;
+    for (const e of cohort) {
+      const dr = e.detailedRatings!;
+      sumApp += dr.appearance!;
+      sumAro += dr.aroma!;
+      sumTas += dr.taste!;
+      sumMou += dr.mouthfeel!;
+    }
+
+    return {
+      appearance: round1(sumApp / cohort.length),
+      aroma: round1(sumAro / cohort.length),
+      taste: round1(sumTas / cohort.length),
+      mouthfeel: round1(sumMou / cohort.length),
+      sampleCount: cohort.length,
+      hasEnoughData: cohort.length >= 3,
+    };
+  }
+
+  // Feature 8: Rating Consistency
+  public computeRatingConsistency(
+    ciders: CiderMasterRecord[],
+    experiences: ExperienceLog[]
+  ): RatingConsistencyResult {
+    const cidersById = new Map<string, CiderMasterRecord>();
+    for (const cider of ciders) cidersById.set(cider.id, cider);
+
+    const grouped = new Map<string, number[]>();
+    for (const exp of experiences) {
+      if (typeof exp.rating !== 'number') continue;
+      const list = grouped.get(exp.ciderId) || [];
+      list.push(exp.rating);
+      grouped.set(exp.ciderId, list);
+    }
+
+    const rows: CiderConsistencyRow[] = [];
+    for (const [ciderId, ratings] of grouped.entries()) {
+      if (ratings.length < 2) continue;
+      const cider = cidersById.get(ciderId);
+      if (!cider) continue;
+
+      const avg = ratings.reduce((a, b) => a + b, 0) / ratings.length;
+      const variance =
+        ratings.reduce((acc, r) => acc + (r - avg) ** 2, 0) / ratings.length;
+      const stdDev = Math.sqrt(variance);
+
+      rows.push({
+        cider,
+        experienceCount: ratings.length,
+        avgRating: round1(avg),
+        ratingVariance: round1(variance),
+        ratingStdDev: round1(stdDev),
+        minRating: Math.min(...ratings),
+        maxRating: Math.max(...ratings),
+        isHighVariance: stdDev >= 2,
+      });
+    }
+
+    rows.sort((a, b) => b.ratingStdDev - a.ratingStdDev);
+
+    const highVarianceCount = rows.filter(r => r.isHighVariance).length;
+    const mostConsistent = rows.length > 0 ? rows[rows.length - 1] : null;
+    const leastConsistent = rows.length > 0 ? rows[0] : null;
+
+    return { rows, mostConsistent, leastConsistent, highVarianceCount };
+  }
+
+  // Feature 11: Brand Re-trial Rate
+  public computeBrandLoyaltyScores(
+    ciders: CiderMasterRecord[],
+    experiences: ExperienceLog[]
+  ): BrandLoyaltyRow[] {
+    const map = this.buildBrandExperienceMap(ciders, experiences);
+    const rows: BrandLoyaltyRow[] = [];
+
+    for (const [brand, entry] of map.entries()) {
+      if (!brand) continue;
+      if (entry.experienceCount < 5) continue; // Filter noise threshold.
+
+      let repeatExperiences = 0;
+      for (const count of entry.perCiderCounts.values()) {
+        repeatExperiences += Math.max(0, count - 1);
+      }
+
+      const loyaltyScore =
+        entry.experienceCount > 0
+          ? Math.round((repeatExperiences / entry.experienceCount) * 100)
+          : 0;
+
+      rows.push({
+        brand,
+        totalExperiences: entry.experienceCount,
+        uniqueCiders: entry.ciderIds.size,
+        repeatExperiences,
+        loyaltyScore,
+      });
+    }
+
+    rows.sort((a, b) => {
+      if (b.loyaltyScore !== a.loyaltyScore) return b.loyaltyScore - a.loyaltyScore;
+      return a.brand.localeCompare(b.brand);
+    });
+
+    return rows;
+  }
+
+  // ==========================================================================
+  // Analytics Enhancement — Phase 3
+  // ==========================================================================
+
+  // Feature 1: Flavour Radar
+  public computeFlavourRadar(ciders: CiderMasterRecord[]): FlavourRadarData {
+    let sweetSum = 0, sweetCount = 0;
+    let carbSum = 0, carbCount = 0;
+    let claritySum = 0, clarityCount = 0;
+
+    for (const cider of ciders) {
+      const s = cider.sweetness && SWEETNESS_SCALE[cider.sweetness];
+      const c = cider.carbonation && CARBONATION_SCALE[cider.carbonation];
+      const cl = cider.clarity && CLARITY_SCALE[cider.clarity];
+      if (typeof s === 'number') { sweetSum += s; sweetCount++; }
+      if (typeof c === 'number') { carbSum += c; carbCount++; }
+      if (typeof cl === 'number') { claritySum += cl; clarityCount++; }
+    }
+
+    const sweetnessAvg = sweetCount > 0 ? sweetSum / sweetCount : 0;
+    const carbonationAvg = carbCount > 0 ? carbSum / carbCount : 0;
+    const clarityAvg = clarityCount > 0 ? claritySum / clarityCount : 0;
+
+    // Normalize to 0..10 based on each scale's domain.
+    const sweetnessNorm = sweetCount > 0 ? ((sweetnessAvg - 1) / 4) * 10 : 0;
+    const carbonationNorm = carbCount > 0 ? ((carbonationAvg - 1) / 3) * 10 : 0;
+    const clarityNorm = clarityCount > 0 ? ((clarityAvg - 1) / 4) * 10 : 0;
+
+    const sampleCount = Math.min(sweetCount, carbCount, clarityCount);
+
+    return {
+      sweetnessAvg: round1(sweetnessAvg),
+      carbonationAvg: round1(carbonationAvg),
+      clarityAvg: round1(clarityAvg),
+      sampleCount,
+      hasEnoughData: sampleCount >= 3,
+      chartValues: [round1(sweetnessNorm), round1(carbonationNorm), round1(clarityNorm)],
+      chartLabels: ['Sweetness', 'Carbonation', 'Clarity'],
+    };
+  }
+
+  // Feature 3: Tag Frequency Heatmap
+  public computeTagRatingHeatmap(
+    ciders: CiderMasterRecord[],
+    experiences: ExperienceLog[]
+  ): TagRatingHeatmapData {
+    const cidersById = new Map<string, CiderMasterRecord>();
+    for (const c of ciders) cidersById.set(c.id, c);
+
+    const tagCounts = new Map<string, { high: number; low: number }>();
+
+    for (const exp of experiences) {
+      if (typeof exp.rating !== 'number') continue;
+      const cider = cidersById.get(exp.ciderId);
+      if (!cider) continue;
+      if (!cider.tasteTags || cider.tasteTags.length === 0) continue;
+
+      const bucket = exp.rating >= HIGH_RATING_THRESHOLD ? 'high' : 'low';
+      for (const rawTag of cider.tasteTags) {
+        if (!rawTag) continue;
+        const tag = rawTag.trim().toLowerCase();
+        if (!tag) continue;
+        const current = tagCounts.get(tag) || { high: 0, low: 0 };
+        current[bucket]++;
+        tagCounts.set(tag, current);
+      }
+    }
+
+    const rows: TagRatingHeatmapRow[] = [];
+    for (const [tag, counts] of tagCounts.entries()) {
+      const totalCount = counts.high + counts.low;
+      let sentiment: 'positive' | 'negative' | 'neutral' = 'neutral';
+      if (totalCount >= 5) {
+        if (counts.high / totalCount > 0.65) sentiment = 'positive';
+        else if (counts.low / totalCount > 0.65) sentiment = 'negative';
+      }
+      rows.push({
+        tag,
+        highRatedCount: counts.high,
+        lowRatedCount: counts.low,
+        totalCount,
+        sentiment,
+      });
+    }
+
+    rows.sort((a, b) => b.totalCount - a.totalCount);
+    const top = rows.slice(0, 15);
+
+    let maxCount = 0;
+    for (const row of top) {
+      if (row.highRatedCount > maxCount) maxCount = row.highRatedCount;
+      if (row.lowRatedCount > maxCount) maxCount = row.lowRatedCount;
+    }
+
+    return { rows: top, maxCount, hasEnoughData: top.length >= 5 };
   }
 }
 

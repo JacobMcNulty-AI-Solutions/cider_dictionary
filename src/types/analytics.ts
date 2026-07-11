@@ -591,3 +591,136 @@ export interface VenueInsights {
     discoveryRatio: number;
   };
 }
+
+// ============================================================================
+// Analytics Enhancement Plan — Feature Types
+// ============================================================================
+
+import { CiderMasterRecord } from './cider';
+
+// Feature 4: New vs Repeat Ciders
+export interface NewVsRepeatStats {
+  newCount: number;
+  repeatCount: number;
+  totalCount: number;
+  explorerPercentage: number;
+}
+
+// Feature 9: Best Drinking Day
+export interface DayOfWeekStat {
+  dayName: string;
+  dayIndex: number; // 0 = Sunday .. 6 = Saturday
+  count: number;
+  averageRating: number;
+}
+
+export interface DayOfWeekStats {
+  days: DayOfWeekStat[];
+  busiestDay: DayOfWeekStat;
+  highestRatedDay: DayOfWeekStat | null;
+}
+
+// Feature 10: Seasonal Patterns
+export interface QuarterStat {
+  quarter: 'Q1' | 'Q2' | 'Q3' | 'Q4';
+  label: string;
+  count: number;
+  averageRating: number;
+}
+
+export interface SeasonalStats {
+  quarters: QuarterStat[];
+  peakQuarter: QuarterStat;
+  chartData: ChartData;
+}
+
+// Feature 12: Brand Avg Rating Table
+export interface BrandRatingRow {
+  brand: string;
+  avgRating: number;
+  ciderCount: number;
+  experienceCount: number;
+}
+
+// Feature 2: "Your Type" Summary
+export interface YourTypeSummary {
+  sentence: string;
+  topSweetness: string | null;
+  topCarbonation: string | null;
+  topBrands: string[];
+  hasEnoughData: boolean;
+}
+
+// Feature 6: Haven't Had in a While
+export interface OverdueCider {
+  cider: CiderMasterRecord;
+  lastExperienceDate: Date;
+  avgRating: number;
+  experienceCount: number;
+  daysSinceLastTried: number;
+  monthsSinceLastTried: number;
+}
+
+// Feature 7: Sub-rating Radar
+export interface SubRatingAverages {
+  appearance: number;
+  aroma: number;
+  taste: number;
+  mouthfeel: number;
+  sampleCount: number;
+  hasEnoughData: boolean;
+}
+
+// Feature 8: Rating Consistency
+export interface CiderConsistencyRow {
+  cider: CiderMasterRecord;
+  experienceCount: number;
+  avgRating: number;
+  ratingVariance: number;
+  ratingStdDev: number;
+  minRating: number;
+  maxRating: number;
+  isHighVariance: boolean;
+}
+
+export interface RatingConsistencyResult {
+  rows: CiderConsistencyRow[];
+  mostConsistent: CiderConsistencyRow | null;
+  leastConsistent: CiderConsistencyRow | null;
+  highVarianceCount: number;
+}
+
+// Feature 11: Brand Re-trial Rate
+export interface BrandLoyaltyRow {
+  brand: string;
+  totalExperiences: number;
+  uniqueCiders: number;
+  repeatExperiences: number;
+  loyaltyScore: number;
+}
+
+// Feature 1: Flavour Radar
+export interface FlavourRadarData {
+  sweetnessAvg: number;
+  carbonationAvg: number;
+  clarityAvg: number;
+  sampleCount: number;
+  hasEnoughData: boolean;
+  chartValues: number[];
+  chartLabels: string[];
+}
+
+// Feature 3: Tag Frequency Heatmap
+export interface TagRatingHeatmapRow {
+  tag: string;
+  highRatedCount: number;
+  lowRatedCount: number;
+  totalCount: number;
+  sentiment: 'positive' | 'negative' | 'neutral';
+}
+
+export interface TagRatingHeatmapData {
+  rows: TagRatingHeatmapRow[];
+  maxCount: number;
+  hasEnoughData: boolean;
+}

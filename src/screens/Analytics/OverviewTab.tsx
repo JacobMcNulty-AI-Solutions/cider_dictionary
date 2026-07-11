@@ -17,7 +17,7 @@
  * @module OverviewTab
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   View,
   ScrollView,
@@ -30,6 +30,14 @@ import { Ionicons } from '@expo/vector-icons';
 import { LineChart, BarChart } from 'react-native-chart-kit';
 import LoadingSpinner from '../../components/common/LoadingSpinner';
 import { analyticsService, AnalyticsData, TimeRange } from '../../services/analytics/AnalyticsService';
+import { CiderMasterRecord } from '../../types/cider';
+import { ExperienceLog } from '../../types/experience';
+import DistributionAnalyzer from '../../services/analytics/DistributionAnalyzer';
+import { streakAnalyzer } from '../../services/analytics/StreakAnalyzer';
+import NewVsRepeatCard from './components/NewVsRepeatCard';
+import StreakCard from './components/StreakCard';
+import YourTypeSummaryCard from './components/YourTypeSummaryCard';
+import OverdueCidersCard from './components/OverdueCidersCard';
 
 // ============================================================================
 // Type Definitions
@@ -37,6 +45,8 @@ import { analyticsService, AnalyticsData, TimeRange } from '../../services/analy
 
 interface OverviewTabProps {
   timeRange: TimeRange;
+  ciders: CiderMasterRecord[];
+  experiences: ExperienceLog[];
 }
 
 const { width: screenWidth } = Dimensions.get('window');
@@ -81,10 +91,28 @@ function StatCard({ icon, title, value, color, subtitle }: StatCardProps) {
  * @example
  * <OverviewTab timeRange="3M" />
  */
-export default function OverviewTab({ timeRange }: OverviewTabProps) {
+export default function OverviewTab({ timeRange, ciders, experiences }: OverviewTabProps) {
   const [analytics, setAnalytics] = useState<AnalyticsData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
+
+  const distributionAnalyzer = useMemo(() => DistributionAnalyzer.getInstance(), []);
+  const newVsRepeat = useMemo(
+    () => distributionAnalyzer.computeNewVsRepeatStats(experiences),
+    [distributionAnalyzer, experiences]
+  );
+  const streaks = useMemo(
+    () => streakAnalyzer.computeStreaks(experiences),
+    [experiences]
+  );
+  const yourType = useMemo(
+    () => analyticsService.generateYourTypeSummary(ciders, experiences),
+    [ciders, experiences]
+  );
+  const overdue = useMemo(
+    () => analyticsService.computeOverdueCiders(ciders, experiences),
+    [ciders, experiences]
+  );
 
   const loadAnalytics = useCallback(
     async (showLoading = true) => {
@@ -179,6 +207,8 @@ export default function OverviewTab({ timeRange }: OverviewTabProps) {
       }
       showsVerticalScrollIndicator={false}
     >
+      <YourTypeSummaryCard summary={yourType} />
+
       {/* Collection Overview */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Collection Overview</Text>
@@ -205,15 +235,12 @@ export default function OverviewTab({ timeRange }: OverviewTabProps) {
             color="#FFD700"
           />
 
-          <StatCard
-            icon="checkmark-circle"
-            title="Collection Completeness"
-            value={`${analytics.collectionStats.completionPercentage.toFixed(0)}%`}
-            color="#AF52DE"
-            subtitle="Personal diversity score"
-          />
         </View>
       </View>
+
+      <NewVsRepeatCard stats={newVsRepeat} />
+      <StreakCard streaks={streaks} />
+      <OverdueCidersCard overdue={overdue} />
 
       {/* Value Analysis */}
       <View style={styles.section}>

@@ -18,7 +18,7 @@
  * @module TrendsTab
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   View,
   ScrollView,
@@ -29,11 +29,13 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { TrendChart } from '../../components/analytics/TrendChart';
-import { PredictionBadge } from '../../components/analytics/PredictionBadge';
 import { trendAnalyzer, TrendAnalysisResult } from '../../services/analytics/TrendAnalyzer';
 import { TimeRange, GroupBy, AnalyticsConfig } from '../../types/analytics';
 import { CiderMasterRecord } from '../../types/cider';
 import { ExperienceLog } from '../../types/experience';
+import DistributionAnalyzer from '../../services/analytics/DistributionAnalyzer';
+import DayOfWeekChart from './components/DayOfWeekChart';
+import SeasonalChart from './components/SeasonalChart';
 
 // ============================================================================
 // Type Definitions
@@ -114,6 +116,16 @@ export function TrendsTab({ ciders, experiences, timeRange: externalTimeRange }:
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const distributionAnalyzer = useMemo(() => DistributionAnalyzer.getInstance(), []);
+  const dayOfWeekStats = useMemo(
+    () => distributionAnalyzer.computeDayOfWeekStats(experiences),
+    [distributionAnalyzer, experiences]
+  );
+  const seasonalStats = useMemo(
+    () => distributionAnalyzer.computeSeasonalStats(experiences),
+    [distributionAnalyzer, experiences]
+  );
 
   /**
    * Load trends based on current configuration
@@ -256,24 +268,15 @@ export function TrendsTab({ ciders, experiences, timeRange: externalTimeRange }:
         />
       )}
 
-      {/* Collection Growth Trend */}
+      {/* Collection Growth — cumulative total */}
       <View style={styles.trendSection}>
         <TrendChart
           trend={trends?.collectionGrowth || null}
-          title="Collection Growth"
+          title="Total Ciders Logged"
           color="#2280b0"
-          showPredictions={true}
+          showPredictions={false}
           isLoading={isLoading}
         />
-        {trends?.collectionGrowth && !isLoading && (
-          <PredictionBadge
-            direction={trends.collectionGrowth.direction}
-            confidence={trends.collectionGrowth.confidence}
-            label="Growth Outlook"
-            size="medium"
-            style={styles.badge}
-          />
-        )}
       </View>
 
       {/* Rating Trend */}
@@ -282,18 +285,9 @@ export function TrendsTab({ ciders, experiences, timeRange: externalTimeRange }:
           trend={trends?.ratingTrend || null}
           title="Average Rating"
           color="#10b981"
-          showPredictions={true}
+          showPredictions={false}
           isLoading={isLoading}
         />
-        {trends?.ratingTrend && !isLoading && (
-          <PredictionBadge
-            direction={trends.ratingTrend.direction}
-            confidence={trends.ratingTrend.confidence}
-            label="Rating Outlook"
-            size="medium"
-            style={styles.badge}
-          />
-        )}
       </View>
 
       {/* Spending Trend */}
@@ -303,18 +297,9 @@ export function TrendsTab({ ciders, experiences, timeRange: externalTimeRange }:
             trend={trends?.spendingTrend || null}
             title="Total Spending"
             color="#f59e0b"
-            showPredictions={true}
+            showPredictions={false}
             isLoading={isLoading}
           />
-          {trends?.spendingTrend && !isLoading && (
-            <PredictionBadge
-              direction={trends.spendingTrend.direction}
-              confidence={trends.spendingTrend.confidence}
-              label="Spending Outlook"
-              size="medium"
-              style={styles.badge}
-            />
-          )}
         </View>
       )}
 
@@ -325,20 +310,17 @@ export function TrendsTab({ ciders, experiences, timeRange: externalTimeRange }:
             trend={trends?.abvTrend || null}
             title="Average ABV"
             color="#8b5cf6"
-            showPredictions={true}
+            showPredictions={false}
             isLoading={isLoading}
           />
-          {trends?.abvTrend && !isLoading && (
-            <PredictionBadge
-              direction={trends.abvTrend.direction}
-              confidence={trends.abvTrend.confidence}
-              label="ABV Outlook"
-              size="medium"
-              style={styles.badge}
-            />
-          )}
         </View>
       )}
+
+      {/* Feature 9: Best Drinking Day */}
+      <DayOfWeekChart stats={dayOfWeekStats} />
+
+      {/* Feature 10: Seasonal Patterns */}
+      <SeasonalChart stats={seasonalStats} />
 
       {/* Info Footer */}
       <View style={styles.footer}>

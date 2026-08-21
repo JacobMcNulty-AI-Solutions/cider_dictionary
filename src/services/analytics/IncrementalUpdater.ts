@@ -255,7 +255,9 @@ class IncrementalUpdater {
 
     // Process all experiences (O(m))
     for (const experience of experiences) {
-      sumSpending += experience.price;
+      if (!experience.gifted) {
+        sumSpending += experience.price;
+      }
 
       if (experience.venue?.type) {
         this.incrementDistribution(distributions, 'venueType', experience.venue.type);
@@ -692,9 +694,11 @@ class IncrementalUpdater {
       return;
     }
 
-    // Update running totals (O(1))
+    // Update running totals (O(1)) — gifted experiences don't affect spend
     this.state.runningTotals.totalExperiences++;
-    this.state.runningTotals.sumSpending += experience.price;
+    if (!experience.gifted) {
+      this.state.runningTotals.sumSpending += experience.price;
+    }
 
     // Update venue type distribution
     if (experience.venue?.type) {
@@ -726,9 +730,11 @@ class IncrementalUpdater {
       return;
     }
 
-    // Adjust spending totals (subtract old, add new) - O(1)
+    // Adjust spending totals (subtract old, add new) - O(1). Gifted contributes 0.
+    const oldContribution = oldExp.gifted ? 0 : oldExp.price;
+    const newContribution = newExp.gifted ? 0 : newExp.price;
     this.state.runningTotals.sumSpending =
-      this.state.runningTotals.sumSpending - oldExp.price + newExp.price;
+      this.state.runningTotals.sumSpending - oldContribution + newContribution;
 
     // Update venue type distribution if changed
     if (oldExp.venue?.type !== newExp.venue?.type) {
@@ -751,8 +757,8 @@ class IncrementalUpdater {
       this.state.invalidatedMetrics.add('venueAnalytics');
     }
 
-    // Mark spending analytics as invalidated if price changed
-    if (oldExp.price !== newExp.price) {
+    // Mark spending analytics as invalidated if price OR gifted flag changed
+    if (oldExp.price !== newExp.price || oldExp.gifted !== newExp.gifted) {
       this.state.invalidatedMetrics.add('spendingTrend');
       this.state.invalidatedMetrics.add('valueAnalytics');
     }
@@ -765,9 +771,11 @@ class IncrementalUpdater {
   private handleExperienceDeleted(experience: ExperienceLog): void {
     if (!this.state) return;
 
-    // Decrease running totals (O(1))
+    // Decrease running totals (O(1)) — gifted contributed 0 to spend, so only subtract paid
     this.state.runningTotals.totalExperiences--;
-    this.state.runningTotals.sumSpending -= experience.price;
+    if (!experience.gifted) {
+      this.state.runningTotals.sumSpending -= experience.price;
+    }
 
     // Update venue type distribution
     if (experience.venue?.type) {

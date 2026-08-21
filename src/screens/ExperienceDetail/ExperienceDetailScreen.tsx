@@ -227,11 +227,12 @@ export default function ExperienceDetailScreen() {
           <Text style={styles.detailValue}>{formatDate(experience.date)}</Text>
         </View>
 
-        {/* Venue Details */}
+        {/* Venue Details (optional) */}
+        {experience.venue && (
         <View style={styles.detailCard}>
           <View style={styles.detailHeader}>
             <Ionicons name="location" size={20} color="#FF9500" />
-            <Text style={styles.detailTitle}>Where</Text>
+            <Text style={styles.detailTitle}>Bought At</Text>
           </View>
           <Text style={styles.venueMain}>{experience.venue.name}</Text>
           <Text style={styles.venueType}>{getVenueTypeLabel(experience.venue.type)}</Text>
@@ -276,29 +277,60 @@ export default function ExperienceDetailScreen() {
             </View>
           )}
         </View>
+        )}
+
+        {/* Enjoyed At (optional) */}
+        {experience.enjoyedAt && (
+          <View style={styles.detailCard}>
+            <View style={styles.detailHeader}>
+              <Ionicons name="beer" size={20} color="#AF52DE" />
+              <Text style={styles.detailTitle}>Enjoyed At</Text>
+            </View>
+            <Text style={styles.venueMain}>{experience.enjoyedAt.name}</Text>
+            <Text style={styles.venueType}>{getVenueTypeLabel(experience.enjoyedAt.type)}</Text>
+            {experience.enjoyedAt.address && (
+              <Text style={styles.venueAddress}>{experience.enjoyedAt.address}</Text>
+            )}
+          </View>
+        )}
 
         {/* Price Analysis */}
         <View style={styles.detailCard}>
           <View style={styles.detailHeader}>
-            <Ionicons name="cash" size={20} color="#007AFF" />
+            <Ionicons name={experience.gifted ? 'gift' : 'cash'} size={20} color="#007AFF" />
             <Text style={styles.detailTitle}>Price</Text>
           </View>
-          <View style={styles.priceGrid}>
-            <View style={styles.priceItem}>
-              <Text style={styles.priceLabel}>Total Paid</Text>
-              <Text style={styles.priceValue}>£{experience.price.toFixed(2)}</Text>
+          {experience.gifted ? (
+            <View style={styles.giftedBadge}>
+              <Ionicons name="gift-outline" size={16} color="#AF52DE" />
+              <Text style={styles.giftedBadgeText}>Gifted — no price recorded</Text>
             </View>
+          ) : (
+            <View style={styles.priceGrid}>
+              <View style={styles.priceItem}>
+                <Text style={styles.priceLabel}>Total Paid</Text>
+                <Text style={styles.priceValue}>£{experience.price.toFixed(2)}</Text>
+              </View>
+              <View style={styles.priceItem}>
+                <Text style={styles.priceLabel}>Container</Text>
+                <Text style={styles.priceValue}>
+                  {experience.containerSize}ml {getContainerTypeLabel(experience.containerType, experience.containerTypeCustom)}
+                </Text>
+              </View>
+              <View style={styles.priceItem}>
+                <Text style={styles.priceLabel}>Price per Pint</Text>
+                <Text style={styles.priceValue}>£{experience.pricePerPint.toFixed(2)}</Text>
+              </View>
+            </View>
+          )}
+          {experience.gifted && (
             <View style={styles.priceItem}>
               <Text style={styles.priceLabel}>Container</Text>
               <Text style={styles.priceValue}>
                 {experience.containerSize}ml {getContainerTypeLabel(experience.containerType, experience.containerTypeCustom)}
               </Text>
             </View>
-            <View style={styles.priceItem}>
-              <Text style={styles.priceLabel}>Price per Pint</Text>
-              <Text style={styles.priceValue}>£{experience.pricePerPint.toFixed(2)}</Text>
-            </View>
-          </View>
+          )}
         </View>
 
         {/* Experience Context - Removed weatherConditions and companionType (orphaned fields) */}
@@ -482,6 +514,22 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: 'bold',
     color: '#007AFF',
+  },
+  giftedBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    backgroundColor: '#F3E8FF',
+    borderRadius: 12,
+    gap: 6,
+    marginBottom: 12,
+  },
+  giftedBadgeText: {
+    fontSize: 13,
+    color: '#AF52DE',
+    fontWeight: '600',
   },
   contextRow: {
     flexDirection: 'row',

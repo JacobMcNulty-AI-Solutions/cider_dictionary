@@ -116,6 +116,10 @@ export default function ExperienceHistoryScreen() {
         case 'date':
           return b.date.getTime() - a.date.getTime();
         case 'price':
+          // Gifted rows have no price signal — send them to the end regardless of sort direction
+          if (a.gifted && !b.gifted) return 1;
+          if (!a.gifted && b.gifted) return -1;
+          if (a.gifted && b.gifted) return 0;
           return b.pricePerPint - a.pricePerPint;
         case 'rating':
           return (b.rating || 0) - (a.rating || 0);
@@ -141,7 +145,9 @@ export default function ExperienceHistoryScreen() {
       };
     }
 
-    const totalSpent = filteredExperiences.reduce((sum, exp) => sum + exp.price, 0);
+    // Gifted experiences don't contribute to spend totals
+    const paidExperiences = filteredExperiences.filter(exp => !exp.gifted);
+    const totalSpent = paidExperiences.reduce((sum, exp) => sum + exp.price, 0);
     const ratedExperiences = filteredExperiences.filter(exp => exp.rating !== undefined);
     const averageRating = ratedExperiences.length > 0
       ? ratedExperiences.reduce((sum, exp) => sum + (exp.rating || 0), 0) / ratedExperiences.length
@@ -151,7 +157,7 @@ export default function ExperienceHistoryScreen() {
     return {
       totalExperiences: filteredExperiences.length,
       totalSpent,
-      averagePrice: totalSpent / filteredExperiences.length,
+      averagePrice: paidExperiences.length > 0 ? totalSpent / paidExperiences.length : 0,
       averageRating,
       uniqueCiders: uniqueCiderIds.size
     };
@@ -214,6 +220,7 @@ export default function ExperienceHistoryScreen() {
       </View>
 
       <View style={styles.experienceDetails}>
+        {item.venue && (
         <View style={styles.venueSection}>
           <View style={styles.detailRow}>
             <Ionicons name="location-outline" size={16} color="#666" />
@@ -229,6 +236,7 @@ export default function ExperienceHistoryScreen() {
             </View>
           </View>
         </View>
+        )}
 
         <View style={styles.detailRow}>
           <Ionicons name="calendar-outline" size={16} color="#666" />
@@ -238,9 +246,11 @@ export default function ExperienceHistoryScreen() {
         </View>
 
         <View style={styles.detailRow}>
-          <Ionicons name="cash-outline" size={16} color="#666" />
+          <Ionicons name={item.gifted ? 'gift-outline' : 'cash-outline'} size={16} color="#666" />
           <Text style={styles.detailText}>
-            £{item.price.toFixed(2)} ({item.containerSize}ml {getContainerTypeLabel(item.containerType, item.containerTypeCustom)}) • £{item.pricePerPint.toFixed(2)}/pint
+            {item.gifted
+              ? `Gifted (${item.containerSize}ml ${getContainerTypeLabel(item.containerType, item.containerTypeCustom)})`
+              : `£${item.price.toFixed(2)} (${item.containerSize}ml ${getContainerTypeLabel(item.containerType, item.containerTypeCustom)}) • £${item.pricePerPint.toFixed(2)}/pint`}
           </Text>
         </View>
 

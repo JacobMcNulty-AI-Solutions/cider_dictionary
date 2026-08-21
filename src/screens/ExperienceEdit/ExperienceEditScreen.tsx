@@ -13,7 +13,8 @@ import {
   Alert,
   TouchableOpacity,
   KeyboardTypeOptions,
-  BackHandler
+  BackHandler,
+  Switch
 } from 'react-native';
 import { useRoute, useNavigation, RouteProp, useFocusEffect } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
@@ -49,14 +50,11 @@ export default function ExperienceEditScreen() {
   const [isDirty, setIsDirty] = useState(false);
 
   // Form state
-  const [venue, setVenue] = useState<VenueInfo>({
-    id: '',
-    name: '',
-    type: 'pub',
-    location: undefined
-  });
+  const [venue, setVenue] = useState<VenueInfo | null>(null);
+  const [enjoyedAt, setEnjoyedAt] = useState<VenueInfo | null>(null);
   const [price, setPrice] = useState(0);
   const [priceDisplay, setPriceDisplay] = useState('');
+  const [gifted, setGifted] = useState(false);
   const [containerSize, setContainerSize] = useState(CONTAINER_SIZES.PINT);
   const [containerType, setContainerType] = useState<ContainerType>('bottle');
   const [containerTypeCustom, setContainerTypeCustom] = useState<string | undefined>();
@@ -74,14 +72,15 @@ export default function ExperienceEditScreen() {
   });
   const [currentLocation, setCurrentLocation] = useState<Location | null>(null);
 
-  // Auto-calculate price per pint
+  // Auto-calculate price per pint (zero when gifted)
   const pricePerPint = useMemo(() => {
+    if (gifted) return 0;
     if (price > 0 && containerSize > 0) {
       const PINT_SIZE = 568; // ml
       return Math.round((price * PINT_SIZE / containerSize) * 100) / 100;
     }
     return 0;
-  }, [price, containerSize]);
+  }, [price, containerSize, gifted]);
 
   // Overall rating is always computed as the average of the 4 detailed ratings.
   const overallRating = useMemo(() => {
@@ -94,18 +93,16 @@ export default function ExperienceEditScreen() {
     return Math.max(1, Math.min(10, rounded)) as Rating;
   }, [detailedRatings]);
 
-  // Form validation — all 4 detailed ratings are required
+  // Form validation — all 4 detailed ratings are required; price only required when not gifted;
+  // venue is optional (Bought At can be skipped)
   const isFormValid = useMemo(() => {
+    const priceGate = gifted ? true : (price > 0 && pricePerPint > 0);
     return (
-      venue.id &&
-      venue.name.trim().length >= 2 &&
-      venue.location &&
-      price > 0 &&
       containerSize > 0 &&
       overallRating !== undefined &&
-      pricePerPint > 0
+      priceGate
     );
-  }, [venue, price, containerSize, overallRating, pricePerPint]);
+  }, [price, containerSize, overallRating, pricePerPint, gifted]);
 
   // Load experience data
   useEffect(() => {
@@ -126,9 +123,11 @@ export default function ExperienceEditScreen() {
         setExperience(foundExperience);
 
         // Populate form state
-        setVenue(foundExperience.venue);
+        setVenue(foundExperience.venue ?? null);
+        setEnjoyedAt(foundExperience.enjoyedAt ?? null);
         setPrice(foundExperience.price);
         setPriceDisplay(foundExperience.price > 0 ? foundExperience.price.toString() : '');
+        setGifted(!!foundExperience.gifted);
         setContainerSize(foundExperience.containerSize);
         setContainerType(foundExperience.containerType);
         setContainerTypeCustom(foundExperience.containerTypeCustom);
@@ -139,7 +138,7 @@ export default function ExperienceEditScreen() {
           taste: undefined,
           mouthfeel: undefined
         });
-        if (foundExperience.venue.location) {
+        if (foundExperience.venue?.location) {
           setCurrentLocation(foundExperience.venue.location);
         }
 
@@ -188,6 +187,30 @@ export default function ExperienceEditScreen() {
 
   const handleVenueSelect = useCallback((selectedVenue: VenueInfo) => {
     setVenue(selectedVenue);
+    setIsDirty(true);
+  }, []);
+
+  const handleClearVenue = useCallback(() => {
+    setVenue(null);
+    setIsDirty(true);
+  }, []);
+
+  const handleEnjoyedAtSelect = useCallback((selectedVenue: VenueInfo) => {
+    setEnjoyedAt(selectedVenue);
+    setIsDirty(true);
+  }, []);
+
+  const handleClearEnjoyedAt = useCallback(() => {
+    setEnjoyedAt(null);
+    setIsDirty(true);
+  }, []);
+
+  const handleGiftedToggle = useCallback((next: boolean) => {
+    setGifted(next);
+    if (next) {
+      setPrice(0);
+      setPriceDisplay('');
+    }
     setIsDirty(true);
   }, []);
 
@@ -251,12 +274,16 @@ export default function ExperienceEditScreen() {
       // Create updated experience
       const updatedExperience: ExperienceLog = {
         ...experience,
-        venue,
-        price,
+        venue: venue ?? undefined,
+        venueId: venue?.id ?? undefined,
+        enjoyedAt: enjoyedAt ?? undefined,
+        enjoyedAtVenueId: enjoyedAt?.id ?? undefined,
+        price: gifted ? 0 : price,
+        gifted,
         containerSize,
         containerType,
         containerTypeCustom,
-        pricePerPint,
+        pricePerPint: gifted ? 0 : pricePerPint,
         notes: notes || undefined,
         rating: overallRating!,
         detailedRatings,
@@ -287,7 +314,7 @@ export default function ExperienceEditScreen() {
     } finally {
       setIsSubmitting(false);
     }
-  }, [experience, venue, price, containerSize, containerType, containerTypeCustom, pricePerPint, notes, overallRating, detailedRatings, isFormValid, experienceId, navigation]);
+  }, [experience, venue, enjoyedAt, price, gifted, containerSize, containerType, containerTypeCustom, pricePerPint, notes, overallRating, detailedRatings, isFormValid, experienceId, navigation]);
 
   // Handle cancel
   const handleCancel = useCallback(() => {
@@ -338,29 +365,66 @@ export default function ExperienceEditScreen() {
             </Text>
           </View>
 
-          {/* Venue Selection */}
-          <FormSection title="Where did you try it?">
+          {/* Venue Selection — where you bought / got it (optional) */}
+          <FormSection title="Bought At (optional)">
             <VenueSelector
-              selectedVenue={venue.id ? venue : null}
+              selectedVenue={venue}
               currentLocation={currentLocation}
               onVenueSelect={handleVenueSelect}
               onLocationUpdate={handleLocationUpdate}
             />
+            {venue && (
+              <TouchableOpacity onPress={handleClearVenue} style={styles.clearEnjoyedAtButton}>
+                <Ionicons name="close-circle-outline" size={16} color="#666" />
+                <Text style={styles.clearEnjoyedAtText}>Clear Bought At</Text>
+              </TouchableOpacity>
+            )}
+          </FormSection>
+
+          {/* Optional — where you actually drank it, if different */}
+          <FormSection title="Enjoyed At (optional)">
+            <VenueSelector
+              selectedVenue={enjoyedAt}
+              currentLocation={currentLocation}
+              onVenueSelect={handleEnjoyedAtSelect}
+            />
+            {enjoyedAt && (
+              <TouchableOpacity onPress={handleClearEnjoyedAt} style={styles.clearEnjoyedAtButton}>
+                <Ionicons name="close-circle-outline" size={16} color="#666" />
+                <Text style={styles.clearEnjoyedAtText}>Clear Enjoyed At</Text>
+              </TouchableOpacity>
+            )}
           </FormSection>
 
           {/* Price & Container */}
           <FormSection title="Price & Container">
-            <View style={styles.inputContainer}>
-              <Text style={styles.inputLabel}>Price (£)</Text>
-              <TextInput
-                style={styles.input}
-                value={priceDisplay}
-                onChangeText={handlePriceChange}
-                placeholder="0.00"
-                keyboardType={Platform.OS === 'android' ? 'numeric' : 'decimal-pad'}
-                returnKeyType="done"
+            <View style={styles.giftedRow}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.inputLabel}>Gifted / didn't pay</Text>
+                <Text style={styles.giftedHelp}>
+                  Toggle on if you didn't buy this cider (gift, sample, someone else's round).
+                </Text>
+              </View>
+              <Switch
+                value={gifted}
+                onValueChange={handleGiftedToggle}
+                trackColor={{ false: '#ddd', true: '#007AFF' }}
               />
             </View>
+
+            {!gifted && (
+              <View style={styles.inputContainer}>
+                <Text style={styles.inputLabel}>Price (£)</Text>
+                <TextInput
+                  style={styles.input}
+                  value={priceDisplay}
+                  onChangeText={handlePriceChange}
+                  placeholder="0.00"
+                  keyboardType={Platform.OS === 'android' ? 'numeric' : 'decimal-pad'}
+                  returnKeyType="done"
+                />
+              </View>
+            )}
 
             <View style={styles.inputContainer}>
               <Text style={styles.inputLabel}>Container Size</Text>
@@ -432,12 +496,14 @@ export default function ExperienceEditScreen() {
               )}
             </View>
 
-            <View style={styles.pricePerPintContainer}>
-              <Text style={styles.pricePerPintLabel}>Price per pint:</Text>
-              <Text style={styles.pricePerPintValue}>
-                £{pricePerPint > 0 ? pricePerPint.toFixed(2) : '0.00'}
-              </Text>
-            </View>
+            {!gifted && (
+              <View style={styles.pricePerPintContainer}>
+                <Text style={styles.pricePerPintLabel}>Price per pint:</Text>
+                <Text style={styles.pricePerPintValue}>
+                  £{pricePerPint > 0 ? pricePerPint.toFixed(2) : '0.00'}
+                </Text>
+              </View>
+            )}
           </FormSection>
 
           {/* Rating Section */}
@@ -660,6 +726,35 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '700',
     color: '#007AFF',
+  },
+  giftedRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    backgroundColor: '#f8f9fa',
+    borderRadius: 8,
+    marginBottom: 12,
+    gap: 12,
+  },
+  giftedHelp: {
+    fontSize: 12,
+    color: '#888',
+    marginTop: 2,
+  },
+  clearEnjoyedAtButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    marginTop: 8,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    gap: 4,
+  },
+  clearEnjoyedAtText: {
+    fontSize: 13,
+    color: '#666',
   },
   buttonContainer: {
     position: 'absolute',

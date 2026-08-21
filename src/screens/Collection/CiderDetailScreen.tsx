@@ -428,14 +428,18 @@ export default function CiderDetailScreen({ route, navigation }: Props) {
                     )}
                   </View>
 
-                  <View style={styles.experienceVenue}>
-                    <Ionicons name="location-outline" size={16} color="#666" />
-                    <Text style={styles.experienceVenueText}>{experience.venue.name}</Text>
-                  </View>
+                  {experience.venue && (
+                    <View style={styles.experienceVenue}>
+                      <Ionicons name="location-outline" size={16} color="#666" />
+                      <Text style={styles.experienceVenueText}>{experience.venue.name}</Text>
+                    </View>
+                  )}
 
                   <View style={styles.experiencePrice}>
                     <Text style={styles.experiencePriceText}>
-                      £{experience.price.toFixed(2)} ({experience.containerSize}ml {getContainerTypeLabel(experience.containerType || 'bottle', experience.containerTypeCustom)}) • £{experience.pricePerPint.toFixed(2)}/pint
+                      {experience.gifted
+                        ? `Gifted (${experience.containerSize}ml ${getContainerTypeLabel(experience.containerType || 'bottle', experience.containerTypeCustom)})`
+                        : `£${experience.price.toFixed(2)} (${experience.containerSize}ml ${getContainerTypeLabel(experience.containerType || 'bottle', experience.containerTypeCustom)}) • £${experience.pricePerPint.toFixed(2)}/pint`}
                     </Text>
                   </View>
 

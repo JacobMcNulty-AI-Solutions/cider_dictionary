@@ -261,6 +261,16 @@ export default function OverviewTab({ timeRange, ciders, experiences }: Overview
           subtitle="Last 30 days"
         />
 
+        {(analytics.valueAnalytics.giftedCount > 0 || analytics.valueAnalytics.paidCount > 0) && (
+          <StatCard
+            icon="gift-outline"
+            title="Gifted vs Paid"
+            value={`${analytics.valueAnalytics.giftedCount} / ${analytics.valueAnalytics.paidCount}`}
+            color="#AF52DE"
+            subtitle={`${Math.round(analytics.valueAnalytics.giftedRatio * 100)}% gifted`}
+          />
+        )}
+
         {analytics.valueAnalytics.bestValue && (
           <View style={styles.valueHighlight}>
             <View style={styles.highlightHeader}>

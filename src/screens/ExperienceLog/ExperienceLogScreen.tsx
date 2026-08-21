@@ -12,7 +12,8 @@ import {
   Platform,
   Alert,
   TouchableOpacity,
-  KeyboardTypeOptions
+  KeyboardTypeOptions,
+  Switch
 } from 'react-native';
 import { useRoute, useNavigation, RouteProp } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
@@ -53,13 +54,10 @@ export default function ExperienceLogScreen({ route, navigation }: Props) {
 
   const [formState, setFormState] = useState<ExperienceFormState>({
     ciderId,
-    venue: {
-      id: '',
-      name: '',
-      type: 'pub',
-      location: undefined
-    },
+    venue: null,
+    enjoyedAt: null,
     price: 0,
+    gifted: false,
     containerSize: CONTAINER_SIZES.PINT,
     containerType: 'bottle',
     notes: '',
@@ -75,14 +73,15 @@ export default function ExperienceLogScreen({ route, navigation }: Props) {
   const [locationError, setLocationError] = useState<string | null>(null);
   const [currentLocation, setCurrentLocation] = useState<Location | null>(null);
 
-  // Auto-calculate price per pint
+  // Auto-calculate price per pint (zero when gifted — no meaningful value)
   const pricePerPint = useMemo(() => {
+    if (formState.gifted) return 0;
     if (formState.price > 0 && formState.containerSize > 0) {
       const PINT_SIZE = 568; // ml
       return Math.round((formState.price * PINT_SIZE / formState.containerSize) * 100) / 100; // Round to 2 decimal places
     }
     return 0;
-  }, [formState.price, formState.containerSize]);
+  }, [formState.price, formState.containerSize, formState.gifted]);
 
   // Auto-calculate overall rating from detailed ratings
   const overallRating = useMemo(() => {
@@ -105,14 +104,14 @@ export default function ExperienceLogScreen({ route, navigation }: Props) {
       formState.detailedRatings?.taste !== undefined &&
       formState.detailedRatings?.mouthfeel !== undefined;
 
+    const priceGate = formState.gifted
+      ? true
+      : formState.price > 0 && pricePerPint > 0;
+
     return (
-      formState.venue.id &&
-      formState.venue.name.trim().length >= 2 &&
-      formState.venue.location &&
-      formState.price > 0 &&
       formState.containerSize > 0 &&
       hasAllDetailedRatings && // Require all 4 detailed ratings
-      pricePerPint > 0
+      priceGate
     );
   }, [formState, pricePerPint]);
 
@@ -154,6 +153,29 @@ export default function ExperienceLogScreen({ route, navigation }: Props) {
     setFormState(prev => ({
       ...prev,
       venue
+    }));
+  }, []);
+
+  const handleClearVenue = useCallback(() => {
+    setFormState(prev => ({ ...prev, venue: null }));
+  }, []);
+
+  const handleEnjoyedAtSelect = useCallback((venue: VenueInfo) => {
+    setFormState(prev => ({
+      ...prev,
+      enjoyedAt: venue
+    }));
+  }, []);
+
+  const handleClearEnjoyedAt = useCallback(() => {
+    setFormState(prev => ({ ...prev, enjoyedAt: null }));
+  }, []);
+
+  const handleGiftedToggle = useCallback((gifted: boolean) => {
+    setFormState(prev => ({
+      ...prev,
+      gifted,
+      price: gifted ? 0 : prev.price
     }));
   }, []);
 
@@ -226,12 +248,16 @@ export default function ExperienceLogScreen({ route, navigation }: Props) {
         userId: 'current-user', // TODO: Get from auth context
         ciderId: formState.ciderId,
         date: formState.date,
-        venue: formState.venue,
-        price: formState.price,
+        venue: formState.venue ? (formState.venue as VenueInfo) : undefined,
+        venueId: formState.venue ? (formState.venue as VenueInfo).id : undefined,
+        enjoyedAt: formState.enjoyedAt ? (formState.enjoyedAt as VenueInfo) : undefined,
+        enjoyedAtVenueId: formState.enjoyedAt ? (formState.enjoyedAt as VenueInfo).id : undefined,
+        price: formState.gifted ? 0 : formState.price,
+        gifted: formState.gifted,
         containerSize: formState.containerSize,
         containerType: formState.containerType,
         containerTypeCustom: formState.containerTypeCustom,
-        pricePerPint,
+        pricePerPint: formState.gifted ? 0 : pricePerPint,
         notes: formState.notes || undefined,
         rating: overallRating!, // Auto-calculated from detailed ratings
         detailedRatings: formState.detailedRatings, // Required detailed ratings
@@ -321,24 +347,61 @@ export default function ExperienceLogScreen({ route, navigation }: Props) {
             </View>
           )}
 
-          {/* Venue Selection */}
-          <FormSection title="Where did you try it?">
+          {/* Venue Selection — where you bought / got it (optional) */}
+          <FormSection title="Bought At (optional)">
             <VenueSelector
-              selectedVenue={formState.venue.id ? formState.venue : null}
+              selectedVenue={formState.venue as any}
               currentLocation={currentLocation}
               onVenueSelect={handleVenueSelect}
               onLocationUpdate={handleLocationUpdate}
             />
+            {formState.venue && (
+              <TouchableOpacity onPress={handleClearVenue} style={styles.clearEnjoyedAtButton}>
+                <Ionicons name="close-circle-outline" size={16} color="#666" />
+                <Text style={styles.clearEnjoyedAtText}>Clear Bought At</Text>
+              </TouchableOpacity>
+            )}
+          </FormSection>
+
+          {/* Optional — where you actually drank it, if different */}
+          <FormSection title="Enjoyed At (optional)">
+            <VenueSelector
+              selectedVenue={formState.enjoyedAt as any}
+              currentLocation={currentLocation}
+              onVenueSelect={handleEnjoyedAtSelect}
+            />
+            {formState.enjoyedAt && (
+              <TouchableOpacity onPress={handleClearEnjoyedAt} style={styles.clearEnjoyedAtButton}>
+                <Ionicons name="close-circle-outline" size={16} color="#666" />
+                <Text style={styles.clearEnjoyedAtText}>Clear Enjoyed At</Text>
+              </TouchableOpacity>
+            )}
           </FormSection>
 
           {/* Price & Container */}
           <FormSection title="Price & Container">
-            <PriceInput
-              label="Price (£)"
-              value={formState.price}
-              onChangeText={handlePriceChange}
-              placeholder="0.00"
-            />
+            <View style={styles.giftedRow}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.inputLabel}>Gifted / didn't pay</Text>
+                <Text style={styles.giftedHelp}>
+                  Toggle on if you didn't buy this cider (gift, sample, someone else's round).
+                </Text>
+              </View>
+              <Switch
+                value={formState.gifted}
+                onValueChange={handleGiftedToggle}
+                trackColor={{ false: '#ddd', true: '#007AFF' }}
+              />
+            </View>
+
+            {!formState.gifted && (
+              <PriceInput
+                label="Price (£)"
+                value={formState.price}
+                onChangeText={handlePriceChange}
+                placeholder="0.00"
+              />
+            )}
 
             <ContainerSizeSelector
               value={formState.containerSize}
@@ -353,7 +416,7 @@ export default function ExperienceLogScreen({ route, navigation }: Props) {
               onCustomChange={handleContainerTypeCustomChange}
             />
 
-            <PricePerPintDisplay value={pricePerPint} />
+            {!formState.gifted && <PricePerPintDisplay value={pricePerPint} />}
           </FormSection>
 
           {/* Rating Section */}
@@ -763,6 +826,35 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '700',
     color: '#007AFF',
+  },
+  giftedRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    backgroundColor: '#f8f9fa',
+    borderRadius: 8,
+    marginBottom: 12,
+    gap: 12,
+  },
+  giftedHelp: {
+    fontSize: 12,
+    color: '#888',
+    marginTop: 2,
+  },
+  clearEnjoyedAtButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    marginTop: 8,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    gap: 4,
+  },
+  clearEnjoyedAtText: {
+    fontSize: 13,
+    color: '#666',
   },
   submitContainer: {
     position: 'absolute',

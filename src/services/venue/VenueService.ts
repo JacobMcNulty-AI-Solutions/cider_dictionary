@@ -362,7 +362,7 @@ class VenueService {
       // Get experiences for detailed stats
       const experiences = await sqliteService.getAllExperiences();
       const venueExperiences = experiences.filter(exp =>
-        exp.venueId === venueId || exp.venue.id === venueId
+        exp.venueId === venueId || exp.venue?.id === venueId
       );
 
       if (venueExperiences.length === 0 && !venue) {

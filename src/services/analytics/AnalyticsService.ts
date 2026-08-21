@@ -44,6 +44,9 @@ export interface AnalyticsData {
     } | null;
     averagePricePerPint: number;
     monthlySpending: number;
+    giftedCount: number;
+    paidCount: number;
+    giftedRatio: number;
   };
   venueAnalytics: {
     mostVisited: {
@@ -349,17 +352,29 @@ class AnalyticsService {
     ciders: CiderMasterRecord[],
     experiences: ExperienceLog[]
   ) {
-    if (experiences.length === 0) {
+    // Gifted experiences carry no price signal — exclude them from all
+    // spend/value math but keep their counts for the ratio tile.
+    const paid = experiences.filter(exp => !exp.gifted);
+    const giftedCount = experiences.length - paid.length;
+    const paidCount = paid.length;
+    const giftedRatio = experiences.length === 0
+      ? 0
+      : Math.round((giftedCount / experiences.length) * 100) / 100;
+
+    if (paid.length === 0) {
       return {
         bestValue: null,
         worstValue: null,
         averagePricePerPint: 0,
-        monthlySpending: 0
+        monthlySpending: 0,
+        giftedCount,
+        paidCount,
+        giftedRatio
       };
     }
 
-    // Find best and worst value experiences
-    const sortedByValue = [...experiences].sort((a, b) => a.pricePerPint - b.pricePerPint);
+    // Find best and worst value experiences (paid only)
+    const sortedByValue = [...paid].sort((a, b) => a.pricePerPint - b.pricePerPint);
     const bestValueExp = sortedByValue[0];
     const worstValueExp = sortedByValue[sortedByValue.length - 1];
 
@@ -367,13 +382,13 @@ class AnalyticsService {
     const worstValueCider = ciders.find(c => c.id === worstValueExp?.ciderId);
 
     // Calculate averages
-    const totalPricePerPint = experiences.reduce((sum, exp) => sum + exp.pricePerPint, 0);
-    const averagePricePerPint = totalPricePerPint / experiences.length;
+    const totalPricePerPint = paid.reduce((sum, exp) => sum + exp.pricePerPint, 0);
+    const averagePricePerPint = totalPricePerPint / paid.length;
 
     // Monthly spending (last 30 days)
     const thirtyDaysAgo = new Date();
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-    const monthlySpending = experiences
+    const monthlySpending = paid
       .filter(exp => exp.date >= thirtyDaysAgo)
       .reduce((sum, exp) => sum + exp.price, 0);
 
@@ -381,15 +396,18 @@ class AnalyticsService {
       bestValue: bestValueCider ? {
         cider: bestValueCider,
         pricePerPint: bestValueExp.pricePerPint,
-        venue: bestValueExp.venue.name
+        venue: bestValueExp.venue?.name ?? 'Unknown venue'
       } : null,
       worstValue: worstValueCider ? {
         cider: worstValueCider,
         pricePerPint: worstValueExp.pricePerPint,
-        venue: worstValueExp.venue.name
+        venue: worstValueExp.venue?.name ?? 'Unknown venue'
       } : null,
       averagePricePerPint: Math.round(averagePricePerPint * 100) / 100,
-      monthlySpending: Math.round(monthlySpending * 100) / 100
+      monthlySpending: Math.round(monthlySpending * 100) / 100,
+      giftedCount,
+      paidCount,
+      giftedRatio
     };
   }
 
@@ -403,7 +421,9 @@ class AnalyticsService {
       };
     }
 
-    // Group by venue
+    // Group by venue — visits count every experience (including gifted),
+    // but paid totals only accumulate for non-gifted ones so cheapest /
+    // most-expensive don't get pulled toward zero by free drinks.
     const venueStats = experiences.reduce((acc, exp) => {
       if (!exp.venue?.name) return acc;
       const venueKey = exp.venue.name.toLowerCase();
@@ -412,37 +432,46 @@ class AnalyticsService {
         acc[venueKey] = {
           venue: exp.venue,
           visits: 0,
+          paidVisits: 0,
           totalSpent: 0,
           totalPricePerPint: 0
         };
       }
 
       acc[venueKey].visits++;
-      acc[venueKey].totalSpent += exp.price;
-      acc[venueKey].totalPricePerPint += exp.pricePerPint;
+      if (!exp.gifted) {
+        acc[venueKey].paidVisits++;
+        acc[venueKey].totalSpent += exp.price;
+        acc[venueKey].totalPricePerPint += exp.pricePerPint;
+      }
 
       return acc;
     }, {} as Record<string, any>);
 
     const venues = Object.values(venueStats);
 
-    // Find most visited
+    // Find most visited (any experience counts, gifted or not)
     const mostVisited = venues.reduce((max, venue) =>
       venue.visits > max.visits ? venue : max, venues[0]
     );
 
-    // Find cheapest and most expensive by average price per pint
-    const cheapest = venues.reduce((min, venue) => {
-      const avgPricePerPint = venue.totalPricePerPint / venue.visits;
-      const minAvgPricePerPint = min.totalPricePerPint / min.visits;
-      return avgPricePerPint < minAvgPricePerPint ? venue : min;
-    }, venues[0]);
+    // Cheapest / most expensive only meaningful for venues with paid visits.
+    const paidVenues = venues.filter(v => v.paidVisits > 0);
+    const cheapest = paidVenues.length > 0
+      ? paidVenues.reduce((min, venue) => {
+          const avg = venue.totalPricePerPint / venue.paidVisits;
+          const minAvg = min.totalPricePerPint / min.paidVisits;
+          return avg < minAvg ? venue : min;
+        }, paidVenues[0])
+      : null;
 
-    const mostExpensive = venues.reduce((max, venue) => {
-      const avgPricePerPint = venue.totalPricePerPint / venue.visits;
-      const maxAvgPricePerPint = max.totalPricePerPint / max.visits;
-      return avgPricePerPint > maxAvgPricePerPint ? venue : max;
-    }, venues[0]);
+    const mostExpensive = paidVenues.length > 0
+      ? paidVenues.reduce((max, venue) => {
+          const avg = venue.totalPricePerPint / venue.paidVisits;
+          const maxAvg = max.totalPricePerPint / max.paidVisits;
+          return avg > maxAvg ? venue : max;
+        }, paidVenues[0])
+      : null;
 
     return {
       mostVisited: mostVisited ? {
@@ -451,11 +480,11 @@ class AnalyticsService {
       } : null,
       cheapest: cheapest ? {
         venue: cheapest.venue,
-        averagePrice: Math.round((cheapest.totalPricePerPint / cheapest.visits) * 100) / 100
+        averagePrice: Math.round((cheapest.totalPricePerPint / cheapest.paidVisits) * 100) / 100
       } : null,
       mostExpensive: mostExpensive ? {
         venue: mostExpensive.venue,
-        averagePrice: Math.round((mostExpensive.totalPricePerPint / mostExpensive.visits) * 100) / 100
+        averagePrice: Math.round((mostExpensive.totalPricePerPint / mostExpensive.paidVisits) * 100) / 100
       } : null,
       totalVenues: venues.length
     };
@@ -471,7 +500,9 @@ class AnalyticsService {
       }
 
       acc[monthKey].count++;
-      acc[monthKey].spending += exp.price;
+      if (!exp.gifted) {
+        acc[monthKey].spending += exp.price;
+      }
 
       return acc;
     }, {} as Record<string, { count: number; spending: number }>);

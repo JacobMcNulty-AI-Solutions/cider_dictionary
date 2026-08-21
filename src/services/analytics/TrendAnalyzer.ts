@@ -160,11 +160,11 @@ export class TrendAnalyzer {
         );
       }
 
-      // Spending trend
+      // Spending trend — gifted experiences don't count toward spend
       if (filteredExperiences.length > 0) {
         result.spendingTrend = this.analyzeTrend(
           groupedExperiences,
-          (group) => sum(group.map((e) => e.price)),
+          (group) => sum(group.filter((e) => !e.gifted).map((e) => e.price)),
           'Total Spending',
           config.groupBy
         );

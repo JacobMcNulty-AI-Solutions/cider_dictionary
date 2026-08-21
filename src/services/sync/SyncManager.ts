@@ -1596,10 +1596,11 @@ class SyncManager {
   private async insertOrReplaceExperience(db: any, experience: ExperienceLog): Promise<void> {
     await db.runAsync(
       `INSERT OR REPLACE INTO experiences (
-        id, userId, ciderId, date, venue, venueId, price, containerSize, containerType,
+        id, userId, ciderId, date, venue, venueId, enjoyedAt, enjoyedAtVenueId,
+        price, gifted, containerSize, containerType,
         containerTypeCustom, pricePerPint, notes, rating, appearance, aroma, taste, mouthfeel,
         createdAt, updatedAt, syncStatus, version
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         experience.id,
         experience.userId || 'default-user',
@@ -1607,7 +1608,10 @@ class SyncManager {
         this.safeToISOString(experience.date),
         experience.venue ? JSON.stringify(experience.venue) : null,
         experience.venueId || null,
+        experience.enjoyedAt ? JSON.stringify(experience.enjoyedAt) : null,
+        experience.enjoyedAtVenueId || null,
         experience.price || 0,
+        experience.gifted ? 1 : 0,
         experience.containerSize || 500,
         experience.containerType || 'bottle',
         experience.containerTypeCustom || null,
@@ -1743,8 +1747,12 @@ class SyncManager {
       userId: data.userId || 'default-user',
       ciderId: data.ciderId,
       date: this.parseFirestoreDate(data.date),
-      venue: data.venue || { id: '', name: 'Unknown', type: 'other' },
+      venue: data.venue || undefined,
+      venueId: data.venueId || undefined,
+      enjoyedAt: data.enjoyedAt || undefined,
+      enjoyedAtVenueId: data.enjoyedAtVenueId || undefined,
       price: data.price || 0,
+      gifted: !!data.gifted,
       containerSize: data.containerSize || 500,
       containerType: data.containerType || 'bottle',
       containerTypeCustom: data.containerTypeCustom || undefined,

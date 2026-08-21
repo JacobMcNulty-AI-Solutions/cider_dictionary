@@ -400,12 +400,13 @@ export class ExportService {
       id: experience.id,
       ciderId: experience.ciderId,
       date: new Date(experience.date).toISOString(),
-      venue: {
+      venue: experience.venue ? {
         id: experience.venue.id,
         name: experience.venue.name,
         type: experience.venue.type,
-      },
+      } : null,
       price: experience.price,
+      gifted: !!experience.gifted,
       containerSize: experience.containerSize,
       containerType: experience.containerType,
       pricePerPint: experience.pricePerPint,
@@ -413,6 +414,14 @@ export class ExportService {
       updatedAt: new Date(experience.updatedAt).toISOString(),
     };
 
+    if (experience.enjoyedAt) {
+      serialized.enjoyedAt = {
+        id: experience.enjoyedAt.id,
+        name: experience.enjoyedAt.name,
+        type: experience.enjoyedAt.type,
+      };
+    }
+    if (experience.enjoyedAtVenueId) serialized.enjoyedAtVenueId = experience.enjoyedAtVenueId;
     if (experience.notes) serialized.notes = experience.notes;
     if (experience.rating) serialized.rating = experience.rating;
 
@@ -506,9 +515,12 @@ export class ExportService {
       'ID',
       'Cider ID',
       'Date',
-      'Venue Name',
-      'Venue Type',
+      'Bought At Name',
+      'Bought At Type',
+      'Enjoyed At Name',
+      'Enjoyed At Type',
       'Price',
+      'Gifted',
       'Container Size (ml)',
       'Container Type',
       'Price Per Pint',
@@ -528,9 +540,12 @@ export class ExportService {
         this.escapeCSVField(exp.id, options.delimiter),
         this.escapeCSVField(exp.ciderId, options.delimiter),
         this.escapeCSVField(new Date(exp.date).toISOString(), options.delimiter),
-        this.escapeCSVField(exp.venue.name, options.delimiter),
-        this.escapeCSVField(exp.venue.type, options.delimiter),
+        this.escapeCSVField(exp.venue?.name ?? '', options.delimiter),
+        this.escapeCSVField(exp.venue?.type ?? '', options.delimiter),
+        this.escapeCSVField(exp.enjoyedAt?.name || '', options.delimiter),
+        this.escapeCSVField(exp.enjoyedAt?.type || '', options.delimiter),
         exp.price.toFixed(2),
+        exp.gifted ? 'Yes' : 'No',
         exp.containerSize.toString(),
         this.escapeCSVField(exp.containerType, options.delimiter),
         exp.pricePerPint.toFixed(2),

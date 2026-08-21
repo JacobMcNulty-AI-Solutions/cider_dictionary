@@ -356,6 +356,67 @@ describe('AnalyticsService', () => {
       expect(analytics.valueAnalytics.averagePricePerPint).toBe(0);
       expect(analytics.valueAnalytics.monthlySpending).toBe(0);
     });
+
+    describe('gifted experiences', () => {
+      const withGifted: ExperienceLog[] = [
+        ...mockExperiences,
+        {
+          id: 'exp-gifted-1',
+          userId: 'user1',
+          ciderId: '1',
+          date: new Date(),
+          venue: {
+            id: 'venue1',
+            name: 'The Crown',
+            type: 'pub',
+            location: { latitude: 51.5, longitude: -0.1 }
+          },
+          price: 0,
+          gifted: true,
+          containerSize: 568,
+          containerType: 'draught',
+          pricePerPint: 0,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+          syncStatus: 'synced',
+          version: 1
+        }
+      ];
+
+      it('should exclude gifted experiences from spend & value stats', async () => {
+        mockSqliteService.getAllExperiences.mockResolvedValue(withGifted);
+
+        const analytics = await analyticsService.calculateAnalytics('ALL');
+
+        // averagePricePerPint should NOT drop toward 0 because of the gifted row
+        expect(analytics.valueAnalytics.averagePricePerPint).toBeGreaterThan(0);
+        // monthly spending covers exp5 (4.80) — gifted must NOT contribute 0 into the mean
+        expect(analytics.valueAnalytics.monthlySpending).toBe(4.80);
+      });
+
+      it('should expose gifted vs paid counts and ratio', async () => {
+        mockSqliteService.getAllExperiences.mockResolvedValue(withGifted);
+
+        const analytics = await analyticsService.calculateAnalytics('ALL');
+
+        expect(analytics.valueAnalytics.giftedCount).toBe(1);
+        expect(analytics.valueAnalytics.paidCount).toBe(mockExperiences.length);
+        expect(analytics.valueAnalytics.giftedRatio).toBeCloseTo(
+          1 / (mockExperiences.length + 1),
+          2
+        );
+      });
+
+      it('should still count gifted experience toward venue visits', async () => {
+        mockSqliteService.getAllExperiences.mockResolvedValue(withGifted);
+
+        const analytics = await analyticsService.calculateAnalytics('ALL');
+
+        // The Crown had 3 paid visits + 1 gifted = 4 total
+        expect(analytics.venueAnalytics.mostVisited?.venue.name).toBe('The Crown');
+        expect(analytics.venueAnalytics.mostVisited?.visitCount).toBe(4);
+      });
+    });
   });
 
   describe('Venue Analytics', () => {

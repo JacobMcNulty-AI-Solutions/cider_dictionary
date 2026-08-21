@@ -15,15 +15,18 @@ export interface ExperienceLog {
 
   // Experience details
   date: Date;
-  venueId?: string;    // Reference to venues table (for persistent venues)
-  venue: VenueInfo;    // Embedded venue data (for offline/historical resilience)
+  venueId?: string;    // Reference to venues table (for persistent venues) — "Bought At"
+  venue?: VenueInfo;   // Embedded venue data (optional; where the cider was bought/acquired)
+  enjoyedAtVenueId?: string;    // Optional — where the cider was actually drunk
+  enjoyedAt?: VenueInfo;        // Optional embedded "Enjoyed At" venue
 
   // Price and value analysis
-  price: number; // Total price paid
+  price: number; // Total price paid (0 when gifted)
+  gifted: boolean; // True when the user did not pay (gift, sample, someone else bought it)
   containerSize: number; // ml
   containerType: ContainerType; // Type of container (bottle, can, draught, keg, etc.)
   containerTypeCustom?: string; // Custom container type when 'other' is selected
-  pricePerPint: number; // Calculated automatically (price for equivalent pint)
+  pricePerPint: number; // Calculated automatically (price for equivalent pint); 0 when gifted
 
   // Rating data (now stored on experiences, not ciders)
   rating: Rating; // Required - this experience's rating
@@ -52,8 +55,15 @@ export interface ExperienceFormState {
     type: VenueType;
     location: Location | null;
     address?: string;
-  };
+  } | null;
+  enjoyedAt: {
+    name: string;
+    type: VenueType;
+    location: Location | null;
+    address?: string;
+  } | null;
   price: number;
+  gifted: boolean;
   containerSize: number;
   containerType: ContainerType;
   containerTypeCustom?: string;

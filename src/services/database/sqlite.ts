@@ -149,11 +149,14 @@ class DatabaseConnectionManager {
 
         -- Experience details
         date TEXT NOT NULL,
-        venue TEXT NOT NULL, -- JSON object with venue info
+        venue TEXT NOT NULL, -- JSON object with venue info ("Bought At")
         venueId TEXT,        -- Reference to venues table (nullable for legacy data)
+        enjoyedAt TEXT,      -- JSON object with venue info ("Enjoyed At"), nullable
+        enjoyedAtVenueId TEXT, -- Reference to venues table for enjoyed-at, nullable
 
         -- Price and value
         price REAL NOT NULL,
+        gifted INTEGER NOT NULL DEFAULT 0, -- 1 when the user did not pay (price stored as 0)
         containerSize INTEGER NOT NULL,
         containerType TEXT NOT NULL,
         containerTypeCustom TEXT,
@@ -241,6 +244,7 @@ class DatabaseConnectionManager {
       CREATE INDEX IF NOT EXISTS idx_experiences_date ON experiences(date DESC);
       CREATE INDEX IF NOT EXISTS idx_experiences_price_per_pint ON experiences(pricePerPint);
       CREATE INDEX IF NOT EXISTS idx_experiences_venue_id ON experiences(venueId);
+      CREATE INDEX IF NOT EXISTS idx_experiences_enjoyed_at_venue_id ON experiences(enjoyedAtVenueId);
       CREATE INDEX IF NOT EXISTS idx_sync_operations_status ON sync_operations(status);
       CREATE INDEX IF NOT EXISTS idx_sync_operations_timestamp ON sync_operations(timestamp);
       CREATE INDEX IF NOT EXISTS idx_venues_user_id ON venues(userId);
@@ -336,6 +340,30 @@ class DatabaseConnectionManager {
         console.log('Adding containerTypeCustom to experiences table...');
         await database.execAsync(`ALTER TABLE experiences ADD COLUMN containerTypeCustom TEXT`);
         console.log('ContainerTypeCustom column added successfully');
+      }
+
+      // Re-read table info in case earlier ALTERs changed it
+      const tableInfoAfterAdds = await database.getAllAsync(`PRAGMA table_info(experiences)`);
+
+      // Add gifted flag to experiences if not present
+      const hasGifted = tableInfoAfterAdds.some((col: any) => col.name === 'gifted');
+      if (!hasGifted) {
+        console.log('Adding gifted column to experiences table...');
+        await database.execAsync(`ALTER TABLE experiences ADD COLUMN gifted INTEGER NOT NULL DEFAULT 0`);
+      }
+
+      // Add enjoyedAt (JSON) to experiences if not present
+      const hasEnjoyedAt = tableInfoAfterAdds.some((col: any) => col.name === 'enjoyedAt');
+      if (!hasEnjoyedAt) {
+        console.log('Adding enjoyedAt column to experiences table...');
+        await database.execAsync(`ALTER TABLE experiences ADD COLUMN enjoyedAt TEXT`);
+      }
+
+      // Add enjoyedAtVenueId FK to experiences if not present
+      const hasEnjoyedAtVenueId = tableInfoAfterAdds.some((col: any) => col.name === 'enjoyedAtVenueId');
+      if (!hasEnjoyedAtVenueId) {
+        console.log('Adding enjoyedAtVenueId column to experiences table...');
+        await database.execAsync(`ALTER TABLE experiences ADD COLUMN enjoyedAtVenueId TEXT`);
       }
     } catch (error) {
       console.warn('Migration attempt failed, table may not exist yet:', error);
@@ -1283,21 +1311,29 @@ export class BasicSQLiteService implements CiderDatabase {
 
         // Use venueId from experience, or fall back to venue.id
         const venueId = experience.venueId || experience.venue?.id || null;
+        const enjoyedAtVenueId = experience.enjoyedAtVenueId || experience.enjoyedAt?.id || null;
+        const enjoyedAtJson = experience.enjoyedAt ? JSON.stringify(experience.enjoyedAt) : null;
+        // venue column is NOT NULL — store the JSON literal "null" when the user skipped it
+        const venueJson = experience.venue ? JSON.stringify(experience.venue) : JSON.stringify(null);
 
         await db.runAsync(
           `INSERT INTO experiences (
-            id, userId, ciderId, date, venue, venueId, price, containerSize, containerType, containerTypeCustom, pricePerPint,
+            id, userId, ciderId, date, venue, venueId, enjoyedAt, enjoyedAtVenueId,
+            price, gifted, containerSize, containerType, containerTypeCustom, pricePerPint,
             notes, rating, appearance, aroma, taste, mouthfeel,
             createdAt, updatedAt, syncStatus, version
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [
             experience.id,
             experience.userId,
             experience.ciderId,
             experience.date.toISOString(),
-            JSON.stringify(experience.venue),
+            venueJson,
             venueId,
+            enjoyedAtJson,
+            enjoyedAtVenueId,
             experience.price,
+            experience.gifted ? 1 : 0,
             experience.containerSize,
             experience.containerType,
             experience.containerTypeCustom || null,
@@ -1501,7 +1537,12 @@ export class BasicSQLiteService implements CiderDatabase {
             processedUpdates['mouthfeel'] = (value as any).mouthfeel || null;
           }
         } else if (key === 'venue') {
-          processedUpdates[key] = JSON.stringify(value);
+          // venue column is NOT NULL — store JSON "null" when the caller cleared it
+          processedUpdates[key] = value ? JSON.stringify(value) : JSON.stringify(null);
+        } else if (key === 'enjoyedAt') {
+          processedUpdates[key] = value ? JSON.stringify(value) : null;
+        } else if (key === 'gifted') {
+          processedUpdates[key] = value ? 1 : 0;
         } else if (key === 'date' || key === 'createdAt' || key === 'updatedAt') {
           processedUpdates[key] = value instanceof Date ? (value as Date).toISOString() : value;
         } else if (key !== 'id' && key !== 'userId' && key !== 'ciderId') {
@@ -1620,14 +1661,39 @@ export class BasicSQLiteService implements CiderDatabase {
     if (row.taste !== null && row.taste !== undefined) detailedRatings.taste = row.taste;
     if (row.mouthfeel !== null && row.mouthfeel !== undefined) detailedRatings.mouthfeel = row.mouthfeel;
 
+    let enjoyedAt: any = undefined;
+    if (row.enjoyedAt) {
+      try {
+        enjoyedAt = JSON.parse(row.enjoyedAt);
+      } catch {
+        enjoyedAt = undefined;
+      }
+    }
+
+    // venue can be JSON "null" (user skipped it) or a legacy empty {id:'', name:''} placeholder
+    let venue: any = undefined;
+    if (row.venue) {
+      try {
+        const parsed = JSON.parse(row.venue);
+        if (parsed && (parsed.name || parsed.id)) {
+          venue = parsed;
+        }
+      } catch {
+        venue = undefined;
+      }
+    }
+
     return {
       id: row.id,
       userId: row.userId,
       ciderId: row.ciderId,
       date: new Date(row.date),
       venueId: row.venueId || undefined,
-      venue: JSON.parse(row.venue),
+      venue,
+      enjoyedAtVenueId: row.enjoyedAtVenueId || undefined,
+      enjoyedAt,
       price: row.price,
+      gifted: !!row.gifted,
       containerSize: row.containerSize,
       containerType: row.containerType || 'bottle', // Default for migration
       containerTypeCustom: row.containerTypeCustom || undefined,

@@ -239,8 +239,9 @@ export class VenueAnalyzer {
     try {
       const venueCounts = new Map<string, { count: number; type: string; ratings: number[] }>();
 
-      // Count visits per venue and collect ratings
+      // Count visits per venue and collect ratings (skip experiences without a venue)
       for (const exp of experiences) {
+        if (!exp.venue?.name) continue;
         const venueName = exp.venue.name;
         const existing = venueCounts.get(venueName);
 
@@ -327,7 +328,7 @@ export class VenueAnalyzer {
       const venueRatings = new Map<string, number[]>();
 
       for (const exp of experiences) {
-        if (exp.rating) {
+        if (exp.rating && exp.venue?.name) {
           const venueName = exp.venue.name;
           if (!venueRatings.has(venueName)) {
             venueRatings.set(venueName, []);
@@ -448,11 +449,13 @@ export class VenueAnalyzer {
     }
 
     for (const exp of experiences) {
-      const venueName = exp.venue?.name;
-      let location = exp.venue?.location;
+      // Skip experiences without a venue entirely — they can't be heat-mapped
+      if (!exp.venue?.name) continue;
+      const venueName = exp.venue.name;
+      let location = exp.venue.location;
 
       // If no location in experience, try to get it from venues table
-      if (!location && venueName && venuesCache.has(venueName.toLowerCase())) {
+      if (!location && venuesCache.has(venueName.toLowerCase())) {
         location = venuesCache.get(venueName.toLowerCase());
         if (location) {
           fromVenuesTable++;
@@ -466,7 +469,7 @@ export class VenueAnalyzer {
 
       if (!this.isValidCoordinate(location.latitude, location.longitude)) {
         invalidCoords++;
-        console.log(`[VenueAnalyzer] Invalid coords for ${exp.venue.name}: lat=${location.latitude}, lng=${location.longitude}`);
+        console.log(`[VenueAnalyzer] Invalid coords for ${venueName}: lat=${location.latitude}, lng=${location.longitude}`);
         continue;
       }
 
@@ -475,7 +478,7 @@ export class VenueAnalyzer {
         latitude: location.latitude,
         longitude: location.longitude,
         weight: 1,
-        venueName: exp.venue.name,
+        venueName,
         venueType: exp.venue.type,
       });
     }
@@ -492,6 +495,7 @@ export class VenueAnalyzer {
     const points: VenuePoint[] = [];
 
     for (const exp of experiences) {
+      if (!exp.venue?.name) continue;
       const location = exp.venue.location;
       if (location && this.isValidCoordinate(location.latitude, location.longitude)) {
         points.push({
@@ -727,7 +731,7 @@ export class VenueAnalyzer {
   private countUniqueVenues(experiences: ExperienceLog[]): number {
     const uniqueVenues = new Set<string>();
     for (const exp of experiences) {
-      uniqueVenues.add(exp.venue.name);
+      if (exp.venue?.name) uniqueVenues.add(exp.venue.name);
     }
     return uniqueVenues.size;
   }
